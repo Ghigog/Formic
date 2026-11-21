@@ -92,11 +92,15 @@ async function postHandler(req: Request) {
   return Response.json(await state(found.project, found.user));
 }
 
-/** Stops waiting for the pending answer; a new question is accepted after. */
-export async function PATCH() {
+const stopSchema = z.object({ messageId: z.string().min(1).max(100) });
+
+/** The person pressed Stop on one pending reply. Only that reply stops. */
+export async function PATCH(req: Request) {
   const found = await board();
   if ("error" in found) return found.error;
-  await cancelPending(found.project.id);
+  const body = stopSchema.safeParse(await req.json().catch(() => null));
+  if (!body.success) return Response.json({ error: "Say which reply to stop." }, { status: 400 });
+  await cancelPending(found.project.id, body.data.messageId);
   return Response.json(await state(found.project, found.user));
 }
 

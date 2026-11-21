@@ -172,13 +172,32 @@ Files: `src/lib/assistant/*` (message kinds, notices, history),
 `src/lib/agents/follow-ups.ts`, `prisma/` (message kind column), the
 repositories in `src/lib/db/`.
 
-- [ ] Message `kind`; every Formic-authored post is a `notice`.
-- [ ] Notices render as timeline lines; given to the model as events, not as its words.
-- [ ] Replies sit directly under the message they answer; notices never split them.
-- [ ] Follow-ups and "is done" only on merge; needed follow-ups depend on their ticket.
-- [ ] Copy button on every message; text selection works in the panel.
-- [ ] "Stopped." only on an explicit Stop.
-- [ ] Tests for each; e2e for the panel.
+- [x] Message `kind`; every Formic-authored post is a `notice`.
+- [x] Notices render as timeline lines; given to the model as events, not as its words.
+- [x] Replies sit directly under the message they answer; notices never split them.
+- [x] Follow-ups and "is done" only on merge; needed follow-ups depend on their ticket.
+- [x] Copy button on every message; text selection works in the panel.
+- [x] "Stopped." only on an explicit Stop.
+- [x] Tests for each; e2e for the panel.
+
+How it landed (PR 1):
+
+- `kind` is a column on `assistant_message` (`person`, `pm`, `guest`,
+  `notice`), backfilled from role and speaker. `src/lib/domain/chat.ts` holds
+  `kindOf`, `noticeEvent` and `threadOrder`. Every Formic post goes through
+  `postPmMessage`, which writes a `notice`; so does a proposal's outcome
+  ("Opened pull request", "Re-running").
+- `threadOrder` is what the panel shows and what the model reads: a notice
+  between a person's message and a reply queued for it (written within 30 s,
+  in the same request) moves above the message. A reply Formic starts later
+  on its own (a wake-up) is not treated as answering the person.
+- The model gets a notice as a user-side `[Board: …]` event, joined to its
+  neighbours for API PMs (`forModel`) and under its own `### Board` heading in
+  the CLI prompt.
+- Stop sits on the pending reply and sends its id; Send never turns into Stop.
+  Stopping a queued reply leaves the running one alone.
+- `proposeFollowUps` runs on Formic's merge and on a person's merge
+  (`markMergedExternally`), never on approval.
 
 ### PR 2: Board-scoped PM tokens and server-side approval
 

@@ -33,7 +33,8 @@ const route = await import("./route");
 
 // The handlers' inferred type admits undefined; they always respond.
 const GET = async (query = "") => (await route.GET(new Request(`http://localhost/api/assistant${query}`))) as Response;
-const PATCH = async () => (await route.PATCH()) as Response;
+const PATCH = async (body: unknown = { messageId: "m-2" }) =>
+  (await route.PATCH(new Request("http://localhost/api/assistant", { method: "PATCH", body: JSON.stringify(body) }))) as Response;
 const DELETE = async () => (await route.DELETE()) as Response;
 
 async function ask(body: unknown) {
@@ -159,6 +160,8 @@ describe("POST /api/assistant", () => {
     expect(res.status).toBe(200);
     expect(repo.addAssistantMessage).toHaveBeenCalledTimes(2);
     expect(launch).not.toHaveBeenCalled();
+    // A new message never stops the one being written.
+    expect(cancelPending).not.toHaveBeenCalled();
   });
 
   it("saves one pending reply per speaker, in order, and starts the first", async () => {
@@ -177,10 +180,15 @@ describe("POST /api/assistant", () => {
 });
 
 describe("PATCH /api/assistant", () => {
-  it("cancels the pending answer", async () => {
+  it("stops only the reply the person pressed Stop on", async () => {
     const res = await PATCH();
     expect(res.status).toBe(200);
-    expect(cancelPending).toHaveBeenCalledWith("p-1");
+    expect(cancelPending).toHaveBeenCalledWith("p-1", "m-2");
+  });
+
+  it("stops nothing without the reply's id", async () => {
+    expect((await PATCH({})).status).toBe(400);
+    expect(cancelPending).not.toHaveBeenCalled();
   });
 
   it("asks to sign in when there is no user", async () => {

@@ -42,6 +42,7 @@ import type { AgentRole } from "@/lib/domain/entities";
 import { DESIGN_RULE, ENGINEERING_PRACTICES, TICKET_TEMPLATE } from "@/lib/agents/prompts";
 import { askedIn, isQuestion, PM_ANSWER_PREFIX } from "@/lib/domain/question";
 import type { BoardCard } from "@/lib/domain/entities";
+import { kindOf, noticeEvent, threadOrder } from "@/lib/domain/chat";
 
 /**
  * One turn of the board's assistant: the person asked something, the agent
@@ -265,13 +266,38 @@ export async function systemPrompt(projectId: string, brief: string | null): Pro
   ].join("\n");
 }
 
-/** What the reply `messageId` sees: the conversation up to its own message. */
+/** What the reply `messageId` sees: the conversation up to its own message, in the order the chat shows it. */
 async function historyBefore(projectId: string, messageId: string) {
-  const { messages: all } = await repository().assistantMessages(projectId);
+  const all = threadOrder((await repository().assistantMessages(projectId)).messages);
   const at = all.findIndex((m) => m.id === messageId);
   const past = await history(at < 0 ? all : all.slice(0, at));
   // Another speaker's reply may be the last: the person's question still stands.
   return past.at(-1)?.role === "assistant" ? [...past, { role: "user" as const, content: "Now it is your turn to answer the person's last message." }] : past;
+}
+
+/**
+ * The conversation as an API model is sent it. A notice is an event the
+ * model is told, so it travels on the user side; joined with its neighbours
+ * there, so no provider sees two user turns in a row because of one.
+ */
+export function forModel(past: PastMessage[]): PastMessage[] {
+  const out: PastMessage[] = [];
+  for (const m of past) {
+    const last = out.at(-1);
+    if (last && last.role === "user" && m.role === "user" && (last.notice || m.notice)) {
+      const images = [...(last.images ?? []), ...(m.images ?? [])];
+      const files = [...(last.files ?? []), ...(m.files ?? [])];
+      out[out.length - 1] = {
+        role: "user",
+        content: [last.content, m.content].filter((c) => c.trim()).join("\n\n"),
+        ...(images.length ? { images } : {}),
+        ...(files.length ? { files } : {}),
+        // Still only Formic's word if both were.
+        ...(last.notice && m.notice ? { notice: true } : {}),
+      };
+    } else out.push(m);
+  }
+  return out;
 }
 
 /** How many of the person's latest messages go to the model with their pictures; older pictures are a text line. */
@@ -289,6 +315,17 @@ export async function history(messages: AssistantMessage[]): Promise<PastMessage
   );
   return Promise.all(
     kept.map(async (m): Promise<PastMessage> => {
+      // Formic's own word: an event on the board, never something the model said.
+      if (kindOf(m) === "notice") {
+        return {
+          role: "user",
+          notice: true,
+          content: [
+            noticeEvent(m.content),
+            ...m.proposals.map((p) => `[Formic proposed: ${p.summary}. The person ${decided(p.state)}.]`),
+          ].join("\n"),
+        };
+      }
       const pictures = m.attachments.filter((a) => a.kind === "image");
       const images: NonNullable<PastMessage["images"]> = [];
       const lines: string[] = [];
@@ -312,13 +349,17 @@ export async function history(messages: AssistantMessage[]): Promise<PastMessage
               ? [playtestLabel(m)]
             : []),
           ...lines,
-          ...m.proposals.map((p) => `[Proposed: ${p.summary}. The person ${p.state === "proposed" ? "has not decided yet" : p.state === "applied" ? "approved it" : p.state === "dismissed" ? "dismissed it" : "approved it, but it failed"}.]`),
+          ...m.proposals.map((p) => `[Proposed: ${p.summary}. The person ${decided(p.state)}.]`),
         ].join("\n"),
         ...(images.length ? { images } : {}),
         ...(pictures.length ? { files: pictures } : {}),
       };
     }),
   );
+}
+
+function decided(state: AssistantProposal["state"]): string {
+  return state === "proposed" ? "has not decided yet" : state === "applied" ? "approved it" : state === "dismissed" ? "dismissed it" : "approved it, but it failed";
 }
 
 /** How a playtest note reads to the PM: what it is, and the ids of its screenshots for create_todo_item or create_backlog_item. */
@@ -456,19 +497,25 @@ export async function startNext(projectId: string): Promise<void> {
   if (next) launch(() => answer(projectId, next.id), `assistant answer ${next.id}`);
 }
 
-/** The person stopped waiting: the answer being written is failed, and the next one queued starts. */
-export async function cancelPending(projectId: string): Promise<void> {
+/**
+ * The person pressed Stop on the reply `messageId`: it is failed as
+ * "Stopped.", and if it was the one being written, the next one queued
+ * starts. Nothing else ever stops a reply: a new message queues behind it.
+ */
+export async function cancelPending(projectId: string, messageId: string): Promise<void> {
   const repo = repository();
-  const current = await repo.pendingAssistantMessage(projectId);
-  if (!current) return;
-  await repo.updateAssistantMessage(current.id, {
+  const target = await repo.assistantMessage(messageId);
+  if (!target || target.projectId !== projectId || target.role !== "assistant" || target.status !== "pending") return;
+  const running = (await repo.pendingAssistantMessage(projectId, "assistant"))?.id === messageId;
+  await repo.updateAssistantMessage(messageId, {
     content: "Stopped.",
     proposals: [],
     status: "failed",
     runnerJob: null,
     runnerAgent: null,
   });
-  await startNext(projectId);
+  // A queued reply that never started leaves the running one alone.
+  if (running) await startNext(projectId);
 }
 
 /**
@@ -514,11 +561,11 @@ export async function answer(projectId: string, messageId: string, prompt?: stri
     const { info } = agent;
     let speak: Speak;
     if (info.kind === "anthropic") {
-      speak = claudeSpeak(agent.apiKey, agent.model ?? MODELS.product, system, past, TOOL_DEFS);
+      speak = claudeSpeak(agent.apiKey, agent.model ?? MODELS.product, system, forModel(past), TOOL_DEFS);
     } else {
       if (!agent.apiKey) throw new Error(`This agent has no ${info.label} API key. Edit it and add one.`);
       if (!agent.model) throw new Error(`This agent has no ${info.label} model. Edit it and pick one.`);
-      speak = openAiSpeak(info, agent.apiKey, agent.model, system, past, TOOL_DEFS);
+      speak = openAiSpeak(info, agent.apiKey, agent.model, system, forModel(past), TOOL_DEFS);
     }
 
     const project = await projectFor(projectId);
@@ -669,11 +716,11 @@ async function answerAsGuest(projectId: string, messageId: string, speaker: stri
   const { info } = agent;
   let speak: Speak;
   if (info.kind === "anthropic") {
-    speak = claudeSpeak(agent.apiKey, agent.model ?? MODELS.product, system, past, tools);
+    speak = claudeSpeak(agent.apiKey, agent.model ?? MODELS.product, system, forModel(past), tools);
   } else {
     if (!agent.apiKey) throw new Error(`This agent has no ${info.label} API key. Edit it and add one.`);
     if (!agent.model) throw new Error(`This agent has no ${info.label} model. Edit it and pick one.`);
-    speak = openAiSpeak(info, agent.apiKey, agent.model, system, past, tools);
+    speak = openAiSpeak(info, agent.apiKey, agent.model, system, forModel(past), tools);
   }
 
   const client = vcs(project.repoFullName, (await credentialsForProject(project)).repoToken);
@@ -773,7 +820,7 @@ function cliPrompt(
     "",
     "The conversation so far, oldest first. Answer the last message from the person.",
     "",
-    ...past.map((m) => `### ${m.role === "user" ? "Person" : "You"}\n${m.content}\n`),
+    ...past.map((m) => `### ${m.notice ? "Board (Formic, not the person and not you)" : m.role === "user" ? "Person" : "You"}\n${m.content}\n`),
     ...(files ? [files, ""] : []),
     "How to answer:",
     "- You may change the code. What you change in the checkout is kept on a branch of its own and offered to the person as a pull request, with the title and body you give in \"change\". Change files only when the person asked for a change or agreed to one. Install the project's dependencies if they are not there, and run its checks on your change before you finish. Changes under .github/workflows are not kept. Leave \"change\" out when you changed nothing.",
@@ -803,7 +850,7 @@ async function askAgain(
   if (speaker !== "assistant" && !column) return false;
   const agent = column ? await columnChatAgentFor(projectId, column) : await assistantAgentFor(projectId);
   if (agent.kind !== "cli") return false;
-  const { messages: all } = await repository().assistantMessages(projectId);
+  const all = threadOrder((await repository().assistantMessages(projectId)).messages);
   const past = await history(all.filter((m) => m.id !== messageId));
   const system = column
     ? await guestPrompt(projectId, column, speaker, agent.agent.brief)

@@ -5,9 +5,11 @@ import { repository } from "@/lib/db";
 import { postPmMessage } from "./pm-messages";
 
 /**
- * Tells the person in the board chat what a finished ticket's agents
+ * Tells the person in the board chat what a merged ticket's agents
  * proposed: each nice-to-have as an Add ticket / Dismiss proposal, and the
  * needed tickets already added as links. Only what was not reported before.
+ * Called on merge only: a ticket is done when its change is on the base
+ * branch, not when the Reviewer approves it.
  */
 export async function proposeFollowUps(projectId: string, ticketId: string): Promise<void> {
   const repo = repository();
@@ -21,7 +23,7 @@ export async function proposeFollowUps(projectId: string, ticketId: string): Pro
   const points = (f: FollowUp) => (f.points ? ` (${f.points} pt)` : "");
   const lines = [`${ticket.key} · ${ticket.title} is done.`];
   if (needed.length > 0) {
-    lines.push("", "It needed more work, so I added to To Do:");
+    lines.push("", "Added to To Do, still needed:");
     for (const f of needed) {
       const key = f.outcome?.kind === "added" ? f.outcome.key : "";
       lines.push(`- ${key}: ${f.title}`);

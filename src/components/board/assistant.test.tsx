@@ -99,15 +99,114 @@ describe("AskBox", () => {
     expect(screen.queryByText("PM", { selector: "p" })).toBeNull();
   });
 
-  it("swaps Send for Stop while pending, and stops on click", async () => {
+  it("keeps Send while an answer is pending, and stops only from the pending reply's own Stop", async () => {
     const stop = vi.fn();
-    render(<AskBox a={{ ...controls, pending: true, stop }} repoName="demo" />);
-    expect(screen.queryByLabelText("Send")).toBeNull();
-    const box = screen.getByLabelText("Ask the PM");
-    expect(box).not.toBeDisabled();
-    await userEvent.setup().click(screen.getByLabelText("Stop"));
-    expect(stop).toHaveBeenCalled();
-    expect(box).toHaveFocus();
+    const ask = vi.fn();
+    render(
+      <AskBox
+        a={{
+          ...controls,
+          pending: true,
+          stop,
+          ask,
+          messages: [
+            { id: "q", role: "user", content: "Give me the answer first", status: "done", proposals: [] },
+            { id: "r", role: "assistant", content: "", status: "pending", proposals: [] },
+          ],
+        }}
+        repoName="demo"
+      />,
+    );
+    const user = userEvent.setup();
+    // Sending twice in a row never lands on a Stop: the button stays Send.
+    await user.click(screen.getByLabelText("Send"));
+    expect(screen.getByLabelText("Send")).toBeInTheDocument();
+    expect(stop).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    expect(stop).toHaveBeenCalledWith("r");
+  });
+});
+
+describe("the chat stream", () => {
+  Element.prototype.scrollTo = vi.fn();
+  afterEach(() => vi.unstubAllGlobals());
+  const done = { status: "done" as const, proposals: [] };
+
+  it("shows a notice as a timeline line, not a PM bubble, with its detail behind More", () => {
+    render(
+      <AskBox
+        a={{
+          ...controls,
+          messages: [
+            {
+              ...done,
+              id: "n",
+              role: "assistant",
+              kind: "notice",
+              content: "T-9 · Export is done.\n\nNice to have, if you want them:\n- Polish",
+              cards: [{ id: "c9", key: "T-9", title: "Export" }],
+            },
+            { ...done, id: "p", role: "assistant", kind: "pm", content: "A real answer" },
+          ],
+        }}
+        repoName="demo"
+      />,
+    );
+    const note = screen.getByRole("note");
+    expect(note).toHaveAttribute("data-kind", "notice");
+    expect(note.textContent).toContain("T-9 · Export is done.");
+    expect(screen.getByText("More")).toBeInTheDocument();
+    expect(note.querySelector("[data-testid=pm-cards]")).not.toBeNull();
+    expect(screen.getByText("A real answer").closest("[data-kind]")).toHaveAttribute("data-kind", "pm");
+  });
+
+  it("keeps a reply directly under the question, with a notice that landed between them moved above", () => {
+    const at = (s: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, s)).toISOString();
+    const { container } = render(
+      <AskBox
+        a={{
+          ...controls,
+          messages: [
+            { ...done, id: "q", role: "user", content: "Question", createdAt: at(0) },
+            { ...done, id: "n", role: "assistant", kind: "notice", content: "EPIC-122-T3 added", createdAt: at(1) },
+            { ...done, id: "r", role: "assistant", content: "Answer", createdAt: at(2) },
+          ],
+        }}
+        repoName="demo"
+      />,
+    );
+    const order = [...container.querySelectorAll(".pm-thread [data-kind]")].map((el) => el.getAttribute("data-kind"));
+    expect(order).toEqual(["notice", "person", "pm"]);
+  });
+
+  it("copies each message's raw Markdown: the person's, the PM's, a guest's and a notice", async () => {
+    const writeText = vi.fn(async () => undefined);
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    render(
+      <AskBox
+        a={{
+          ...controls,
+          messages: [
+            { ...done, id: "q", role: "user", content: "my **ask**" },
+            { ...done, id: "r", role: "assistant", content: "the **answer**\n- one" },
+            { ...done, id: "g", role: "assistant", speaker: "reviewer", content: "from `review`" },
+            { ...done, id: "n", role: "assistant", kind: "notice", content: "Opened pull request #726" },
+          ],
+        }}
+        repoName="demo"
+      />,
+    );
+    const buttons = screen.getAllByRole("button", { name: "Copy message" });
+    expect(buttons).toHaveLength(4);
+    for (const b of buttons) await user.click(b);
+    expect(writeText.mock.calls.map((c) => (c as unknown[])[0])).toEqual([
+      "my **ask**",
+      "the **answer**\n- one",
+      "from `review`",
+      "Opened pull request #726",
+    ]);
+    expect(screen.getAllByRole("button", { name: "Copied" })).toHaveLength(4);
   });
 });
 

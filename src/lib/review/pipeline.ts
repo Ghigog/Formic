@@ -553,6 +553,7 @@ export async function markMergedExternally(
     stage: STAGE_MERGE,
     blockedReason: null,
   });
+  await proposeFollowUps(projectId, ticket.id).catch(() => undefined);
 
   // Merged by a person: whatever was stacked on it moves onto the target
   // just as it would after a merge from the queue.
@@ -1955,8 +1956,7 @@ export async function approve(
     text: `Approved: ${verdict.detail.trim() || verdict.summary}`.slice(0, 4_000),
   });
 
-  // Finished as far as the review goes, merged yet or not.
-  await proposeFollowUps(projectId, ticket.id).catch(() => undefined);
+  // Follow-ups and "is done" wait for the merge: approved is not done.
 
   // Re-read: a push could have landed while it reviewed, and a result could
   // have changed. The lane decides again from what is true now.

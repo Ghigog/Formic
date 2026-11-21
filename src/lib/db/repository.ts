@@ -16,6 +16,7 @@ import type {
   BugSeverity,
 } from "@/lib/domain/entities";
 import type { FollowUp } from "@/lib/agents/follow-ups";
+import type { MessageKind } from "@/lib/domain/chat";
 import type { ColumnId, TicketStatus } from "@/lib/domain/status";
 import type { ProviderId } from "@/lib/llm/providers";
 
@@ -166,6 +167,8 @@ export interface AssistantMessage {
   runnerAgent: string | null;
   /** Who a reply comes from: "assistant", a column role or "sentinel:<id>" (a GuestId). */
   speaker: string;
+  /** Who wrote it: the person, the PM, a guest, or Formic itself (a notice). */
+  kind: MessageKind;
   /** The playtest a note was written in, or a reply to one. Null otherwise. */
   playtestId?: string | null;
   createdAt: Date;
@@ -1281,6 +1284,8 @@ export interface ConversationRepository {
     content: string;
     status?: AssistantMessage["status"];
     speaker?: string;
+    /** Implied by role and speaker when left out; a notice must say so. */
+    kind?: MessageKind;
     cards?: AssistantMessage["cards"];
     proposals?: AssistantProposal[];
     playtestId?: string | null;

@@ -92,6 +92,7 @@ import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
 import { provider as providerInfo } from "@/lib/llm/providers";
 import { normalizeScope } from "@/lib/domain/scope";
 import { HEAT_WINDOW_MS, mergeScore } from "@/lib/colony/game";
+import { kindOf, type MessageKind } from "@/lib/domain/chat";
 
 type EpicRow = {
   id: string;
@@ -2402,6 +2403,7 @@ export class PrismaRepository implements Repository {
     content: string;
     status?: AssistantMessage["status"];
     speaker?: string;
+    kind?: MessageKind;
     cards?: AssistantMessage["cards"];
     proposals?: AssistantProposal[];
     playtestId?: string | null;
@@ -2409,6 +2411,7 @@ export class PrismaRepository implements Repository {
     const row = await prisma().assistantMessage.create({
       data: {
         ...input,
+        kind: input.kind ?? kindOf(input),
         cards: input.cards?.length ? input.cards : undefined,
         proposals: input.proposals?.length ? (input.proposals as unknown as Prisma.InputJsonValue) : undefined,
         status: input.status ?? "done",
@@ -2820,14 +2823,17 @@ function toAssistantMessage(row: {
   runnerJob: string | null;
   runnerAgent: string | null;
   speaker: string;
+  kind?: string | null;
   playtestId?: string | null;
   createdAt: Date;
 }, attachments: AttachmentSummary[] = []): AssistantMessage {
+  const role = row.role === "user" ? "user" : "assistant";
   return {
     ...row,
+    kind: kindOf({ role, speaker: row.speaker, kind: row.kind }),
     attachments,
     playtestId: row.playtestId ?? null,
-    role: row.role === "user" ? "user" : "assistant",
+    role,
     status: row.status === "pending" || row.status === "failed" ? row.status : "done",
     proposals: Array.isArray(row.proposals) ? (row.proposals as AssistantProposal[]) : [],
     cards: Array.isArray(row.cards) ? (row.cards as AssistantMessage["cards"]) : [],

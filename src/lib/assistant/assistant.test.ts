@@ -274,10 +274,21 @@ describe("the chat's queue", () => {
     await answer(PROJECT, first!.id);
     expect(launched.map((l) => l.label)).toEqual([`assistant answer ${second!.id}`]);
 
-    await cancelPending(PROJECT);
+    await cancelPending(PROJECT, second!.id);
     expect(await reload(second!.id)).toMatchObject({ status: "failed", content: "Stopped." });
     expect(launched.map((l) => l.label)).toEqual([`assistant answer ${second!.id}`, `assistant answer ${third!.id}`]);
   });
+
+  it("stops a queued reply without starting the running one again", async () => {
+    await useAgent("groq");
+    const [first, second] = await askSpeakers("hi", ["assistant", "assistant"]);
+
+    await cancelPending(PROJECT, second!.id);
+    expect(await reload(second!.id)).toMatchObject({ status: "failed", content: "Stopped." });
+    expect(await reload(first!.id)).toMatchObject({ status: "pending" });
+    expect(launched).toEqual([]);
+  });
+
 
   it("shows each reply only the conversation up to its own message", async () => {
     await useAgent("groq");
@@ -441,6 +452,42 @@ describe("a turn's edges", () => {
 
     const history = (sent[0]!.messages as Array<{ role: string; content: string }>).map((m) => m.content);
     expect(history).toContain("Here is a plan.\n[Proposed: Add the export Epic. The person dismissed it.]");
+  });
+
+  it("gives the model Formic's notices as board events, never as its own words", async () => {
+    await useAgent("groq");
+    const repo = repository();
+    await repo.addAssistantMessage({ projectId: PROJECT, role: "user", content: "How is T-1?" });
+    await repo.addAssistantMessage({ projectId: PROJECT, role: "assistant", content: "Still in review." });
+    await repo.addAssistantMessage({ projectId: PROJECT, role: "assistant", kind: "notice", content: "Opened pull request #726" });
+    const sent = fakeProvider([{ role: "assistant", content: "Noted." }]);
+    const pending = await ask("And now?");
+
+    await answer(PROJECT, pending.id);
+
+    const said = sent[0]!.messages as Array<{ role: string; content: string }>;
+    const withNotice = said.filter((m) => m.content.includes("Opened pull request #726"));
+    expect(withNotice).toHaveLength(1);
+    expect(withNotice[0]).toMatchObject({ role: "user" });
+    expect(withNotice[0]!.content).toContain("[Board: Opened pull request #726]");
+    // Joined with the person's next message: no provider sees two user turns in a row for it.
+    expect(withNotice[0]!.content).toContain("And now?");
+    expect(said.filter((m) => m.role === "assistant").map((m) => m.content)).toEqual(["Still in review."]);
+  });
+
+  it("shows a reply the conversation with notices moved above the question they landed after", async () => {
+    await useAgent("groq");
+    const repo = repository();
+    await repo.addAssistantMessage({ projectId: PROJECT, role: "user", content: "Give me the answer first." });
+    await repo.addAssistantMessage({ projectId: PROJECT, role: "assistant", kind: "notice", content: "EPIC-122-T3 added" });
+    const pending = await repo.addAssistantMessage({ projectId: PROJECT, role: "assistant", content: "", status: "pending" });
+    const sent = fakeProvider([{ role: "assistant", content: "Here it is." }]);
+
+    await answer(PROJECT, pending.id);
+
+    const said = sent[0]!.messages as Array<{ role: string; content: string }>;
+    // The person's question is the last thing it reads, not the notice.
+    expect(said.at(-1)!.content).toMatch(/\[Board: EPIC-122-T3 added\]\n\nGive me the answer first\.$/);
   });
 
   it("turns a provider failure into a failed message the person can read", async () => {
@@ -627,6 +674,21 @@ describe("the assistant on a CLI plan", () => {
 
     expect(await reload(reply!.id)).toMatchObject({ speaker: "architect", status: "done", content: "Here is the epic." });
     expect((await reload(reply!.id)).proposals.map((p) => p.summary)).toEqual(["Add the export tickets"]);
+  });
+
+  it("labels a notice in a CLI agent's prompt as the board's, not the person's or its own", async () => {
+    await useAgent("claude-code");
+    const base = (await projectFor(PROJECT)).baseBranch;
+    const client = new MockVcsClient("acme/widgets");
+    await client.commitFile(base, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "install");
+    await repository().addAssistantMessage({ projectId: PROJECT, role: "assistant", kind: "notice", content: "T-9 · Export is done." });
+    const pending = await ask("What next?");
+
+    await answer(PROJECT, pending.id);
+
+    const prompt = MockVcsClient.runner().dispatches.at(-1)!.inputs.prompt!;
+    expect(prompt).toContain("### Board (Formic, not the person and not you)\n[Board: T-9 · Export is done.]");
+    expect(prompt).not.toContain("### You\nT-9 · Export is done.");
   });
 
   it("answers from GitHub Actions and keeps only valid proposals", async () => {

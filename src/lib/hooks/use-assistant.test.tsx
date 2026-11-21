@@ -15,18 +15,21 @@ const message = (status: "pending" | "failed") => ({
 describe("useAssistant stop", () => {
   it("cancels the pending answer after the POST has returned", async () => {
     const calls: string[] = [];
+    const bodies: unknown[] = [];
     vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
       const method = init?.method ?? "GET";
       calls.push(method);
+      if (method === "PATCH") bodies.push(JSON.parse(String(init?.body)));
       const status = method === "POST" ? "pending" : method === "PATCH" ? "failed" : null;
       return Response.json({ presetId: null, messages: status ? [message(status)] : [] });
     });
     const { result } = renderHook(() => useAssistant(true));
     await act(() => result.current.ask("hi"));
     expect(result.current.pending).toBe(true);
-    act(() => result.current.stop());
+    act(() => result.current.stop("m"));
     await waitFor(() => expect(result.current.pending).toBe(false));
     expect(calls).toContain("PATCH");
+    expect(bodies).toEqual([{ messageId: "m" }]);
   });
 });
 
