@@ -2045,6 +2045,29 @@ function contract(name: string, make: () => Repository) {
         expect((await repo.accessTokenByHash(token.tokenHash))?.userId).toBe(gh.id);
       });
 
+      it("keeps a PM token's board and session, and revokes a board's tokens by session", async () => {
+        const id = githubId();
+        const user = await repo.upsertUser({ githubId: id, login: `pm-${id}`, name: null, avatarUrl: null });
+        const board = await repo.ensureProject({ ownerId: user.id, repoFullName: null, name: "PM", baseBranch: "main" });
+        const make = (sessionId: string | null) =>
+          repo.createAccessToken({
+            userId: user.id, name: "pm", tokenHash: randomUUID(), lastFour: "abcd", readOnly: false, expiresAt: null,
+            projectId: sessionId ? board.id : null, sessionId,
+          });
+        const a = await make("s1");
+        const b = await make("s2");
+        const own = await make(null);
+        expect(await repo.accessTokenByHash(a.tokenHash)).toMatchObject({ projectId: board.id, sessionId: "s1" });
+        expect(await repo.accessTokenByHash(own.tokenHash)).toMatchObject({ projectId: null, sessionId: null });
+
+        expect(await repo.revokeBoardTokens(board.id, "s1")).toBe(1);
+        expect((await repo.accessTokenByHash(a.tokenHash))?.revokedAt).toBeInstanceOf(Date);
+        expect((await repo.accessTokenByHash(b.tokenHash))?.revokedAt).toBeNull();
+        expect(await repo.revokeBoardTokens(board.id)).toBe(1);
+        expect((await repo.accessTokenByHash(b.tokenHash))?.revokedAt).toBeInstanceOf(Date);
+        expect((await repo.accessTokenByHash(own.tokenHash))?.revokedAt).toBeNull();
+      });
+
       it("spends a sign-in link once, even when two spends race", async () => {
         const tokenHash = randomUUID();
         const address = email();

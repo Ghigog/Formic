@@ -651,6 +651,14 @@ export class PrismaRepository implements Repository {
     await prisma().accessToken.updateMany({ where: { id }, data: { lastUsedAt: at } });
   }
 
+  async revokeBoardTokens(projectId: string, sessionId?: string): Promise<number> {
+    const { count } = await prisma().accessToken.updateMany({
+      where: { projectId, revokedAt: null, ...(sessionId !== undefined ? { sessionId } : {}) },
+      data: { revokedAt: new Date() },
+    });
+    return count;
+  }
+
   async savePushSubscription(userId: string, subscription: PushSubscriptionRecord): Promise<void> {
     const { endpoint, p256dh, auth } = subscription;
     await prisma().pushSubscription.upsert({

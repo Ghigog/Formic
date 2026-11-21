@@ -6,9 +6,10 @@ const repo = new MemoryRepository();
 vi.mock("@/lib/db", () => ({ repository: () => repo }));
 
 const { POST } = await import("./route");
-const { createToken, revokeToken } = await import("@/lib/access-tokens");
+const { createPmToken, createToken, revokePmTokens, revokeToken } = await import("@/lib/access-tokens");
+const { PM_TOOLS } = await import("@/lib/mcp/server");
 
-const call = (method: string, token?: string) =>
+const call = (method: string, token?: string, params?: Record<string, unknown>) =>
   POST(
     new Request("http://localhost/api/mcp", {
       method: "POST",
@@ -17,7 +18,7 @@ const call = (method: string, token?: string) =>
         accept: "application/json, text/event-stream",
         ...(token ? { authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: method === "initialize" ? { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "t", version: "1" } } : {} }),
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: params ?? (method === "initialize" ? { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "t", version: "1" } } : {}) }),
     }),
   );
 
@@ -54,5 +55,27 @@ describe("/api/mcp", () => {
       "move_card",
       "update_card",
     ]);
+  });
+
+  it("gives a PM token only the PM's tools, on its own board only, until its session ends", async () => {
+    const user = await repo.upsertUser({ githubId: 3, login: "c", name: null, avatarUrl: null });
+    const own = await repo.ensureProject({ ownerId: user.id, repoFullName: null, name: "own", baseBranch: "main" });
+    const other = await repo.ensureProject({ ownerId: user.id, repoFullName: null, name: "other", baseBranch: "main" });
+    const { secret } = await createPmToken(user.id, { projectId: own.id, sessionId: "s1" });
+
+    const listed = await (await call("tools/list", secret)).json();
+    expect(listed.result.tools.map((t: { name: string }) => t.name).sort()).toEqual([...PM_TOOLS].sort());
+
+    const boards = await (await call("tools/call", secret, { name: "list_boards", arguments: {} })).json();
+    expect(JSON.parse(boards.result.content[0].text)).toEqual([expect.objectContaining({ id: own.id })]);
+
+    const elsewhere = await (await call("tools/call", secret, { name: "list_cards", arguments: { board: other.id } })).json();
+    expect(elsewhere.result.isError).toBe(true);
+    expect(elsewhere.result.content[0].text).toBe("This token works only on its own board.");
+    const here = await (await call("tools/call", secret, { name: "list_cards", arguments: { board: own.id } })).json();
+    expect(here.result.isError).toBeFalsy();
+
+    await revokePmTokens(own.id, "s1");
+    expect((await call("tools/list", secret)).status).toBe(401);
   });
 });

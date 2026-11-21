@@ -242,6 +242,7 @@ model Project {
   audits            Audit[]
   rubricFixes       RubricFix[]
   playtests         PlaytestSession[]
+  accessTokens      AccessToken[]
 
   @@index([ownerId])
   @@map("project")
@@ -999,12 +1000,19 @@ model AccessToken {
   tokenHash  String    @unique
   lastFour   String
   readOnly   Boolean   @default(true)
+  /// Set on a PM token: it works on this one board only, with the PM's
+  /// tools, for one session. Null on a person's own token.
+  projectId  String?
+  project    Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// The PM session a board token was made for; revoked when it ends.
+  sessionId  String?
   expiresAt  DateTime?
   revokedAt  DateTime?
   createdAt  DateTime  @default(now())
   lastUsedAt DateTime?
 
   @@index([userId])
+  @@index([projectId, sessionId])
   @@map("access_token")
 }
 

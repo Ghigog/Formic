@@ -614,13 +614,18 @@ export interface AccessTokenRecord {
   tokenHash: string;
   lastFour: string;
   readOnly: boolean;
+  /** A PM token's one board; null on a person's own token. */
+  projectId: string | null;
+  /** The PM session a board token was made for. */
+  sessionId: string | null;
   expiresAt: Date | null;
   revokedAt: Date | null;
   createdAt: Date;
   lastUsedAt: Date | null;
 }
 
-export type NewAccessToken = Pick<AccessTokenRecord, "userId" | "name" | "tokenHash" | "lastFour" | "readOnly" | "expiresAt">;
+export type NewAccessToken = Pick<AccessTokenRecord, "userId" | "name" | "tokenHash" | "lastFour" | "readOnly" | "expiresAt"> &
+  Partial<Pick<AccessTokenRecord, "projectId" | "sessionId">>;
 
 /** Which push messages a person wants. */
 export interface PushPreferences {
@@ -857,6 +862,8 @@ export interface TokenRepository {
   /** Revokes a token only when it belongs to `userId`; false when nothing changed. */
   revokeAccessToken(userId: string, id: string): Promise<boolean>;
   touchAccessToken(id: string, at: Date): Promise<void>;
+  /** Revokes a board's PM tokens, only one session's when given; how many were live. */
+  revokeBoardTokens(projectId: string, sessionId?: string): Promise<number>;
 }
 
 /** Push subscriptions and preferences. */
