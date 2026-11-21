@@ -716,6 +716,9 @@ export class MemoryRepository implements Repository {
       s.queensSpent.delete(projectId);
       s.goldenBellsUsed.delete(projectId);
       s.goldenBellsArmed.delete(projectId);
+      for (const [id, token] of s.accessTokens) {
+        if (token.projectId === projectId) s.accessTokens.delete(id);
+      }
       s.projects.delete(projectId);
     }
     for (const preset of [...s.presets.values()]) {
@@ -772,7 +775,15 @@ export class MemoryRepository implements Repository {
   }
 
   async createAccessToken(token: NewAccessToken): Promise<AccessTokenRecord> {
-    const record: AccessTokenRecord = { ...token, id: randomUUID(), revokedAt: null, createdAt: new Date(), lastUsedAt: null };
+    const record: AccessTokenRecord = {
+      ...token,
+      projectId: token.projectId ?? null,
+      sessionId: token.sessionId ?? null,
+      id: randomUUID(),
+      revokedAt: null,
+      createdAt: new Date(),
+      lastUsedAt: null,
+    };
     store().accessTokens.set(record.id, record);
     return { ...record };
   }
@@ -799,6 +810,17 @@ export class MemoryRepository implements Repository {
   async touchAccessToken(id: string, at: Date): Promise<void> {
     const found = store().accessTokens.get(id);
     if (found) found.lastUsedAt = at;
+  }
+
+  async revokeBoardTokens(projectId: string, sessionId?: string): Promise<number> {
+    const now = new Date();
+    let count = 0;
+    for (const t of store().accessTokens.values()) {
+      if (t.projectId !== projectId || t.revokedAt || (sessionId !== undefined && t.sessionId !== sessionId)) continue;
+      t.revokedAt = now;
+      count++;
+    }
+    return count;
   }
 
   async savePushSubscription(userId: string, subscription: PushSubscriptionRecord): Promise<void> {

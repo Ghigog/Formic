@@ -204,12 +204,24 @@ How it landed (PR 1):
 Files: `src/lib/access-tokens*`, `src/app/api/mcp/`, `src/lib/mcp/*`,
 `src/lib/assistant/actions.ts` (shared action checks), `prisma/`.
 
-- [ ] Token kind scoped to one board and one session, short-lived, revocable, tools-limited.
-- [ ] `mcpServerFor` enforces the board scope.
-- [ ] MCP tools the PM needs: `card_status`, `rerun_checks`, `update_branch_from_base`, `open_pull_request`, `answer_card_question`, `add_dependency` (reusing the existing action code).
-- [ ] Approval gate inside the tools: close / archive / delete / merge / optional cards return a proposal posted to the chat.
-- [ ] Branch rules: no base branch, no `.github/workflows/`, only the board's repo.
-- [ ] Tests, including a fooled-model test (the tool refuses whatever it is told).
+- [x] Token kind scoped to one board and one session, short-lived, revocable, tools-limited.
+- [x] `mcpServerFor` enforces the board scope.
+- [x] MCP tools the PM needs: `card_status`, `rerun_checks`, `update_branch_from_base`, `open_pull_request`, `answer_card_question`, `add_dependency` (reusing the existing action code).
+- [x] Approval gate inside the tools: close / archive / delete / merge / optional cards return a proposal posted to the chat.
+- [x] Branch rules: no base branch, no `.github/workflows/`, only the board's repo.
+- [x] Tests, including a fooled-model test (the tool refuses whatever it is told).
+
+Landed as: `createPmToken` / `revokePmTokens` in `src/lib/access-tokens` (4 h
+default, 12 h cap, `projectId` + `sessionId` on `access_token`, cascade with
+the board, hidden from Settings); `PM_TOOLS` and the gated tools in
+`src/lib/mcp/server.ts` and `src/lib/mcp/pm-tools.ts`; branch rules and the
+PM's direct actions in `src/lib/assistant/actions.ts`, plus a
+`merge_pull_request` proposal type. A move to Done is a merge, so it is
+gated too. Optional cards are caught server-side when a create repeats a
+"nice" follow-up an agent left; a nice-to-have the PM invents and files
+through `create_backlog_card` cannot be told apart from a request, so the
+PM's prompt (PR 3) must send those through `propose_card`. PR 3 calls
+`createPmToken` when a session starts and `revokePmTokens` when it ends.
 
 ### PR 3: The PM session
 

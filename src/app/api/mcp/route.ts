@@ -8,14 +8,14 @@ export const dynamic = "force-dynamic";
 const unauthorized = () =>
   Response.json({ error: "Send a valid access token as a Bearer token." }, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
 
-/** MCP over Streamable HTTP, stateless: a fresh server for each request, as the token's owner. */
+/** MCP over Streamable HTTP, stateless: a fresh server for each request, as the token's owner, held to a PM token's board. */
 async function handle(req: Request): Promise<Response> {
   const secret = /^Bearer\s+(.+)$/i.exec(req.headers.get("authorization") ?? "")?.[1]?.trim();
   const verified = secret ? await verifyToken(secret) : null;
   if (!verified) return unauthorized();
 
   return withActor(verified.user.id, async () => {
-    const server = mcpServerFor(verified.user, verified.readOnly);
+    const server = mcpServerFor(verified.user, verified.readOnly, verified.scope);
     const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     await server.connect(transport);
     return transport.handleRequest(req);
