@@ -114,6 +114,9 @@ async function seedRedTicket() {
 }
 
 beforeEach(() => {
+  // The first repository() call in a file seeds the demo board; take that
+  // seeding now so every test, in any order, starts on an empty board.
+  repository();
   (globalThis as { __formicMemoryStore?: unknown }).__formicMemoryStore = undefined;
   MockVcsClient.reset();
   resetAgents();
