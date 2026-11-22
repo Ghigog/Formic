@@ -64,6 +64,15 @@ describe("recordFollowUps triage", () => {
     expect(card.dependsOn).toEqual([ticket.id]);
   });
 
+  it("leaves a needed follow-up waiting in To Do while its source is in review", async () => {
+    const { ticket } = await seed();
+    await repository().updateTicket(ticket.id, { status: "review" });
+    await recordFollowUps(ticket.id, [needed]);
+    const rec = (await repository().ticketDetail(ticket.id))!.followUps.find((f) => f.title === needed.title)!;
+    const cardId = rec.outcome?.kind === "added" ? rec.outcome.cardId : "";
+    expect((await repository().ticketDetail(cardId))!.status).toBe("waiting");
+  });
+
   it("creates no ticket for a nice one and stores it as pending", async () => {
     const { epic, ticket } = await seed();
     expect((await repository().ticketsForEpic(epic.id)).length).toBe(1);
@@ -109,6 +118,24 @@ describe("answerFollowUp", () => {
     expect(added.description).toContain("About 540 branches are uncovered.");
     expect(added.description).toContain(`Found while working on ${ticket.key}.`);
     expect((await repo.ticketDetail(ticket.id))!.followUps.map((f) => f.title)).toEqual(["Fix order-dependent tests"]);
+  });
+
+  it("makes the added ticket depend on a source that is in review", async () => {
+    const { epic, ticket } = await seed();
+    await repository().updateTicket(ticket.id, { status: "review" });
+    await answerFollowUp(PROJECT, ticket.id, 0, true);
+    const added = (await repository().boardCards(PROJECT)).find((c) => c.key === `${epic.key}-T2`)!;
+    expect(added.dependsOn).toEqual([ticket.id]);
+    expect(added.status).toBe("waiting");
+  });
+
+  it("adds no dependency on a source that has merged", async () => {
+    const { epic, ticket } = await seed();
+    await repository().updateTicket(ticket.id, { status: "merged" });
+    await answerFollowUp(PROJECT, ticket.id, 0, true);
+    const added = (await repository().boardCards(PROJECT)).find((c) => c.key === `${epic.key}-T2`)!;
+    expect(added.dependsOn ?? []).toEqual([]);
+    expect(added.status).toBe("ready");
   });
 
   it("dismisses one without adding a ticket", async () => {
@@ -160,9 +187,10 @@ describe("addFollowUpTicket", () => {
     const card = await addFollowUpTicket(PROJECT, detail, followUp);
 
     expect(card.key).toBe("T-2");
+    expect((await repo.boardCards(PROJECT)).find((c) => c.id === card.id)!.dependsOn).toEqual([source!.id]);
     expect(card.epicId).not.toBe(holder.id);
     const added = (await repo.ticketDetail(card.id))!;
-    expect(added).toMatchObject({ status: "ready", workType: "tech_debt", fileScope: ["src/a.ts"], storyPoints: 3 });
+    expect(added).toMatchObject({ status: "waiting", workType: "tech_debt", fileScope: ["src/a.ts"], storyPoints: 3 });
     expect((await repo.cardById(card.epicId!))?.standalone).toBe(true);
     const todo = await repo.columnPositions(PROJECT, "todo");
     expect(card.position).toBeGreaterThanOrEqual(Math.max(...todo));
