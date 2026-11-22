@@ -23,6 +23,11 @@ describe("resolveMentions", () => {
     expect(r).toEqual({ keys: ["EPIC-122-T1"], ambiguous: [] });
   });
 
+  it("reads a written T-1 as that card, not as a bare suffix", () => {
+    const r = resolveMentions("Is T-1 stalled?", cards("EPIC-122-T1", "T-1"));
+    expect(r).toEqual({ keys: ["T-1"], ambiguous: [] });
+  });
+
   it("names nothing when no card is mentioned", () => {
     expect(resolveMentions("Is it stalled?", cards("EPIC-122-T1", "T-1"))).toEqual({ keys: [], ambiguous: [] });
   });

@@ -106,7 +106,7 @@ export interface Mentions {
   ambiguous: Array<{ text: string; candidates: string[] }>;
 }
 
-const BARE_TICKET = /(?<![A-Za-z0-9-])T[\s-]?(\d+)(?![A-Za-z0-9])/gi;
+const BARE_TICKET = /(?<![A-Za-z0-9-])T\s?(\d+)(?![A-Za-z0-9])/gi;
 
 /**
  * mentionedKeys, plus the words that fit several cards: "T1" is T-1 and
