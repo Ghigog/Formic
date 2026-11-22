@@ -530,3 +530,38 @@ describe("a question in finish", () => {
     expect(reason).toContain("Should a tap ring the bell, or only a swing?");
   });
 });
+
+describe("blocked_by_fix in finish", () => {
+  const blocked = {
+    cause: "The nudge is set a moment after the open-item count.",
+    check: "OverlayServiceTest.handleCountsIncomingDeadlinesWithTheOverlayClosed",
+    bug: { title: "Wait for the nudge", story: "The test races the nudge.", scope: ["OverlayServiceTest.kt"] },
+  };
+  const review = (turns: Call[][]) => {
+    scriptedTurns(turns);
+    return runCodingLoop({
+      ctx: { runId: "r", projectId: "p", emit: () => {}, signal: new AbortController().signal },
+      workspace: new MemoryWorkspace({}),
+      ticketId: "t",
+      role: "reviewer",
+      system: "sys",
+      prompt: "review it",
+      provider: "deepseek",
+      model: "deepseek-chat",
+      apiKey: "sk",
+    });
+  };
+  const withFix = (fix: Record<string, unknown>): Call => ({ name: "finish", args: { ...finish.args, blocked_by_fix: fix } });
+
+  it("rejects a verdict without the failing assertion as malformed", async () => {
+    // The first finish is rejected, so the loop asks for another turn; the script has none.
+    const out = await review([[withFix(blocked)]]);
+    expect(out).toMatchObject({ ok: false, error: expect.stringContaining("The loop began a turn it should not have.") });
+  });
+
+  it("keeps the failing assertion when it is given", async () => {
+    const assertion = "expect(handle.deadlineNudge).toBe(true) (OverlayServiceTest.kt:88)";
+    const out = await review([[withFix({ ...blocked, assertion })]]);
+    expect(out).toMatchObject({ ok: true, value: { blockedByFix: { assertion } } });
+  });
+});

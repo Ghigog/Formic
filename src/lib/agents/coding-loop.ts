@@ -272,6 +272,7 @@ const finishInput = z.object({
     .object({
       cause: z.string().trim().min(1),
       check: z.string().trim().min(1),
+      assertion: z.string().trim().min(1),
       bug: z.object({
         title: z.string().trim().min(1),
         story: z.string().trim().min(1),
@@ -562,6 +563,10 @@ const FINISH: Record<LoopInput["role"], Anthropic.Beta.BetaTool> = {
           properties: {
             cause: { type: "string", description: "Why the check fails and why the change is not the reason." },
             check: { type: "string", description: "The failing check, such as the test's name." },
+            assertion: {
+              type: "string",
+              description: "The failing assertion as the check's log shows it, with its file:line, such as `expect(handle.deadlineNudge).toBe(true)` (OverlayServiceTest.kt:88).",
+            },
             bug: {
               type: "object",
               description: "The bug ticket that fixes it.",
@@ -574,7 +579,7 @@ const FINISH: Record<LoopInput["role"], Anthropic.Beta.BetaTool> = {
               additionalProperties: false,
             },
           },
-          required: ["cause", "check", "bug"],
+          required: ["cause", "check", "assertion", "bug"],
           additionalProperties: false,
         },
         for_you: FOR_YOU,

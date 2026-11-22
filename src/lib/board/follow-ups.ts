@@ -153,7 +153,7 @@ export async function answerFollowUp(
 
 /** The reason a ticket shows while it waits on the fix it asked for. */
 export function waitingOnFixReason(fix: BlockedByFix, key: string): string {
-  return `Waiting on ${key}: ${fix.check} fails and this change does not touch it. ${fix.cause.trim()}`;
+  return `Waiting on ${key}: ${fix.check} fails and this change does not touch it. ${fix.cause.trim()}\nFailing assertion: ${fix.assertion.trim()}`;
 }
 
 /**
@@ -174,7 +174,7 @@ export async function requestFix(projectId: string, source: TicketDetail, fix: B
       epicId: source.epicId,
       key,
       title: fix.bug.title,
-      description: [fix.bug.story, `Blocks ${source.key}: ${fix.check} fails. ${fix.cause}`].join("\n\n"),
+      description: [fix.bug.story, `Failing assertion: ${fix.assertion.trim()}`, `Blocks ${source.key}: ${fix.check} fails. ${fix.cause}`].join("\n\n"),
       acceptanceCriteria: [],
       fileScope: fix.bug.scope,
       storyPoints: null,
