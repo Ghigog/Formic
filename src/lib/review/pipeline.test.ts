@@ -947,9 +947,13 @@ describe("red CI the ticket's change did not cause", () => {
     const reviewed = vi.fn(async () => ({ ok: true, value: { summary: "ok", detail: "", verifiedWith: null, sendBack: null }, usage: NO_USAGE }));
     setAgents({ reviewer: { review: reviewed } } as never);
     MockVcsClient.setChecks(prNumber, "success");
+    MockVcsClient.behindBase(prNumber);
+    const oldHead = (await vcs.pullRequest(prNumber)).headSha;
 
     await markMergedExternally(PROJECT, bugPull.number);
     await vi.waitFor(async () => expect((await repo.ticketDetail(ticketId))!.status).not.toBe("blocked"));
+    // Main was brought in, so the new head is the one reviewed.
+    expect((await vcs.pullRequest(prNumber)).headSha).not.toBe(oldHead);
   });
 });
 
@@ -1029,5 +1033,60 @@ describe("updating a blocked card from main", () => {
 
     expect(said).toContain("Reviewer Agent is resolving");
     await vi.waitFor(() => expect(asked).toHaveBeenCalled());
+  });
+});
+
+describe("a merge frees the blocked cards behind main", () => {
+  async function blocked(key: string, branch: string, blockedReason: string) {
+    const repo = repository();
+    const epic = await repo.createEpic({ projectId: PROJECT, title: key, rawRequest: "r", position: 1 });
+    const [ticket] = await repo.createTickets([
+      { epicId: epic.id, key, title: key, description: "d", acceptanceCriteria: ["c"], fileScope: ["src"], storyPoints: 3, position: 1, dependsOnKeys: [] },
+    ]);
+    const pull = await vcs.openPullRequest({ headBranch: branch, baseBranch: "main", title: key, body: "" });
+    await repo.updateTicket(ticket!.id, { status: "blocked", stalledIn: "in_review", stage: 6, prNumber: pull.number, branchName: branch, blockedReason });
+    return { id: ticket!.id, prNumber: pull.number, headSha: pull.headSha };
+  }
+
+  afterEach(() => resetAgents());
+
+  it("updates a card that waited on a pull request no ticket owns, once it merges", async () => {
+    const card = await blocked("T-1", "t-1", "Waiting on #726, then updates from main");
+    MockVcsClient.behindBase(card.prNumber);
+    setAgents({ reviewer: { review: async () => ({ ok: true, value: { summary: "ok", detail: "", verifiedWith: null, sendBack: null }, usage: { model: "s", tokensIn: 0, tokensOut: 0, costCents: 0 } }) } } as never);
+
+    await markMergedExternally(PROJECT, 726);
+
+    await vi.waitFor(async () => expect((await repository().ticketDetail(card.id))!.status).toBe("review"));
+    expect((await vcs.pullRequest(card.prNumber)).headSha).not.toBe(card.headSha);
+  });
+
+  it("leaves a card waiting on another pull request alone", async () => {
+    const card = await blocked("T-1", "t-1", "Waiting on #727, then updates from main");
+    MockVcsClient.behindBase(card.prNumber);
+
+    await markMergedExternally(PROJECT, 726);
+
+    expect((await repository().ticketDetail(card.id))!.status).toBe("blocked");
+  });
+
+  it("proposes updating a blocked card that is behind main, once, when a ticket merges", async () => {
+    const stuck = await blocked("T-1", "t-1", "CI is red.");
+    const waiting = await blocked("T-3", "t-3", "Waiting on #900, then updates from main");
+    const other = await blocked("T-2", "t-2", "Out of reviews");
+    await repository().updateTicket(other.id, { status: "review", stalledIn: null, blockedReason: null });
+    MockVcsClient.behindBase(stuck.prNumber);
+    MockVcsClient.behindBase(waiting.prNumber);
+    const merging = await blocked("T-4", "t-4", "x");
+    await repository().updateTicket(merging.id, { status: "review", stalledIn: null, blockedReason: null });
+
+    await markMergedExternally(PROJECT, merging.prNumber);
+    await markMergedExternally(PROJECT, merging.prNumber);
+    const merged2 = await blocked("T-5", "t-5", "x");
+    await repository().updateTicket(merged2.id, { status: "review", stalledIn: null, blockedReason: null });
+    await markMergedExternally(PROJECT, merged2.prNumber);
+
+    const proposals = (await repository().assistantMessages(PROJECT)).messages.flatMap((m) => m.proposals);
+    expect(proposals.map((p) => p.summary)).toEqual(["Update T-1 from main"]);
   });
 });

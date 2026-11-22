@@ -11,7 +11,7 @@ vi.mock("@/lib/agents/pipeline", async (importOriginal) => ({
 }));
 
 import { answer, cancelPending, PLAYTEST_RULE, finishCliAnswer, history, MAX_ANSWER_MS } from "./turn";
-import { applyAction, checkAction } from "./actions";
+import { applyAction, ASSISTANT_BRANCH_PREFIX, checkAction } from "./actions";
 import { savePreset } from "@/lib/agents/presets";
 import { resetAgents } from "@/lib/agents/registry";
 import { projectFor } from "@/lib/board/project";
@@ -939,6 +939,19 @@ describe("re-running CI on a red ticket", () => {
 
     expect(await applyAction(PROJECT, { type: "rerun_ci", key: ticket.key })).toContain("Re-running");
     expect(MockVcsClient.runner().reruns).toEqual([55]);
+  });
+
+  it("rewrites the reason of the card an opened pull request unblocks, keeping the reason's detail", async () => {
+    const { ticket, client } = await seedRed("CI is red on build.\nFailing assertion: x", "blocked");
+    const branch = `${ASSISTANT_BRANCH_PREFIX}fix`;
+    await client.commitFile(branch, "src/lib/fix.ts", "x", "c");
+
+    const said = await applyAction(PROJECT, { type: "open_pull_request", branch, title: "Fix", body: "b", unblocks: ticket.key });
+
+    const number = Number(/#(\d+)/.exec(said)![1]);
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).toBe("blocked");
+    expect(after.blockedReason!.split("\n")).toEqual([`Waiting on #${number}, then updates from main`, "CI is red on build.", "Failing assertion: x"]);
   });
 
   it("accepts update_branch and describes it to the PM", () => {

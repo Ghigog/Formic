@@ -13,9 +13,10 @@ import { credentialsForProject } from "@/lib/auth/credentials";
 import { env } from "@/lib/secrets/env";
 import type { TicketDetail } from "@/lib/db/repository";
 import { prdSchema } from "@/lib/domain/entities";
-import { REVIEW_CEILING } from "@/lib/domain/notice";
+import { REVIEW_CEILING, waitedOn } from "@/lib/domain/notice";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
+import { postPmMessage } from "@/lib/assistant/pm-messages";
 import { proposeFollowUps } from "@/lib/assistant/follow-up-messages";
 import { recordFollowUps, requestFix, waitingOnFixReason } from "@/lib/board/follow-ups";
 import { recordRubricFixes } from "@/lib/board/rubric-fixes";
@@ -536,7 +537,12 @@ export async function markMergedExternally(
 ): Promise<void> {
   const repo = repository();
   const ticket = await repo.ticketByPrNumber(projectId, prNumber);
-  if (!ticket || ticket.status === "merged") return;
+  if (!ticket) {
+    // A pull request no ticket owns (the PM's own fix): cards that waited on it can take main now.
+    await updateWaiters(projectId, prNumber);
+    return;
+  }
+  if (ticket.status === "merged") return;
 
   await repo.updateTicket(ticket.id, {
     status: "merged",
@@ -1216,11 +1222,23 @@ async function releaseDependents(
   for (const card of cards) if (card.id === merged.id) card.status = "merged";
   await releaseWaiting(projectId, cards);
   await reviewAgainAfterFix(projectId, merged, cards);
+  await proposeUpdates(projectId, merged, cards).catch((e: unknown) => console.error("[formic] proposing branch updates failed:", e));
+}
+
+/** Blocked cards whose reason waited on this pull request take main into their branch. */
+async function updateWaiters(projectId: string, prNumber: number): Promise<void> {
+  const repo = repository();
+  for (const card of await repo.boardCards(projectId)) {
+    if (card.kind !== "ticket" || card.status !== "blocked" || waitedOn(card.blockedReason)?.pull !== prNumber) continue;
+    const waiting = await repo.ticketDetail(card.id);
+    if (!waiting?.prNumber) continue;
+    launch(async () => void (await updateFromMain(projectId, waiting)), `update of ${card.key} after #${prNumber} merged`);
+  }
 }
 
 /**
  * The Reviewer blocked a ticket on a fix of its own (blockOnFix). That fix
- * has merged: review the ticket again on its current head.
+ * has merged: bring main into the ticket's branch, which reviews the new head.
  */
 async function reviewAgainAfterFix(projectId: string, merged: TicketDetail, cards: BoardCard[]): Promise<void> {
   for (const card of cards) {
@@ -1229,13 +1247,47 @@ async function reviewAgainAfterFix(projectId: string, merged: TicketDetail, card
     if (!waiting?.prNumber || waiting.stage < STAGE_PR) continue;
     // Still waiting on another unmerged ticket: that one's merge brings it back.
     if (card.dependsOn.some((id) => id !== merged.id && cards.find((c) => c.id === id)?.status !== "merged")) continue;
-    const prNumber = waiting.prNumber;
-    launch(async () => {
-      await repository().updateTicket(waiting.id, { status: "review", stalledIn: null, blockedReason: null, reviewedHead: null });
-      const project = await projectFor(projectId);
-      const pull = await vcs(project.repoFullName, (await credentialsForProject(project)).repoToken).pullRequest(prNumber);
-      await reviewPullRequest(projectId, prNumber, pull.headSha);
-    }, `review of ${card.key} after the fix it waited on merged`);
+    launch(async () => void (await updateFromMain(projectId, waiting)), `update of ${card.key} after the fix it waited on merged`);
+  }
+}
+
+/**
+ * Blocked tickets with an open pull request that is behind the base, and are
+ * not waiting on a fix that has yet to land, get one "Update KEY from main"
+ * proposal from the PM; none while an earlier one is still undecided.
+ */
+async function proposeUpdates(projectId: string, merged: TicketDetail, cards: BoardCard[]): Promise<void> {
+  const repo = repository();
+  const candidates = cards.filter((c) => {
+    if (c.kind !== "ticket" || c.status !== "blocked" || !c.prNumber || c.archived || c.id === merged.id) return false;
+    if (c.dependsOn.includes(merged.id)) return false; // reviewAgainAfterFix has it
+    const waits = waitedOn(c.blockedReason);
+    if (!waits) return true;
+    if (waits.pull !== null) return false;
+    return cards.find((o) => o.key === waits.key)?.status === "merged" && waits.key !== merged.key;
+  });
+  if (candidates.length === 0) return;
+  const project = await projectFor(projectId);
+  const client = vcs(project.repoFullName, (await credentialsForProject(project)).repoToken);
+  const asked = new Set(
+    (await repo.assistantMessages(projectId)).messages.flatMap((m) =>
+      m.proposals.flatMap((p) => {
+        const a = p.action as { type?: string; key?: string };
+        return p.state === "proposed" && a.type === "update_branch" && a.key ? [a.key] : [];
+      }),
+    ),
+  );
+  for (const card of candidates) {
+    if (asked.has(card.key)) continue;
+    const pull = await client.pullRequest(card.prNumber!).catch(() => null);
+    if (!pull || pull.merged || pull.state !== "open") continue;
+    const behind = await client.compare(pull.headSha, pull.baseBranch).catch(() => null);
+    if (!behind || behind.messages.length === 0) continue;
+    await postPmMessage(projectId, {
+      content: `${card.key} is blocked and its branch is behind ${pull.baseBranch}, which has changed since. Bringing ${pull.baseBranch} in may be what turns it green.`,
+      cards: [{ id: card.id, key: card.key, title: card.title }],
+      proposals: [{ summary: `Update ${card.key} from main`, action: { type: "update_branch", key: card.key }, state: "proposed" }],
+    });
   }
 }
 
