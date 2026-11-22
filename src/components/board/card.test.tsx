@@ -683,3 +683,37 @@ describe("an Epic that waits for another Epic", () => {
     expect(screen.queryByText(/Waits for/)).toBeNull();
   });
 });
+
+describe("shared-files flag on a card", () => {
+  function renderTodo(card: BoardCard, extras: CardExtras) {
+    const env = { epics: new Map(), nextFor: () => null, onAdvance: vi.fn() };
+    return renderInDnd(
+      <CardEnvContext.Provider value={env}>
+        <Column id="todo" cards={[card]} extras={{ [card.id]: extras }} view={EMPTY_VIEW} onViewChange={vi.fn()} onOpen={vi.fn()} />
+      </CardEnvContext.Provider>,
+    );
+  }
+  const clashes = [{ key: "EPIC-119-T3", paths: ["src/a"] }];
+
+  it("shows the clay alert mark and 'Shares files with' the sibling", () => {
+    renderTodo(makeCard({ status: "ready" }), { scopeClashes: clashes });
+    const line = screen.getByTestId("card-clash");
+    expect(line.textContent).toBe("?Shares files with EPIC-119-T3");
+    expect(line.className).toContain("text-clay");
+  });
+
+  it("shows nothing without a clash", () => {
+    renderTodo(makeCard({ status: "ready" }), {});
+    expect(screen.queryByTestId("card-clash")).toBeNull();
+  });
+
+  it("keeps a stalled notice before the flag", () => {
+    renderTodo(
+      makeCard({ status: "failed", stalledIn: "todo", blockedReason: "Boom\nlog" }),
+      { scopeClashes: clashes },
+    );
+    const notice = screen.getByTestId("card-notice");
+    const clash = screen.getByTestId("card-clash");
+    expect(notice.compareDocumentPosition(clash) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});

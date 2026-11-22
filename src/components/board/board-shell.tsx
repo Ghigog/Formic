@@ -388,6 +388,7 @@ export function BoardShell({
 
       <TicketDrawer
         ticketId={openTicketId}
+        cards={cards}
         onClose={() => setOpenTicketId(null)}
         onOpenEpic={(epicId) => {
           setOpenTicketId(null);
