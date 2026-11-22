@@ -887,3 +887,61 @@ describe("pictures in the chat", () => {
     ]);
   });
 });
+
+describe("re-running CI on a red ticket", () => {
+  async function seedRed(blockedReason: string, status: "review" | "blocked" = "review") {
+    const repo = repository();
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "Coach", rawRequest: "r", position: 1 });
+    const [ticket] = await repo.createTickets([
+      { epicId: epic.id, key: "T-1", title: "Parallel tests", description: "d", acceptanceCriteria: ["c"], fileScope: ["src"], storyPoints: 3, position: 1, dependsOnKeys: [] },
+    ]);
+    const client = new MockVcsClient("acme/widgets");
+    const pull = await client.openPullRequest({ headBranch: "formic/t-1", baseBranch: "main", title: "T-1", body: "" });
+    MockVcsClient.setChecks(pull.number, "failure");
+    (await client.checksFor(pull.headSha))[0]!.detailsUrl = "https://github.com/acme/widgets/actions/runs/55/job/1";
+    MockVcsClient.runner().branchRuns.set(pull.headBranch, [
+      { name: "CI", sha: pull.headSha, status: "completed", conclusion: "failure", attempt: 1, startedAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", url: "https://github.com/acme/widgets/actions/runs/55" },
+    ]);
+    await repo.updateTicket(ticket!.id, {
+      status,
+      stalledIn: status === "blocked" ? "in_review" : null,
+      stage: 6,
+      prNumber: pull.number,
+      branchName: "formic/t-1",
+      blockedReason,
+    });
+    return { ticket: ticket!, client };
+  }
+
+  it("does not re-run a failure the code caused, and proposes updating from main", async () => {
+    const { ticket, client } = await seedRed("Waiting on #726, then updates from main", "blocked");
+    await client.commitFile("formic/t-1", "src/lib/example.ts", "x", "c");
+
+    await expect(applyAction(PROJECT, { type: "rerun_ci", key: ticket.key })).rejects.toThrow(/has not changed/);
+
+    expect(MockVcsClient.runner().reruns).toEqual([]);
+    const { messages } = await repository().assistantMessages(PROJECT);
+    const warning = messages.at(-1)!;
+    expect(warning.content).toContain("a re-run tests the same commit");
+    expect(warning.proposals[0]).toMatchObject({ summary: "Update T-1 from main", action: { type: "update_branch", key: "T-1" } });
+  });
+
+  it("does not re-run when the failing check's annotation names a file in the repository", async () => {
+    const { ticket, client } = await seedRed("CI is red on build.");
+    await client.commitFile("formic/t-1", "src/lib/example.ts", "x", "c");
+
+    await expect(applyAction(PROJECT, { type: "rerun_ci", key: ticket.key })).rejects.toThrow(/same commit/);
+    expect(MockVcsClient.runner().reruns).toEqual([]);
+  });
+
+  it("re-runs a failure with no code annotation, as before", async () => {
+    const { ticket } = await seedRed("CI is red on build.");
+
+    expect(await applyAction(PROJECT, { type: "rerun_ci", key: ticket.key })).toContain("Re-running");
+    expect(MockVcsClient.runner().reruns).toEqual([55]);
+  });
+
+  it("accepts update_branch and describes it to the PM", () => {
+    expect(checkAction({ type: "update_branch", key: "T-1" }).ok).toBe(true);
+  });
+});
