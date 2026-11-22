@@ -1540,6 +1540,59 @@ async function reviewTicket(
   }
 }
 
+/**
+ * A person asks for main to be brought into a blocked card's branch, the move
+ * that can turn it green once the fix it waited on has merged. A conflict goes
+ * to the Reviewer Agent in the ticket's lane. Once the head has moved the
+ * card is back in review and the new head is reviewed. Returns what happened.
+ */
+export async function updateFromMain(projectId: string, ticket: TicketDetail): Promise<string> {
+  const prNumber = ticket.prNumber;
+  if (!prNumber) throw new Error(`${ticket.key} has no pull request to bring up to date.`);
+  const project = await projectFor(projectId);
+  const creds = await credentialsForProject(project);
+  const client = vcs(project.repoFullName, creds.repoToken);
+  const before = await client.pullRequest(prNumber);
+  if (before.merged || before.state === "closed") throw new Error(`Pull request #${prNumber} is not open.`);
+
+  const update = await client.updateBranch(prNumber);
+  if (!update.ok) {
+    if (!update.conflict) throw new Error(`GitHub would not update ${before.headBranch}: ${update.reason}`);
+    launch(
+      () => inTicketLane(ticket.id, () => resolveIfStillConflicted(projectId, ticket.id, prNumber)),
+      `conflict resolution for ${ticket.key}`,
+    );
+    return `${ticket.key} conflicts with ${before.baseBranch}; the Reviewer Agent is resolving it.`;
+  }
+  if (!update.updated) return `${ticket.key}'s pull request #${prNumber} already has everything on ${before.baseBranch}.`;
+
+  const moved = await settle(client, prNumber, (p) => p.headSha !== before.headSha);
+  const repo = repository();
+  await repo.updateTicket(ticket.id, {
+    status: "review",
+    stalledIn: null,
+    blockedReason: null,
+    reviewedHead: null,
+    stage: STAGE_PR,
+  });
+  await publish(projectId, {
+    type: "card.status",
+    cardId: ticket.id,
+    kind: "ticket",
+    status: "review",
+    stalledIn: null,
+    stage: STAGE_PR,
+    blockedReason: null,
+  });
+  if (moved) {
+    launch(
+      () => reviewPullRequest(projectId, prNumber, moved.headSha, { startReview: true }),
+      `review of ${ticket.key} after main was brought in`,
+    );
+  }
+  return `Brought ${before.baseBranch} into ${ticket.key}; it is in In Review and its new head is reviewed.`;
+}
+
 /** The hand-off a restack uses for a pull request it could not rebase: the Reviewer Agent, in the ticket's lane. */
 export function handToReviewer(projectId: string): (ticketId: string, prNumber: number) => void {
   return (ticketId, prNumber) =>

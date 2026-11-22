@@ -31,6 +31,7 @@ export interface AssistantMessageView {
         | "create_epic_with_tickets"
         | "add_tickets_to_epic"
         | "rerun_ci"
+        | "update_branch"
         | "open_pull_request"
         | "move_card"
         | "close_card"
