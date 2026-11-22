@@ -8,6 +8,7 @@ import { mergeFollowUps, type FollowUp } from "@/lib/agents/follow-ups";
 import { publish } from "@/lib/events/bus";
 import { positionBetween } from "@/lib/ordering";
 import { boardPorts } from "@/lib/board/ports";
+import { waitingOnReason } from "@/lib/domain/notice";
 import { columnOf } from "@/lib/domain/status";
 import { postPmMessage } from "@/lib/assistant/pm-messages";
 import type { BlockedByFix } from "@/lib/agents/ports";
@@ -153,7 +154,7 @@ export async function answerFollowUp(
 
 /** The reason a ticket shows while it waits on the fix it asked for. */
 export function waitingOnFixReason(fix: BlockedByFix, key: string): string {
-  return `Waiting on ${key}: ${fix.check} fails and this change does not touch it. ${fix.cause.trim()}\nFailing assertion: ${fix.assertion.trim()}`;
+  return `${waitingOnReason(key)}\n${fix.check} fails and this change does not touch it. ${fix.cause.trim()}\nFailing assertion: ${fix.assertion.trim()}`;
 }
 
 /**

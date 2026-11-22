@@ -17,7 +17,7 @@ import { publish } from "@/lib/events/bus";
 import { positionForIndex } from "@/lib/ordering";
 import { addFollowUpTicket } from "@/lib/board/follow-ups";
 import { mergeByPerson, rerunRedActions, updateFromMain } from "@/lib/review/pipeline";
-import { waitedOn } from "@/lib/domain/notice";
+import { waitedOn, waitingOnReason } from "@/lib/domain/notice";
 import { postPmMessage } from "./pm-messages";
 import { ask as askCardChat } from "@/lib/agents/card-chat";
 import { isQuestion, PM_ANSWER_PREFIX } from "@/lib/domain/question";
@@ -117,6 +117,14 @@ export const assistantActionSchema = z.discriminatedUnion("type", [
       .describe("The branch your change is on. Formic names it; use the one it gave you."),
     title: z.string().trim().min(1).max(120),
     body: z.string().trim().min(1).describe("What changed and why, and how it was checked."),
+    unblocks: z
+      .string()
+      .trim()
+      .min(1)
+      .optional()
+      .describe(
+        "The key of a blocked ticket this pull request fixes, when it does. That card then waits on this pull request and updates from main by itself once it merges.",
+      ),
   }),
   z.object({
     type: z.literal("move_card"),
@@ -605,6 +613,25 @@ export async function rerunCi(projectId: string, key: string): Promise<string> {
   return `Re-running ${started === 1 ? "the failed check" : `${started} failed runs`} on ${key}'s pull request #${pull.number}.`;
 }
 
+/** A blocked card now waits on a pull request that fixes what blocked it: its reason says so, over the one it had. */
+export async function waitOnPullRequest(projectId: string, key: string, prNumber: number): Promise<void> {
+  const card = await cardByKey(projectId, key);
+  if (card.kind !== "ticket" || card.status !== "blocked") throw new Error(`${key} is not blocked, so there is nothing for #${prNumber} to unblock.`);
+  const detail = (card.blockedReason ?? "").split("\n");
+  const rest = waitedOn(detail[0]) ? detail.slice(1) : detail;
+  const reason = [waitingOnReason(`#${prNumber}`), ...rest].join("\n").trim();
+  await repository().updateTicket(card.id, { blockedReason: reason });
+  await publish(projectId, {
+    type: "card.status",
+    cardId: card.id,
+    kind: "ticket",
+    status: card.status,
+    stalledIn: card.stalledIn,
+    stage: card.stage,
+    blockedReason: reason,
+  });
+}
+
 /** The assistant's own change, as a pull request into the base branch. */
 async function openPullRequest(
   projectId: string,
@@ -622,6 +649,7 @@ async function openPullRequest(
       title: action.title,
       body: `${action.body}\n\n_Opened from the board's assistant._`,
     }));
+  if (action.unblocks) await waitOnPullRequest(projectId, action.unblocks, pull.number);
   return `Opened pull request #${pull.number}: ${pull.url}`;
 }
 
@@ -674,7 +702,7 @@ async function boardRepo(projectId: string) {
  */
 export async function openPmPullRequest(
   projectId: string,
-  input: { branch: string; title: string; body: string },
+  input: { branch: string; title: string; body: string; unblocks?: string },
 ): Promise<string> {
   const { project, client } = await boardRepo(projectId);
   const branch = input.branch.trim();
@@ -694,6 +722,7 @@ export async function openPmPullRequest(
       title: input.title,
       body: `${input.body}\n\n_Opened by the board's PM._`,
     }));
+  if (input.unblocks) await waitOnPullRequest(projectId, input.unblocks, pull.number);
   return `Opened pull request #${pull.number}: ${pull.url}`;
 }
 
