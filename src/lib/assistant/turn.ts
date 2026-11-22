@@ -25,7 +25,7 @@ import { extractJson } from "@/lib/llm/openai-compat";
 import { attachmentsPrompt, startCliAsk } from "@/lib/runner/runner";
 import { vcs, type VcsClient } from "@/lib/vcs";
 import { ASSISTANT_BRANCH_PREFIX, assistantActionSchema, checkAction } from "./actions";
-import { boardSnapshot, cardReport, mentionedKeys } from "./context";
+import { boardSnapshot, cardReport, resolveMentions } from "./context";
 import { outOfRoundsMessage, readWindow } from "./reads";
 import {
   ACT_ON_CARD_DEF,
@@ -78,6 +78,12 @@ export function changeBranchFor(id: string): string {
 const MAX_CLI_REPORTS = 4;
 /** How many cards in review or blocked it is handed when the person names none. */
 const MAX_CLI_FALLBACK_REPORTS = 8;
+
+/** Which card, and what first: the PM never guesses a card, and answers before it acts. */
+export const ANSWER_RULES = [
+  "When the person's words fit several cards (\"T1\" is EPIC-122-T1 and T-1), or they name no card while two or more are blocked or stalled, ask which card they mean, or cover each. Never guess. Formic notes it on their message when it happens.",
+  "Answer a direct question in the first lines of your reply, before you propose or act. What a proposal did once approved is shown under it by Formic, after your answer.",
+].join("\n");
 
 /** How the PM treats a note written while playtesting. See docs/plans/playtest.md. */
 export const PLAYTEST_RULE = [
@@ -236,6 +242,8 @@ export async function systemPrompt(projectId: string, brief: string | null): Pro
     "",
     "Read the repository before you answer a question about its code. Do not guess at what a file contains.",
     "",
+    ANSWER_RULES,
+    "",
     "You see the board below, and each card's live state on GitHub (its checks, the log of a red one, its agent runs). When asked about a card, look before you answer; never answer that you cannot see it.",
     "",
     "A card that stops is brought to you first: explain what happened (what the agents tried, what is failing and why) before you ask anything of the person.",
@@ -307,6 +315,8 @@ export async function sessionSystemPrompt(projectId: string, brief: string | nul
     ...(questions.length ? ["Questions the board is waiting on the person for, when this session started:", ...questions, ""] : []),
     ...(asked.length ? ["What the person asked for, in their own words, for each Epic still in progress:", ...asked, ""] : []),
     PLAYTEST_RULE,
+    "",
+    ANSWER_RULES,
     "",
     "A ticket's fileScope lists the directories it may change, as prefixes from the repository root: 1 to 12 entries. Tickets that could run at the same time must not share a scope: make one depend on the other instead.",
     "",
@@ -407,7 +417,7 @@ export async function history(messages: AssistantMessage[]): Promise<PastMessage
               ? [playtestLabel(m)]
             : []),
           ...lines,
-          ...m.proposals.map((p) => `[Proposed: ${p.summary}. The person ${decided(p.state)}.]`),
+          ...m.proposals.map((p) => `[Proposed: ${p.summary}. The person ${decided(p.state)}${p.state === "applied" && p.result ? `: ${p.result.replace(/\.$/, "")}` : ""}.]`),
         ].join("\n"),
         ...(images.length ? { images } : {}),
         ...(pictures.length ? { files: pictures } : {}),
@@ -634,14 +644,16 @@ export async function answer(projectId: string, messageId: string, prompt?: stri
       return;
     }
 
+    // A CLI agent is told in its reports header; the API path gets the same note on the message.
+    const spoken = prompt ? past : await withUnclearNote(projectId, past);
     const { info } = agent;
     let speak: Speak;
     if (info.kind === "anthropic") {
-      speak = claudeSpeak(agent.apiKey, agent.model ?? MODELS.product, system, forModel(past), TOOL_DEFS);
+      speak = claudeSpeak(agent.apiKey, agent.model ?? MODELS.product, system, forModel(spoken), TOOL_DEFS);
     } else {
       if (!agent.apiKey) throw new Error(`This agent has no ${info.label} API key. Edit it and add one.`);
       if (!agent.model) throw new Error(`This agent has no ${info.label} model. Edit it and pick one.`);
-      speak = openAiSpeak(info, agent.apiKey, agent.model, system, forModel(past), TOOL_DEFS);
+      speak = openAiSpeak(info, agent.apiKey, agent.model, system, forModel(spoken), TOOL_DEFS);
     }
 
     const project = await projectFor(projectId);
@@ -860,14 +872,54 @@ const cliAnswerSchema = z.object({
  * A CLI agent cannot call card_status, so the live state of the cards the
  * person has been asking about is read for it before it starts.
  */
+/**
+ * When the person's latest message does not say which card: its words fit
+ * several ("T1": EPIC-122-T1 and T-1), or it names none while two or more
+ * cards are blocked or stalled. The candidates, or null when it is clear.
+ */
+export async function unclearCard(
+  projectId: string,
+  past: PastMessage[],
+): Promise<{ note: string; keys: string[]; ambiguous: boolean } | null> {
+  const latest = past.at(-1);
+  if (latest?.role !== "user" || latest.notice) return null;
+  const cards = (await repository().boardCards(projectId)).filter((c) => !c.archived);
+  const { keys, ambiguous } = resolveMentions(latest.content, cards);
+  if (ambiguous.length) {
+    const candidates = [...new Set(ambiguous.flatMap((a) => a.candidates))];
+    return {
+      keys: candidates,
+      ambiguous: true,
+      note: `"${ambiguous.map((a) => a.text).join('", "')}" fits several cards: ${candidates.join(", ")}. Ask the person which one they mean, or cover each. Never guess.`,
+    };
+  }
+  if (keys.length) return null;
+  const stuck = cards.filter((c) => c.blockedReason || c.stalledIn);
+  if (stuck.length < 2) return null;
+  return {
+    keys: stuck.map((c) => c.key),
+    ambiguous: false,
+    note: `The person named no card, and ${stuck.length} cards are blocked or stalled: ${stuck.map((c) => c.key).join(", ")}. Ask the person which one they mean, or cover each. Never guess.`,
+  };
+}
+
+/** The Formic note on the person's latest message, so the API path is told the same as a CLI agent. */
+async function withUnclearNote(projectId: string, past: PastMessage[]): Promise<PastMessage[]> {
+  const unclear = await unclearCard(projectId, past);
+  return unclear ? withPrompt(past, `[Formic: ${unclear.note}]`) : past;
+}
+
 async function cliReports(projectId: string, past: PastMessage[]): Promise<string> {
   const asked = past.filter((m) => m.role === "user").slice(-3).map((m) => m.content).join("\n");
   const cards = await repository().boardCards(projectId);
-  const named = mentionedKeys(asked, cards).slice(0, MAX_CLI_REPORTS);
+  const unclear = await unclearCard(projectId, past);
+  const named = unclear ? [] : resolveMentions(asked, cards).keys.slice(0, MAX_CLI_REPORTS);
   // With no card named, the cards most likely being asked about: in review first, then blocked or misplaced.
   const inReview = cards.filter((c) => !c.archived && columnOf(c) === "in_review");
   const stuck = cards.filter((c) => !c.archived && columnOf(c) !== "in_review" && (c.blockedReason || c.misplacedReason));
-  const keys = named.length
+  const keys = unclear?.ambiguous
+    ? unclear.keys.slice(0, MAX_CLI_FALLBACK_REPORTS)
+    : named.length
     ? named
     : [...inReview, ...stuck].slice(0, MAX_CLI_FALLBACK_REPORTS).map((c) => c.key);
   if (keys.length === 0) return "";
@@ -875,7 +927,9 @@ async function cliReports(projectId: string, past: PastMessage[]): Promise<strin
   const creds = await credentialsForProject(project);
   const client = vcs(project.repoFullName, creds.repoToken);
   const reports = await Promise.all(keys.map((k) => cardReport(projectId, k, client).catch((e) => `${k}: could not read it (${e instanceof Error ? e.message : String(e)}).`)));
-  const header = named.length
+  const header = unclear
+    ? `${unclear.note} Their live state, read from the board and GitHub just now:`
+    : named.length
     ? "The live state of the cards the person asked about, read from the board and GitHub just now:"
     : "The person named no card. These are the cards in review or blocked, read from the board and GitHub just now:";
   return [header, "", ...reports.flatMap((r) => [r, ""])].join("\n");

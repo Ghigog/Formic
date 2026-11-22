@@ -229,6 +229,8 @@ export interface AssistantProposal {
   state: "proposed" | "applied" | "dismissed" | "failed";
   /** Why applying it failed, when it did. */
   error?: string;
+  /** What applying it did, in Formic's words: "Opened pull request #726". Shown under the proposal, never as a message. */
+  result?: string;
 }
 
 /** One message in a card's chat with its column's agent. */
