@@ -219,6 +219,15 @@ describe("what a PM does without asking", () => {
     expect(github.openPullRequest).toHaveBeenCalledWith(expect.objectContaining({ headBranch: "formic-pm/app-1", baseBranch: "main" }));
   });
 
+  it("makes a blocked card wait on the pull request it opens when told it unblocks it", async () => {
+    const { id, key } = await ticketWithPull();
+    await repository().move({ cardId: id, kind: "ticket", status: "blocked", stalledIn: null, position: 1 });
+    const r = await call(await connect(), "open_pull_request", { board, branch: "formic-pm/app-1", title: "Fix", body: "Why", unblocks: key });
+    expect(r.isError).toBeFalsy();
+    const card = await repository().ticketDetail(id);
+    expect(card?.blockedReason).toContain("#8");
+  });
+
   it("reports a card live, re-runs its checks and brings its base in", async () => {
     const { key } = await ticketWithPull();
     const pm = await connect();
