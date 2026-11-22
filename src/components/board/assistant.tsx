@@ -501,6 +501,9 @@ export function ProposalCard({
           </span>
         )}
       </div>
+      {p.state === "applied" && p.result && (
+        <p className="text-muted mt-1.5 text-[12px] break-words">{p.result}</p>
+      )}
     </div>
   );
 }

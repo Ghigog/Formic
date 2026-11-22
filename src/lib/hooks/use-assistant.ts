@@ -47,6 +47,8 @@ export interface AssistantMessageView {
     };
     state: "proposed" | "applied" | "dismissed" | "failed";
     error?: string;
+    /** What applying it did, shown under the proposal. */
+    result?: string;
   }>;
 }
 

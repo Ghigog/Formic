@@ -53,16 +53,13 @@ describe("POST /api/assistant/proposals", () => {
     });
   });
 
-  it("applies a proposal and posts the outcome", async () => {
+  it("applies a proposal and keeps the outcome on it, not as a message of its own", async () => {
     const res = await decide({ messageId: "m-1", index: 0, decision: "apply" });
     expect(res.status).toBe(200);
     expect(applyAction).toHaveBeenCalledWith("p-1", action, "u-1");
-    // What happened is Formic's notice, not the PM speaking.
-    expect(repo.addAssistantMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ projectId: "p-1", role: "assistant", kind: "notice", content: "Done." }),
-    );
+    expect(repo.addAssistantMessage).not.toHaveBeenCalled();
     expect(repo.updateAssistantMessage).toHaveBeenLastCalledWith("m-1", {
-      proposals: [{ state: "applied", action }],
+      proposals: [{ state: "applied", action, result: "Done." }],
     });
   });
 
