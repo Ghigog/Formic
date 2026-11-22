@@ -838,6 +838,7 @@ describe("red CI the ticket's change did not cause", () => {
   const fix = {
     cause: "The date helper broke on a leap day.",
     check: "dates.test.ts > formats 29 February",
+    assertion: "expect(format(leapDay)).toBe('29 Feb') (dates.test.ts:12)",
     bug: { title: "Fix leap-day formatting", story: "29 February formats wrongly.", scope: ["src/dates.ts"] },
   };
 
