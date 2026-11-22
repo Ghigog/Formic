@@ -31,6 +31,7 @@ import { vcs } from "@/lib/vcs";
 import { spikeFindings } from "@/lib/board/spike-findings";
 import { columnIsPlain, columnLimit } from "@/lib/agents/presets";
 import { startedBy } from "@/lib/auth/actor";
+import { prdFromTickets } from "@/lib/domain/planned-epic";
 import { prdSchema } from "@/lib/domain/entities";
 import { planQueen } from "@/lib/queen/plan";
 import { openWaits, readiness } from "@/lib/domain/stack";
@@ -297,7 +298,15 @@ export async function applyTransition(
   const met = dependenciesMet(card, cards);
   const toArchitect = card.kind === "epic" && t.to === "todo";
   const epicDetail = card.kind === "epic" ? await repo.epicDetail(card.id) : null;
-  const hasPrd = prdSchema.safeParse(epicDetail?.prd).success;
+  // An Epic that already has its tickets (the PM made it broken down) gets
+  // its plan from them: no Product Agent to write one, and no Architect
+  // Agent to break it down again and replace the tickets it has.
+  const ownTickets = toArchitect && !prdSchema.safeParse(epicDetail?.prd).success ? await repo.ticketsForEpic(card.id) : [];
+  const fromTickets = ownTickets.length > 0;
+  if (fromTickets) {
+    await repo.setEpicPrd(card.id, prdFromTickets(epicDetail?.rawRequest || card.title, ownTickets), false);
+  }
+  const hasPrd = fromTickets || prdSchema.safeParse(epicDetail?.prd).success;
   const needsPrd = toArchitect && !hasPrd && !card.workingSince;
 
   // The tickets an Epic took with it to Backlog come back with it. Made
@@ -307,7 +316,7 @@ export async function applyTransition(
   const madeBefore = (t: BoardCard) =>
     !!epicDetail?.prdUpdatedAt &&
     Date.parse(t.createdAt ?? "") < epicDetail.prdUpdatedAt.getTime();
-  const breakDown = toArchitect && hasPrd && (parked.length === 0 || parked.some(madeBefore));
+  const breakDown = toArchitect && hasPrd && !fromTickets && (parked.length === 0 || parked.some(madeBefore));
 
   // Back in Backlog, an Epic that has its PRD is still specified, not a draft.
   const dropped =

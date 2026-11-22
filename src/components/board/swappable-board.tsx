@@ -9,7 +9,7 @@ import { DigTransition, type DigTransitionHandle } from "./dig-transition";
 import { createSwapGestures, type SwapAim } from "./swap-gesture";
 import { SwapHint } from "./swap-hint";
 import { attachSwapSound, swapSfx } from "./swap-sound";
-import type { SwapDirection } from "./swap-order";
+import { createSwapHistory, type SwapDirection } from "./swap-order";
 import type { BoardProps } from "@/lib/board/board-props";
 
 export type { SwapDirection } from "./swap-order";
@@ -21,9 +21,10 @@ export interface SwappableBoardProps {
 }
 
 /**
- * The board, swappable for the next or previous one in the repo picker's
- * order without a reload: a two-finger swipe up (or a right-button drag up)
- * digs down to the next board, down goes back up. The board follows the hand
+ * The board, swappable without a reload: a two-finger swipe up (or a
+ * right-button drag up) digs down to the next board in the repo picker's
+ * order, and down goes back up to the board the person was just on (see
+ * SwapHistory). The board follows the hand
  * as it moves, and the swap itself is a dig through the colony's earth (see
  * DigTransition). The order is fetched on the first swap and frozen for the
  * streak, a run of swaps; the streak ends, and the board is recorded as
@@ -38,6 +39,7 @@ export function SwappableBoard({ account, projectId, board }: SwappableBoardProp
   useEffect(() => setNewBoard(takeNewBoard()), []);
   const [aim, setAim] = useState<SwapAim | null>(null);
   const streak = useRef<string[] | null>(null);
+  const history = useRef(createSwapHistory<string>());
   const names = useRef(new Map<string, string>());
   const busy = useRef(false);
   const shown = useRef(current.projectId);
@@ -62,11 +64,13 @@ export function SwappableBoard({ account, projectId, board }: SwappableBoardProp
         for (const p of body.projects) names.current.set(p.id, p.name || p.repoFullName?.split("/").pop() || "");
       }
       const order = streak.current;
-      const target = order[order.indexOf(shown.current) + (direction === "down" ? 1 : -1)];
-      if (!target) {
+      const step = history.current.target(direction, order, shown.current);
+      if (step.kind === "end") {
         dig.current?.bounce(direction);
         return;
       }
+      const target = step.target;
+      const from = shown.current;
       const load = fetch("/api/projects/swap", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -79,6 +83,7 @@ export function SwappableBoard({ account, projectId, board }: SwappableBoardProp
         direction,
         load,
         (next) => {
+          history.current.arrived(direction, from);
           shown.current = next.project.id;
           setCurrent({ projectId: next.project.id, board: next.board });
         },

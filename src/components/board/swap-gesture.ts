@@ -167,7 +167,7 @@ export function createSwapGestures(
         e.button === 2 && !ownsGesture(e.target, boundary) && !interactive(e.target)
           ? { clientX: e.clientX, clientY: e.clientY }
           : null;
-      // Where releasing would swap down: one threshold of travel straight up.
+      // Until it moves, aim up: where releasing would swap to the next board.
       if (drag) onAim({ x: drag.clientX, y: drag.clientY - SWAP_THRESHOLD, armed: false });
     },
     pointerMove(e) {
@@ -175,7 +175,8 @@ export function createSwapGestures(
       if ((e.buttons & 2) === 0) return cancel();
       const dx = e.clientX - drag.clientX;
       const dy = e.clientY - drag.clientY;
-      onAim({ x: drag.clientX, y: drag.clientY - SWAP_THRESHOLD, armed: swapDirection(dx, dy) === "down" });
+      // One threshold from the press, the way the pointer is travelling.
+      onAim({ x: drag.clientX, y: drag.clientY + (dy > 0 ? SWAP_THRESHOLD : -SWAP_THRESHOLD), armed: swapDirection(dx, dy) !== null });
       onPull(pullFor(e.clientX - drag.clientX, e.clientY - drag.clientY));
     },
     pointerUp(e) {

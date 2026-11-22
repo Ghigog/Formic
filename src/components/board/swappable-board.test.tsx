@@ -98,6 +98,44 @@ describe("SwappableBoard", () => {
     expect(calls.filter((c) => c.url === "/api/projects")).toHaveLength(1);
   });
 
+  it("goes back to the second board in the order, not a bounce, before any swap", async () => {
+    renderBoard();
+    swipe("up");
+    expect(await screen.findByText("B", undefined, toLoad)).toBeTruthy();
+    expect(calls.filter((c) => c.url === "/api/projects/swap")).toEqual([{ url: "/api/projects/swap", body: { projectId: "b" } }]);
+  });
+
+  it("retraces next-next with back-back", async () => {
+    renderBoard();
+    const idle = () => waitFor(() => expect(screen.getByTestId("dig-transition").dataset.phase).toBe("idle"), toLoad);
+    for (const [dir, name] of [["down", "B"], ["down", "C"], ["up", "B"], ["up", "A"]] as const) {
+      swipe(dir);
+      await screen.findByText(name, undefined, toLoad);
+      await idle();
+    }
+    expect(calls.filter((c) => c.url === "/api/projects")).toHaveLength(1);
+  });
+
+  it("walks back through where it has been, never to the board it left, and bounces when there is nothing left", async () => {
+    // Opened 1, 2, 3 from the picker (last opened first: c, b, a) and is on 3.
+    const fetchOrder = fetch;
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) =>
+      url === "/api/projects" ? Response.json({ projects: [{ id: "c" }, { id: "b" }, { id: "a" }] }) : fetchOrder(url, init),
+    );
+    render(<SwappableBoard account={account} projectId="c" board={props("C")} />);
+    const idle = () => waitFor(() => expect(screen.getByTestId("dig-transition").dataset.phase).toBe("idle"), toLoad);
+    swipe("down");
+    await screen.findByText("B", undefined, toLoad);
+    await idle();
+    swipe("down");
+    await screen.findByText("A", undefined, toLoad);
+    await idle();
+    swipe("down");
+    await waitFor(() => expect(screen.getByTestId("dig-transition").dataset.phase).toBe("bouncing"));
+    expect(screen.getByText("A")).toBeTruthy();
+    expect(calls.filter((c) => c.url === "/api/projects/swap").map((c) => (c.body as { projectId: string }).projectId)).toEqual(["b", "a"]);
+  });
+
   it("swaps on a right-button drag upward, and holds back the context menu that drag would open", async () => {
     renderBoard();
     fireEvent.pointerDown(stage(), { button: 2, clientX: 100, clientY: 400 });
