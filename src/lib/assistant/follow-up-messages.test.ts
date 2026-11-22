@@ -3,6 +3,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/events/bus", () => ({ publish: vi.fn(async () => 1) }));
 vi.mock("server-only", () => ({}));
 
+const vcsMock = vi.hoisted(() => ({ checks: [] as unknown[], fail: false }));
+vi.mock("@/lib/board/project", () => ({ projectFor: vi.fn(async () => ({ repoFullName: "o/r" })) }));
+vi.mock("@/lib/auth/credentials", () => ({ credentialsForProject: vi.fn(async () => ({ repoToken: "t" })) }));
+vi.mock("@/lib/vcs", () => ({
+  vcs: () => ({
+    pullRequest: async () => {
+      if (vcsMock.fail) throw new Error("GitHub down");
+      return { headSha: "abc" };
+    },
+    checksFor: async () => vcsMock.checks,
+  }),
+}));
+
 import { recordFollowUps } from "@/lib/board/follow-ups";
 import { repository } from "@/lib/db";
 import { applyAction } from "./actions";
@@ -38,11 +51,21 @@ const messages = async () => (await repository().assistantMessages(PROJECT)).mes
 
 beforeEach(() => {
   (globalThis as { __formicMemoryStore?: unknown }).__formicMemoryStore = undefined;
+  vcsMock.checks = [];
+  vcsMock.fail = false;
 });
+
+const check = (name: string, conclusion: string) => ({ id: 1, name, status: "completed", conclusion, detailsUrl: null });
+
+async function seedInReview(status: "review" | "merged") {
+  const ticket = await seed();
+  await repository().updateTicket(ticket.id, { status, prNumber: 7 });
+  return ticket;
+}
 
 describe("proposeFollowUps", () => {
   it("posts one message with the nice one as a proposal and the needed one as a card", async () => {
-    const ticket = await seed();
+    const ticket = await seedInReview("merged");
     await proposeFollowUps(PROJECT, ticket.id);
     const [m, ...rest] = await messages();
     expect(rest).toEqual([]);
@@ -58,6 +81,31 @@ describe("proposeFollowUps", () => {
     expect(m!.cards[0]!.title).toBe("Add the index");
     const f = (await repository().ticketDetail(ticket.id))!.followUps;
     expect(f[0]!.outcome).toEqual({ kind: "proposed", messageId: m!.id });
+  });
+
+  it("says approved and in review, naming the failing check, before merge", async () => {
+    vcsMock.checks = [check("lint-and-android-test-compile", "failure"), check("test", "success")];
+    const ticket = await seedInReview("review");
+    await proposeFollowUps(PROJECT, ticket.id);
+    const content = (await messages())[0]!.content;
+    expect(content).toContain("Raise thresholds is approved and in review; lint-and-android-test-compile is failing.");
+    expect(content).not.toContain("is done");
+  });
+
+  it("says approved and in review with green checks, and does not say done", async () => {
+    vcsMock.checks = [check("test", "success")];
+    const ticket = await seedInReview("review");
+    await proposeFollowUps(PROJECT, ticket.id);
+    const content = (await messages())[0]!.content;
+    expect(content).toContain("Raise thresholds is approved and in review.");
+    expect(content).not.toContain("is done");
+  });
+
+  it("says approved and in review without naming checks when GitHub cannot be read", async () => {
+    vcsMock.fail = true;
+    const ticket = await seedInReview("review");
+    await proposeFollowUps(PROJECT, ticket.id);
+    expect((await messages())[0]!.content).toContain("Raise thresholds is approved and in review.");
   });
 
   it("posts nothing the second time, or when there are no follow-ups", async () => {
