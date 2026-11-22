@@ -131,7 +131,7 @@ export function mcpServerFor(user: UserRecord, readOnly: boolean, scope: TokenSc
   server.registerTool(
     "create_epic",
     {
-      description: "Adds an Epic with its tickets, already broken down. Tickets name their dependencies by the key given here.",
+      description: "Adds an Epic with its tickets, already broken down. It lands in To Do with them, ready to run. Tickets name their dependencies by the key given here.",
       inputSchema: {
         board: z.string(),
         title: z.string().trim().min(1).max(120),

@@ -89,6 +89,34 @@ describe("write tools", () => {
     expect(published.map((e) => e.type)).toContain("card.created");
   });
 
+  it("puts an Epic made with its tickets in To Do, ready, with its plan, and starts no agent", async () => {
+    const result = await createEpic(rw(), {
+      board,
+      title: "Make CI faster",
+      rawRequest: "CI takes ten minutes.",
+      tickets: [{ key: "spike", title: "Measure", description: "d", acceptanceCriteria: ["c"] }],
+    });
+    if (!result.ok) throw new Error(result.error);
+    const epic = (await repository().boardCards(board)).find((c) => c.id === result.value.id)!;
+    expect(epic).toMatchObject({ status: "ready", stalledIn: null });
+    expect((await repository().epicDetail(epic.id))?.prd).toMatchObject({ summary: "CI takes ten minutes.", scope: [`${epic.key}-T1: Measure`] });
+    expect(launched).toEqual([]);
+  });
+
+  it("refuses tickets that depend on each other in a circle", async () => {
+    const result = await createEpic(rw(), {
+      board,
+      title: "Epic",
+      rawRequest: "req",
+      tickets: [
+        { key: "a", title: "A", description: "d", acceptanceCriteria: ["c"], dependsOn: ["b"] },
+        { key: "b", title: "B", description: "d", acceptanceCriteria: ["c"], dependsOn: ["a"] },
+      ],
+    });
+    expect(result.ok).toBe(false);
+    expect(await repository().boardCards(board)).toEqual([]);
+  });
+
   it("refuses a dependency that is not among the tickets", async () => {
     const result = await createEpic(rw(), {
       board,

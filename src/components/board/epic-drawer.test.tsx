@@ -77,6 +77,37 @@ function open(
 }
 
 describe("EpicDrawer", () => {
+  describe("stopping its agent", () => {
+    it("offers Stop agent while an agent is on the Epic, and stops it", async () => {
+      const onChanged = vi.fn();
+      const stops = vi.fn(async () => Response.json({ stopped: true }));
+      let writing = true;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+          const url = typeof input === "string" ? input : input.toString();
+          if (url.includes("/api/attachments")) return Response.json({ attachments: [] });
+          if (url === "/api/epics/e-1/stop" && init?.method === "POST") {
+            writing = false;
+            return stops();
+          }
+          return Response.json({ ...detail({ epic: { ...epic, agentRole: writing ? "product" : null } }), prd: null });
+        }),
+      );
+      render(<EpicDrawer epicId="e-1" onClose={() => {}} onChanged={onChanged} />);
+      fireEvent.click(await screen.findByRole("button", { name: "Stop agent" }));
+      await waitFor(() => expect(stops).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(screen.queryByRole("button", { name: "Stop agent" })).not.toBeInTheDocument());
+      expect(onChanged).toHaveBeenCalled();
+    });
+
+    it("offers no Stop when nothing is working on it", async () => {
+      open();
+      expect(await screen.findByRole("button", { name: "Archive" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Stop agent" })).not.toBeInTheDocument();
+    });
+  });
+
   describe("archiving", () => {
     function openWith(archive: () => Response | Promise<Response>) {
       const onClose = vi.fn();
