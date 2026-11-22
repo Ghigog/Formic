@@ -67,6 +67,20 @@ Notes:
 | Attachments per request | files | 5 | one request | Gate | No |
 | Attachment size | bytes | 10 MiB | one file | Gate | No |
 
+## The board's PM session
+
+What bounds a Claude Code PM's resumable session (docs/plans/pm-chat.md).
+
+| Limit | Unit | Value | Scope | Enforcement | Settable |
+| :-- | :-- | :-- | :-- | :-- | :-- |
+| Session file (`PM_SESSION_MAX_BYTES`) | bytes, gzipped | 8 MiB | one board's session | Gate: a bigger file is dropped and the next turn starts fresh from the summary | No |
+| Running summary (`SUMMARY_LINES`, `SUMMARY_CHARS`) | lines, characters | 30, 6,000 | one board's session | Kept after each turn, newest lines win | No |
+| PM token (`PM_TOKEN_HOURS`, `PM_TOKEN_MAX_HOURS`) | hours | 4, at most 12 | one turn | Revoked when the turn ends or is stopped | No |
+| Session address (`SESSION_URL_TTL_MS`) | minutes | 90 | one turn's job | Gate; its handoff is collected once | No |
+| PM's branch lock (`PM_LOCK_MS`) | minutes | 2 | one branch | Hard rail (the lease lapses) | No |
+| A ticket run's branch lock | minutes | 65 (`RUNNER_JOB_MINUTES` + headroom) | one branch | Hard rail (the lease lapses) | No |
+| A run's wait for the PM (`RUN_WAIT_MS`) | seconds | 60 | one dispatch | Gate, then the run starts anyway | No |
+
 ## Epic budget
 
 `DEFAULT_EPIC_BUDGET` (`src/lib/budget/limits.ts`) is 2,000¢, 2 hours and 12

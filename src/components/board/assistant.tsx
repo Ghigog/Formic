@@ -628,6 +628,27 @@ function Notice({
   );
 }
 
+/**
+ * A CLI reply that has not said anything yet: its job is starting in the
+ * repository's CI, which takes about half a minute to a minute. The timer
+ * says it is alive.
+ */
+function Starting({ since }: { since?: string }) {
+  const start = since ? new Date(since).getTime() : NaN;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, []);
+  const seconds = Number.isFinite(start) ? Math.max(0, Math.floor((now - start) / 1000)) : 0;
+  const clock = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  return (
+    <span>
+      Starting… <span className="font-mono tabular-nums">{clock}</span>
+    </span>
+  );
+}
+
 function Message({
   m,
   cli,
@@ -677,16 +698,18 @@ function Message({
       <div data-kind="pm">{body}</div>
     );
   if (m.status === "pending") {
-    return tagged(
+    const status = (
       <div className="text-muted flex items-center gap-2 text-[13px]">
         <span role="status" className="flex items-center gap-2">
           <span
             className="bg-clay size-1.5 animate-pulse rounded-full"
             aria-hidden
           />
-          {cli
-            ? "Working in your repository's CI. This takes a minute or two."
-            : "Thinking…"}
+          {m.content
+            ? "Working…"
+            : cli
+              ? <Starting since={m.createdAt} />
+              : "Thinking…"}
         </span>
         <button
           type="button"
@@ -698,7 +721,20 @@ function Message({
           <span className="bg-ink size-2 rounded-sm" aria-hidden />
           Stop
         </button>
-      </div>,
+      </div>
+    );
+    // A PM session's words stream in as it writes them.
+    return tagged(
+      m.content ? (
+        <div className="max-w-[92%]">
+          <div data-testid="pm-streaming" className="text-ink text-[13px] leading-[1.55]">
+            <MarkdownLite text={m.content} keepLineBreaks />
+          </div>
+          {status}
+        </div>
+      ) : (
+        status
+      ),
     );
   }
   return tagged(

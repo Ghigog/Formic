@@ -243,6 +243,7 @@ model Project {
   rubricFixes       RubricFix[]
   playtests         PlaytestSession[]
   accessTokens      AccessToken[]
+  pmSession         PmSession?
 
   @@index([ownerId])
   @@map("project")
@@ -1017,6 +1018,43 @@ model AccessToken {
   @@index([userId])
   @@index([projectId, sessionId])
   @@map("access_token")
+}
+
+/// The board's PM as a resumable Claude Code session (docs/plans/pm-chat.md,
+/// PR 3): one per board, the latest only. The session file is the truth and
+/// is sealed with the API-key cipher; the sandbox or job that ran it is only
+/// a cache. Deleted on Clear and with the board.
+model PmSession {
+  projectId   String    @id
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Claude Code's own session id, resumed with `claude --resume`.
+  sessionId   String
+  /// Where it last ran: "e2b", "actions" or "gitlab".
+  where       String
+  /// The E2B sandbox holding it, paused between turns. Null off E2B.
+  sandboxId   String?
+  /// The session file (JSONL, gzipped, base64), sealed. Null when there is
+  /// none yet or it was over the cap: the next turn starts from the summary.
+  fileCipher  String?
+  /// The gzipped size of the session file.
+  bytes       Int       @default(0)
+  /// A short running summary of the conversation, kept after each turn.
+  summary     String    @default("")
+  /// The job running the current turn, if one is.
+  turnJob     String?
+  /// What that job collects once (its PM token), sealed; cleared when taken.
+  handoff     String?
+  /// The branch the PM's checkout was on when the turn ended.
+  branch      String?
+  /// Whether the current turn resumed a saved session (a failure then falls
+  /// back to a fresh one) or started fresh.
+  resumed     Boolean   @default(false)
+  /// When the last turn finished: what the chat said after it is new to the session.
+  lastTurnAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("pm_session")
 }
 
 /// A one-time sign-in link sent by email. Only the SHA-256 of the token is

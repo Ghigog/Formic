@@ -2080,6 +2080,37 @@ function contract(name: string, make: () => Repository) {
         expect((await repo.accessTokenByHash(own.tokenHash))?.revokedAt).toBeNull();
       });
 
+      it("keeps one PM session per board, finds it by its turn's job, and drops it with the board", async () => {
+        const id = githubId();
+        const user = await repo.upsertUser({ githubId: id, login: `pms-${id}`, name: null, avatarUrl: null });
+        const board = await repo.ensureProject({ ownerId: user.id, repoFullName: null, name: "PMS", baseBranch: "main" });
+        expect(await repo.pmSession(board.id)).toBeNull();
+        expect(await repo.updatePmSession(board.id, { summary: "x" })).toBe(false);
+
+        const made = await repo.savePmSession(board.id, { sessionId: "s1", where: "actions", turnJob: `job-${id}` });
+        expect(made).toMatchObject({ projectId: board.id, sessionId: "s1", where: "actions", fileCipher: null, bytes: 0, summary: "" });
+        expect((await repo.pmSessionByJob(`job-${id}`))?.projectId).toBe(board.id);
+
+        // The latest only: saving again replaces, never adds.
+        await repo.savePmSession(board.id, { sessionId: "s2", where: "gitlab", fileCipher: "sealed", bytes: 12 });
+        expect(await repo.pmSession(board.id)).toMatchObject({ sessionId: "s2", where: "gitlab", fileCipher: "sealed", bytes: 12, turnJob: `job-${id}` });
+        expect(await repo.updatePmSession(board.id, { turnJob: null, summary: "said" })).toBe(true);
+        expect(await repo.pmSessionByJob(`job-${id}`)).toBeNull();
+        expect((await repo.pmSession(board.id))?.summary).toBe("said");
+
+        await repo.deleteUser(user.id);
+        expect(await repo.pmSession(board.id)).toBeNull();
+      });
+
+      it("deletes a PM session on its own", async () => {
+        const id = githubId();
+        const user = await repo.upsertUser({ githubId: id, login: `pmd-${id}`, name: null, avatarUrl: null });
+        const board = await repo.ensureProject({ ownerId: user.id, repoFullName: null, name: "PMD", baseBranch: "main" });
+        await repo.savePmSession(board.id, { sessionId: "s", where: "e2b", sandboxId: "sb" });
+        await repo.deletePmSession(board.id);
+        expect(await repo.pmSession(board.id)).toBeNull();
+      });
+
       it("spends a sign-in link once, even when two spends race", async () => {
         const tokenHash = randomUUID();
         const address = email();

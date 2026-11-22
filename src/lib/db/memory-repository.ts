@@ -24,6 +24,7 @@ import type {
   RunTimeBudgetColumns,
   UserRecord,
   AccessTokenRecord,
+  PmSessionRecord,
   NewAccessToken,
   PushPreferences,
   PushSubscriptionRecord,
@@ -214,6 +215,8 @@ interface Store {
   /** endpoint to the subscription and the person it belongs to. */
   pushSubscriptions: Map<string, PushSubscriptionRecord & { userId: string }>;
   accessTokens: Map<string, AccessTokenRecord>;
+  /** Board id to its PM session. */
+  pmSessions: Map<string, PmSessionRecord>;
   /** Sign-in links by token hash. */
   loginTokens: Map<string, NewLoginToken & { usedAt: Date | null; createdAt: Date }>;
   /** `${projectId}:${column}` to preset id. */
@@ -253,6 +256,7 @@ function store(): Store {
     existing.users ??= new Map();
     existing.pushSubscriptions ??= new Map();
     existing.accessTokens ??= new Map();
+    existing.pmSessions ??= new Map();
     existing.loginTokens ??= new Map();
     existing.epicNumbers ??= new Map();
     existing.standaloneTicketNumbers ??= new Map();
@@ -326,6 +330,7 @@ function store(): Store {
     users: new Map(),
     pushSubscriptions: new Map(),
     accessTokens: new Map(),
+    pmSessions: new Map(),
     loginTokens: new Map(),
     columnAgents: new Map(),
     columnOverrides: new Map(),
@@ -719,6 +724,7 @@ export class MemoryRepository implements Repository {
       for (const [id, token] of s.accessTokens) {
         if (token.projectId === projectId) s.accessTokens.delete(id);
       }
+      s.pmSessions.delete(projectId);
       s.projects.delete(projectId);
     }
     for (const preset of [...s.presets.values()]) {
@@ -821,6 +827,56 @@ export class MemoryRepository implements Repository {
       count++;
     }
     return count;
+  }
+
+  async pmSession(projectId: string): Promise<PmSessionRecord | null> {
+    const found = store().pmSessions.get(projectId);
+    return found ? { ...found } : null;
+  }
+
+  async savePmSession(
+    projectId: string,
+    update: Partial<Omit<PmSessionRecord, "projectId" | "createdAt" | "updatedAt">> & Pick<PmSessionRecord, "sessionId" | "where">,
+  ): Promise<PmSessionRecord> {
+    const s = store();
+    const now = new Date();
+    const row: PmSessionRecord = {
+      projectId,
+      sandboxId: null,
+      fileCipher: null,
+      bytes: 0,
+      summary: "",
+      turnJob: null,
+      handoff: null,
+      branch: null,
+      resumed: false,
+      lastTurnAt: null,
+      createdAt: now,
+      ...s.pmSessions.get(projectId),
+      ...update,
+      updatedAt: now,
+    };
+    s.pmSessions.set(projectId, row);
+    return { ...row };
+  }
+
+  async updatePmSession(
+    projectId: string,
+    update: Partial<Omit<PmSessionRecord, "projectId" | "createdAt" | "updatedAt">>,
+  ): Promise<boolean> {
+    const found = store().pmSessions.get(projectId);
+    if (!found) return false;
+    Object.assign(found, update, { updatedAt: new Date() });
+    return true;
+  }
+
+  async pmSessionByJob(job: string): Promise<PmSessionRecord | null> {
+    for (const row of store().pmSessions.values()) if (row.turnJob === job) return { ...row };
+    return null;
+  }
+
+  async deletePmSession(projectId: string): Promise<void> {
+    store().pmSessions.delete(projectId);
   }
 
   async savePushSubscription(userId: string, subscription: PushSubscriptionRecord): Promise<void> {

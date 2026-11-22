@@ -69,6 +69,9 @@ export function toolLabel(name: string, input: Json): string {
   if (/\/_temp\/formic-(summary|answer)\.md$/.test(path) && /^(Write|write_file|Edit|replace)$/.test(name)) {
     return path.endsWith("summary.md") ? "Writing up what it did" : "Writing its answer";
   }
+  // An MCP tool, such as Formic's own for the board's PM: server and tool, in words.
+  const mcp = /^mcp__([^_]+(?:_[^_]+)*)__(.+)$/.exec(name);
+  if (mcp) return `${mcp[1] === "formic" ? "Formic" : mcp[1]}: ${mcp[2]!.replace(/_/g, " ")}`;
   switch (name) {
     case "Bash":
     case "run_shell_command":

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { repo, currentUser, activeProject, launch, answer, cancelPending, collectCliRuns, limited } = vi.hoisted(() => ({
+const { repo, currentUser, activeProject, launch, answer, cancelPending, collectCliRuns, limited, endPmSession, stopSessionTurn } = vi.hoisted(() => ({
   repo: {
     assistantAgent: vi.fn(),
     assistantMessages: vi.fn(),
@@ -19,6 +19,8 @@ const { repo, currentUser, activeProject, launch, answer, cancelPending, collect
   cancelPending: vi.fn(),
   collectCliRuns: vi.fn(),
   limited: vi.fn(),
+  endPmSession: vi.fn(),
+  stopSessionTurn: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ repository: () => repo }));
@@ -26,6 +28,7 @@ vi.mock("@/lib/auth/user", () => ({ currentUser, asSignedIn: <T,>(handler: T) =>
 vi.mock("@/lib/board/project", () => ({ activeProject, noProject: () => Response.json({}, { status: 409 }) }));
 vi.mock("@/lib/agents/pipeline", () => ({ launch }));
 vi.mock("@/lib/assistant/turn", () => ({ answer, cancelPending }));
+vi.mock("@/lib/assistant/session", () => ({ endPmSession, stopSessionTurn }));
 vi.mock("@/lib/runner/runner", () => ({ collectCliRuns }));
 vi.mock("@/lib/rate-limit", () => ({ limited, RUN: "run" }));
 
@@ -203,6 +206,13 @@ describe("DELETE /api/assistant", () => {
     const res = await DELETE();
     expect(res.status).toBe(200);
     expect(repo.clearAssistant).toHaveBeenCalledWith("p-1");
+  });
+
+  it("ends the PM's session, so the next message starts a fresh one, and stops a turn in flight", async () => {
+    repo.pendingAssistantMessage.mockResolvedValue({ id: "m-3", runnerJob: "m-3--abc" });
+    await DELETE();
+    expect(stopSessionTurn).toHaveBeenCalledWith("p-1", "m-3--abc");
+    expect(endPmSession).toHaveBeenCalledWith("p-1");
   });
 
   it("refuses when there is no active project", async () => {

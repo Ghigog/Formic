@@ -869,6 +869,47 @@ export interface TokenRepository {
   revokeBoardTokens(projectId: string, sessionId?: string): Promise<number>;
 }
 
+/** Where a board's PM session runs. */
+export type PmSessionWhere = "e2b" | "actions" | "gitlab";
+
+/** The board's PM session (docs/plans/pm-chat.md, PR 3). */
+export interface PmSessionRecord {
+  projectId: string;
+  sessionId: string;
+  where: PmSessionWhere;
+  sandboxId: string | null;
+  /** The sealed session file, or null when the next turn starts from the summary. */
+  fileCipher: string | null;
+  bytes: number;
+  summary: string;
+  turnJob: string | null;
+  handoff: string | null;
+  branch: string | null;
+  /** Whether the current turn resumed a saved session. */
+  resumed: boolean;
+  lastTurnAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** The board's PM session: one per board, the latest only. */
+export interface PmSessionRepository {
+  pmSession(projectId: string): Promise<PmSessionRecord | null>;
+  /** Creates the board's session or changes the fields given. */
+  savePmSession(
+    projectId: string,
+    update: Partial<Omit<PmSessionRecord, "projectId" | "createdAt" | "updatedAt">> & Pick<PmSessionRecord, "sessionId" | "where">,
+  ): Promise<PmSessionRecord>;
+  /** Changes an existing session; false when the board has none. */
+  updatePmSession(
+    projectId: string,
+    update: Partial<Omit<PmSessionRecord, "projectId" | "createdAt" | "updatedAt">>,
+  ): Promise<boolean>;
+  /** The session whose current turn is `job`, if any. */
+  pmSessionByJob(job: string): Promise<PmSessionRecord | null>;
+  deletePmSession(projectId: string): Promise<void>;
+}
+
 /** Push subscriptions and preferences. */
 export interface PushRepository {
   /** Saves a device's push subscription; a known endpoint moves to this person with fresh keys. */
@@ -1435,6 +1476,7 @@ export interface Repository
   extends ProjectRepository,
     SharingRepository,
     TokenRepository,
+    PmSessionRepository,
     PushRepository,
     CoordinationRepository,
     UserRepository,

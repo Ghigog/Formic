@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { launch } from "@/lib/agents/pipeline";
 import { answer, cancelPending } from "@/lib/assistant/turn";
+import { endPmSession, stopSessionTurn } from "@/lib/assistant/session";
 import { collectCliRuns } from "@/lib/runner/runner";
 import { asSignedIn, currentUser } from "@/lib/auth/user";
 import { activeProject, noProject } from "@/lib/board/project";
@@ -104,10 +105,13 @@ export async function PATCH(req: Request) {
   return Response.json(await state(found.project, found.user));
 }
 
-/** Starts the conversation over. */
+/** Starts the conversation over, and the PM's session with it. */
 export async function DELETE() {
   const found = await board();
   if ("error" in found) return found.error;
+  const pending = await repository().pendingAssistantMessage(found.project.id);
+  if (pending?.runnerJob) await stopSessionTurn(found.project.id, pending.runnerJob);
+  await endPmSession(found.project.id);
   await repository().clearAssistant(found.project.id);
   return Response.json(await state(found.project, found.user));
 }
