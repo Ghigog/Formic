@@ -53,6 +53,7 @@ import { handOffToReviewer, releaseWaiting, restack, restackOnto, ticketBelow } 
 import { sweepInterval } from "@/lib/usage/governor";
 import { addNote, noteTexts } from "@/lib/coder/notes";
 import { agentFor, cliAgentFor, runTargetFor } from "@/lib/agents/presets";
+import { recordLintFailures } from "@/lib/coder/recurring-lint";
 import { cliPrompt, showcaseSummaries, startCliAnswer, startJobRun } from "@/lib/runner/runner";
 
 /**
@@ -1435,6 +1436,8 @@ async function reviewTicket(
       log ?? { name: check.name, summary: "No log was available.", annotations: [] },
     );
   }
+  // Not awaited: the review does not wait on a note for later coders.
+  void recordLintFailures(projectId, ticket.id, pull.number, logs).catch(() => undefined);
   const changedFiles = await client
     .compare(pull.baseBranch, ticket.branchName)
     .then((c) => c.files)

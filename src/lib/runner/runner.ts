@@ -554,6 +554,8 @@ export function loopPayload(input: {
   notes: string[];
   /** What agents on the repository's other tickets shared, one line each. */
   sharedNotes?: string[];
+  /** Lint rules failing on several pull requests, one line each. */
+  recurringLint?: string[];
   /** What the ticket already proposed as follow-ups, one line each. */
   followUps?: string[];
   /** What this run was asked to do from the ticket's chat, if anything. */
@@ -578,6 +580,7 @@ export function loopPayload(input: {
       storyPoints: ticket.storyPoints,
       ...(input.notes.length ? { notes: input.notes } : {}),
       ...(input.sharedNotes?.length ? { sharedNotes: input.sharedNotes } : {}),
+      ...(input.recurringLint?.length ? { recurringLint: input.recurringLint } : {}),
       ...(input.followUps?.length ? { followUps: input.followUps } : {}),
       ...(input.instruction ? { instruction: input.instruction } : {}),
       ...(input.origin ? { origin: input.origin } : {}),
@@ -683,9 +686,11 @@ export function cliPrompt(
   sharedNotes: string[] = [],
   /** The request the ticket's Epic came from, in the person's own words. */
   origin?: Origin,
+  /** Lint rules failing on several pull requests here, one line each. */
+  recurringLint: string[] = [],
 ): string {
   const brief = agent.brief ?? (mode === "implement" ? CODER_BRIEF : REVIEWER_BRIEF);
-  const task = taskFor(ticket, notes, instruction, sharedNotes, origin);
+  const task = taskFor(ticket, notes, instruction, sharedNotes, origin, recurringLint);
   const work = review
     ? [reviewBrief({ ...review, task }), "", review.conflicts ? CLI_RESOLVE : CLI_REVIEW]
     : [

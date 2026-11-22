@@ -39,6 +39,18 @@ const reviewInput = (over: Partial<ReviewTask> = {}): Omit<ReviewTask, "workspac
 
 beforeEach(() => vi.clearAllMocks());
 
+describe("taskBrief recurring lint", () => {
+  it("lists the rules that keep failing, with their pull requests", () => {
+    expect(taskBrief({ ...TASK, recurringLint: ["UseKtx (#723, #724)"] })).toContain(
+      "Lint rules that failed on several pull requests here: UseKtx (#723, #724). Run lint and check for them before you push.",
+    );
+  });
+
+  it("says nothing without any", () => {
+    expect(taskBrief(TASK)).not.toContain("Lint rules that failed");
+  });
+});
+
 describe("taskBrief", () => {
   it("lists the ticket, its criteria, scope and estimate", () => {
     const brief = taskBrief({ ...TASK, storyPoints: 5 });
