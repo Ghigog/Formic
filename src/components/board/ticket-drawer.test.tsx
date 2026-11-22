@@ -6,7 +6,7 @@ import { PlanSteps } from "@/components/ui/plan-steps";
 import { makeCard } from "@/test/cards";
 import type { FormicEvent } from "@/lib/domain/events";
 import type { TicketView } from "@/lib/domain/ticket-view";
-import type { AttachmentSummary } from "@/lib/domain/entities";
+import type { AttachmentSummary, BoardCard } from "@/lib/domain/entities";
 import { setViewportMatches } from "@/test/viewport";
 
 const card = makeCard({
@@ -66,6 +66,7 @@ function open(
   attachments: AttachmentSummary[] = [],
   kpis: unknown = NO_KPIS,
   kpisUnlocked = true,
+  cards: BoardCard[] = [],
 ) {
   vi.stubGlobal(
     "fetch",
@@ -89,6 +90,7 @@ function open(
   render(
     <TicketDrawer
       ticketId="t-1"
+      cards={cards}
       onClose={() => {}}
       onOpenEpic={onOpenEpic}
       onOpenTicket={onOpenTicket}
@@ -842,5 +844,32 @@ describe("TicketDrawer Escape and focus", () => {
     first.focus();
     fireEvent.keyDown(first, { key: "Tab", shiftKey: true });
     expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+});
+
+describe("TicketDrawer shared-files banner", () => {
+  const mine = { ...card, status: "ready" as const, epicId: "e-1", kind: "ticket" as const, dependsOn: [] };
+  const sibling = makeCard({
+    id: "t-2",
+    key: "EPIC-1-T2",
+    status: "ready",
+    epicId: "e-1",
+    fileScope: ["src/app/api/export/route.ts"],
+  });
+
+  it("is a collapsed alert banner that opens to the overlapping paths", async () => {
+    open({ ...VIEW, card: mine }, [], NO_KPIS, true, [mine, sibling]);
+    const banner = await screen.findByRole("alert");
+    expect(banner.dataset.severity).toBe("alert");
+    expect(within(banner).getByText("Shares files with EPIC-1-T2")).toBeInTheDocument();
+    expect(within(banner).queryByText(/route\.ts/)).toBeNull();
+    fireEvent.click(within(banner).getByRole("button"));
+    expect(within(banner).getByText(/src\/app\/api\/export\/route\.ts/)).toBeInTheDocument();
+  });
+
+  it("is absent once one depends on the other", async () => {
+    open({ ...VIEW, card: mine }, [], NO_KPIS, true, [mine, { ...sibling, dependsOn: ["t-1"] }]);
+    await screen.findByText("Export endpoint");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

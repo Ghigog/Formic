@@ -21,6 +21,7 @@ import { spRadius, spVerts } from "@/components/colony/fx";
 import { useColony } from "@/components/colony/colony";
 import { formatCountdown, useElapsed } from "@/lib/hooks/use-countdown";
 import { classifyNotice, type Notice } from "@/lib/domain/notice";
+import type { ScopeClash } from "@/lib/domain/dag";
 import { isQuestion } from "@/lib/domain/question";
 import { openWaits } from "@/lib/domain/stack";
 import { formatDuration } from "./format-duration";
@@ -64,6 +65,8 @@ export interface CardExtras {
    * a crew on it and take the crew home when the reply lands.
    */
   answering?: boolean;
+  /** Open siblings in the same Epic that share files with this ticket with no order between them. */
+  scopeClashes?: ScopeClash[];
 }
 
 export type ExtrasMap = Record<string, CardExtras | undefined>;
@@ -386,6 +389,25 @@ export function NoticeIcon({ severity, label }: { severity: Notice["severity"]; 
       )}
     >
       {severity === "warning" ? "!" : "?"}
+    </span>
+  );
+}
+
+/** What a clash is titled, on the card and in the drawer. */
+export function clashTitle(clashes: readonly ScopeClash[]): string {
+  return `Shares files with ${clashes.map((c) => c.key).join(", ")}`;
+}
+
+/** The card's notice line for a ticket that shares files with an open sibling. */
+function ClashLine({ clashes }: { clashes?: ScopeClash[] }) {
+  if (!clashes?.length) return null;
+  return (
+    <span
+      data-testid="card-clash"
+      className={cn("inline-flex min-w-0 items-center gap-1.5 text-[11px] font-semibold", NOTICE_INK.alert)}
+    >
+      <NoticeIcon severity="alert" />
+      <span className="truncate">{clashTitle(clashes)}</span>
     </span>
   );
 }
@@ -1011,6 +1033,7 @@ function PlainTicket({
           </span>
         )
       )}
+      <ClashLine clashes={extras.scopeClashes} />
       {extras.progress && (
         <ProgressBar
           value={extras.progress.fraction}
