@@ -2,10 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/events/bus", () => ({ publish: vi.fn(async () => 1) }));
 vi.mock("server-only", () => ({}));
-const wake = vi.hoisted(() => vi.fn(async () => {}));
-const agent = vi.hoisted(() => ({ kind: "none" as string }));
+/** The PM's answer to a wake-up: it wakes when an agent can answer, unless `held` says a limit stopped it. */
+const agent = vi.hoisted(() => ({ kind: "none" as string, held: null as string | null }));
+const wake = vi.hoisted(() =>
+  vi.fn(async (..._args: unknown[]) =>
+    agent.kind === "none" || agent.held ? { woke: false, say: agent.held } : { woke: true, say: null },
+  ),
+);
 vi.mock("@/lib/pm/questions", () => ({ wakePmForStall: wake }));
-vi.mock("@/lib/agents/presets", () => ({ assistantAgentFor: async () => agent }));
 
 import { repository } from "@/lib/db";
 import type { FormicEvent } from "@/lib/domain/events";
@@ -39,6 +43,7 @@ beforeEach(() => {
   resetStallsReported();
   wake.mockClear();
   agent.kind = "none";
+  agent.held = null;
 });
 
 describe("reportStall", () => {
@@ -80,7 +85,7 @@ describe("reportStall", () => {
     const t = await seed();
     const reason = "Out of reviews: build still failing\nWhat failed:\nx";
     await reportStall(PROJECT, stall(t.id, "blocked", reason));
-    await vi.waitFor(() => expect(wake).toHaveBeenCalledWith(PROJECT, t.id, reason));
+    expect(wake).toHaveBeenCalledWith(PROJECT, t.id, reason);
     expect(await messages()).toHaveLength(0);
   });
 
@@ -90,7 +95,16 @@ describe("reportStall", () => {
     const [m] = await messages();
     expect(m!.content).toContain("needs you: Out of reviews. Out of reviews: build still failing");
     expect(m!.content).toContain("boom");
-    expect(wake).not.toHaveBeenCalled();
+  });
+
+  it("posts the canned message with the limit's line when the PM is held", async () => {
+    agent.kind = "api";
+    agent.held = "The PM has used today's 20 wake-ups.";
+    const t = await seed();
+    await reportStall(PROJECT, stall(t.id, "blocked", "Out of reviews: build still failing\nWhat failed:\nboom"));
+    const [m] = await messages();
+    expect(m!.content).toContain("needs you: Out of reviews.");
+    expect(m!.content).toContain("The PM has used today's 20 wake-ups.");
   });
 
   it("does not wake the PM for a usage-limit stop", async () => {

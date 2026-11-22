@@ -231,6 +231,17 @@ export function provider(id: string): ProviderInfo | undefined {
   return PROVIDERS.find((p) => p.id === id);
 }
 
+/**
+ * Whether an agent on this provider keeps a key with Formic: every API one,
+ * and Claude Code, whose token lets the board's PM run in an E2B sandbox
+ * (docs/plans/pm-chat.md). Any other CLI agent's sign-in lives only in the
+ * repository's secrets.
+ */
+export function keepsKey(id: string): boolean {
+  const info = provider(id);
+  return !!info && (info.kind !== "cli" || info.cli === "claude");
+}
+
 export function isProviderId(id: string): id is ProviderId {
   return (PROVIDER_IDS as readonly string[]).includes(id);
 }

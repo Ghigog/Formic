@@ -4,7 +4,6 @@ import { repository } from "@/lib/db";
 import { classifyNotice, isUsageLimitStop } from "@/lib/domain/notice";
 import type { FormicEvent } from "@/lib/domain/events";
 import type { ColumnId, TicketStatus } from "@/lib/domain/status";
-import { assistantAgentFor } from "@/lib/agents/presets";
 import { postPmMessage } from "./pm-messages";
 
 type CardStatus = FormicEvent & { type: "card.status" };
@@ -61,20 +60,18 @@ export async function reportStall(projectId: string, event: FormicEvent, seq?: n
     if (!notice || isUsageLimitStop(stopped)) return;
 
     // A stop that is not a question: the PM looks into it first and says what happened (questions wake it already).
+    let held: string | null = null;
     if (notice.severity !== "question") {
-      const agent = await assistantAgentFor(projectId);
-      if (agent.kind !== "none" && agent.kind !== "limited") {
-        const { wakePmForStall } = await import("@/lib/pm/questions");
-        void wakePmForStall(projectId, card.id, event.blockedReason ?? "").catch((e) =>
-          console.error("[formic] PM look into a stalled card failed:", e),
-        );
-        return;
-      }
+      const { wakePmForStall } = await import("@/lib/pm/questions");
+      const woke = await wakePmForStall(projectId, card.id, event.blockedReason ?? "");
+      if (woke.woke) return;
+      held = woke.say;
     }
 
     const lines = [`${card.key} · ${card.title} needs you: ${notice.title}. ${notice.shortDescription}`];
     if (notice.longDescription) lines.push("", notice.longDescription);
     if (notice.severity === "question") lines.push("", "Answer in the card's chat.");
+    if (held) lines.push("", held);
 
     await postPmMessage(projectId, {
       content: lines.join("\n"),

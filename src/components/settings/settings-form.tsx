@@ -21,6 +21,8 @@ import { RunnerSection } from "@/components/settings/runner-section";
 import type { LimitSetting } from "@/lib/budget/budget-for";
 import type { PushPreferences } from "@/lib/db/repository";
 import type { RunTimeBudgetSettings } from "@/lib/run-time-budget";
+import type { PmWakeLimits } from "@/lib/domain/pm-wake";
+import { PmWakeLimitsFields } from "./pm-wake-section";
 
 interface KeyState {
   /** Last four characters of the saved key, or null with none saved. */
@@ -42,6 +44,8 @@ interface ProjectSetting {
   unlockAllSentinels?: boolean;
   /** The saved agent that runs scouts; null follows the column. */
   scoutPresetId?: string | null;
+  /** The PM's wake-up limits, as they apply now. */
+  pmWakeLimits?: PmWakeLimits;
   /** Whether this person owns the board; only owners change its settings. On when omitted. */
   owner?: boolean;
 }
@@ -389,6 +393,18 @@ export function SettingsForm({
               see this.
             </p>
             <ShareKeysToggle project={own} />
+          </Section>
+        )}
+
+        {own?.pmWakeLimits && (
+          <Section title="PM wake-ups">
+            <p className="text-muted mb-2.5 text-[12px] leading-[1.5]">
+              Applies to {own.name}. A stuck ticket or an agent&apos;s question
+              wakes the PM, which uses your agent&apos;s usage. Past these
+              limits it stops waking itself and the ticket comes to you.
+              Messages you send are never held.
+            </p>
+            <PmWakeLimitsFields projectId={own.id} limits={own.pmWakeLimits} />
           </Section>
         )}
 

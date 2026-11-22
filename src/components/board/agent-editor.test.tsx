@@ -393,6 +393,51 @@ describe("AgentEditor CLI agent secret", () => {
     );
   });
 
+  it("offers the PM a Claude Code token for its E2B sandbox, and saves it beside the secret", async () => {
+    stubModelsFetch();
+    const onSave = vi.fn(async () => {});
+    render(
+      <AgentEditor repoFullName="acme/widgets" column="assistant" preset={null} onClose={vi.fn()} onSave={onSave} onDelete={vi.fn()} />,
+    );
+    await settled();
+    await userEvent.type(screen.getByLabelText("Name"), "pm");
+    await userEvent.click(screen.getByRole("radio", { name: /Claude Code/ }));
+    await userEvent.type(screen.getByLabelText("Claude Code token for fast replies (optional)"), "sk-ant-oat01-mine");
+    await userEvent.click(screen.getByRole("button", { name: "Create agent" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ secretName: "FORMIC_CLAUDE_CODE_TOKEN", apiKey: "sk-ant-oat01-mine" }),
+    );
+  });
+
+  it("shows a PM's kept token by its hint and removes it on save", async () => {
+    stubModelsFetch();
+    const onSave = vi.fn(async () => {});
+    render(
+      <AgentEditor
+        repoFullName="acme/widgets"
+        column="assistant"
+        preset={{ id: "p1", name: "pm", provider: "claude-code", model: "", prompt: "", column: null, hasKey: true, keyHint: "mine", limitedUntil: null, limitNote: null } as AgentPreset}
+        onClose={vi.fn()}
+        onSave={onSave}
+        onDelete={vi.fn()}
+      />,
+    );
+    await settled();
+    expect(screen.getByText("••••••••mine")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Remove" }));
+    expect(screen.getByText(/Removed when you save/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Save/ }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ apiKey: null }));
+  });
+
+  it("offers no token to a column's Claude Code agent", async () => {
+    stubModelsFetch();
+    render(<AgentEditor repoFullName="acme/widgets" column="todo" preset={null} onClose={vi.fn()} onSave={vi.fn()} onDelete={vi.fn()} />);
+    await settled();
+    await userEvent.click(screen.getByRole("radio", { name: /Claude Code/ }));
+    expect(screen.queryByLabelText("Claude Code token for fast replies (optional)")).not.toBeInTheDocument();
+  });
+
   it("starts a new CLI agent on the shared secret name, and saves the one chosen", async () => {
     stubModelsFetch();
     const onSave = vi.fn(async () => {});

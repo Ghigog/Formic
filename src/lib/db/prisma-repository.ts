@@ -9,6 +9,10 @@ import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "./client";
 import type {
   PmSessionRecord,
+  NewPmWake,
+  PmWakeKind,
+  PmWakeRecord,
+  PmWakeLimitSettings,
   AttachmentContent,
   AttachmentRef,
   CreateAttachmentInput,
@@ -90,7 +94,7 @@ import { DEFAULT_ALLOWANCE_WINDOW_DAYS } from "@/lib/domain/limit-settings";
 import { z } from "zod";
 import { type ColumnId, type TicketStatus, columnOf } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
-import { provider as providerInfo } from "@/lib/llm/providers";
+import { keepsKey, provider as providerInfo } from "@/lib/llm/providers";
 import { normalizeScope } from "@/lib/domain/scope";
 import { HEAT_WINDOW_MS, mergeScore } from "@/lib/colony/game";
 import { kindOf, type MessageKind } from "@/lib/domain/chat";
@@ -693,6 +697,41 @@ export class PrismaRepository implements Repository {
 
   async deletePmSession(projectId: string): Promise<void> {
     await prisma().pmSession.deleteMany({ where: { projectId } });
+  }
+
+  async addPmWake(wake: NewPmWake): Promise<void> {
+    await prisma().pmWake.create({ data: wake });
+  }
+
+  async pmWakes(projectId: string, filter: { since?: Date; cardId?: string }): Promise<PmWakeRecord[]> {
+    const rows = await prisma().pmWake.findMany({
+      where: {
+        projectId,
+        ...(filter.since && { createdAt: { gte: filter.since } }),
+        ...(filter.cardId && { cardId: filter.cardId }),
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+    return rows.map((r) => ({ ...r, kind: r.kind as PmWakeKind }));
+  }
+
+  async pmWakeLimits(projectId: string): Promise<PmWakeLimitSettings> {
+    const row = await prisma().project.findUnique({
+      where: { id: projectId },
+      select: { pmFixCap: true, pmWakesPerHour: true, pmWakesPerDay: true },
+    });
+    return { fixCap: row?.pmFixCap ?? null, perHour: row?.pmWakesPerHour ?? null, perDay: row?.pmWakesPerDay ?? null };
+  }
+
+  async setPmWakeLimits(projectId: string, limits: Partial<PmWakeLimitSettings>): Promise<void> {
+    await prisma().project.updateMany({
+      where: { id: projectId },
+      data: {
+        ...(limits.fixCap !== undefined && { pmFixCap: limits.fixCap }),
+        ...(limits.perHour !== undefined && { pmWakesPerHour: limits.perHour }),
+        ...(limits.perDay !== undefined && { pmWakesPerDay: limits.perDay }),
+      },
+    });
   }
 
   async savePushSubscription(userId: string, subscription: PushSubscriptionRecord): Promise<void> {
@@ -2237,10 +2276,12 @@ export class PrismaRepository implements Repository {
     // A preset made before columns were scoped has none (null) and shows for
     // every column; an update may give it one, once, but never move a
     // preset that already has one.
-    const claimingColumn =
-      !!record.id &&
-      !!record.column &&
-      (await db.agentPreset.findUnique({ where: { id: record.id }, select: { column: true } }))?.column == null;
+    const existing = record.id
+      ? await db.agentPreset.findUnique({ where: { id: record.id }, select: { column: true, provider: true } })
+      : null;
+    const claimingColumn = !!record.id && !!record.column && existing?.column == null;
+    // A key belongs to the provider it was saved for.
+    const switched = !!existing && existing.provider !== record.provider;
     const data = {
       name: record.name,
       provider: record.provider,
@@ -2256,8 +2297,13 @@ export class PrismaRepository implements Repository {
       // never here. A new key is likely a new account, with its own usage.
       // Formic cannot see a secret change, so saving a CLI agent is the
       // person saying it has one: its usage mark goes too.
-      ...(providerInfo(record.provider)?.kind === "cli"
+      // Claude Code may keep its token, for the board's PM sandbox.
+      ...(!keepsKey(record.provider)
         ? { apiKeyCipher: null, apiKeyHint: null, limitedUntil: null, limitNote: null }
+        : record.apiKeyCipher === undefined && switched
+        ? { apiKeyCipher: null, apiKeyHint: null, limitedUntil: null, limitNote: null }
+        : providerInfo(record.provider)?.kind === "cli" && record.apiKeyCipher === undefined
+        ? { limitedUntil: null, limitNote: null }
         : record.apiKeyCipher !== undefined
         ? {
             apiKeyCipher: record.apiKeyCipher,
