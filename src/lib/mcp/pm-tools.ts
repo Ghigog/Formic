@@ -107,7 +107,10 @@ export function updateBranch(caller: PmCaller, input: { board: string; card: str
   );
 }
 
-export function openPullRequest(caller: PmCaller, input: { board: string; branch: string; title: string; body: string }) {
+export function openPullRequest(
+  caller: PmCaller,
+  input: { board: string; branch: string; title: string; body: string; unblocks?: string },
+) {
   return onPmBoard(caller, input.board, async (project) => done(await openPmPullRequest(project.id, input)));
 }
 

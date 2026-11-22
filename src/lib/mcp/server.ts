@@ -240,6 +240,14 @@ function registerPmTools(server: McpServer, pm: PmCaller): void {
         branch: z.string().trim().min(1),
         title: z.string().trim().min(1).max(120),
         body: z.string().trim().min(1).max(20_000),
+        unblocks: z
+          .string()
+          .trim()
+          .min(1)
+          .optional()
+          .describe(
+            "The key of a blocked ticket this pull request fixes, when it does. That card then waits on this pull request and updates from main by itself once it merges.",
+          ),
       },
     },
     async (input) => reply(await openPullRequest(pm, input)),
