@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { addFollowUpTicket, answerFollowUp, nextTicketKey, recordFollowUps } from "./follow-ups";
+import { addFollowUpTicket, answerFollowUp, nextTicketKey, recordFollowUps, requestFix, waitingOnFixReason } from "./follow-ups";
 import { repository } from "@/lib/db";
 import type { FollowUp } from "@/lib/agents/follow-ups";
 
@@ -201,5 +201,25 @@ describe("addFollowUpTicket", () => {
     const card = await addFollowUpTicket(PROJECT, (await repository().ticketDetail(ticket.id))!, followUp);
     expect(card.key).toBe(`${epic.key}-T2`);
     expect(card.epicId).toBe(epic.id);
+  });
+});
+
+describe("a fix raised from red CI", () => {
+  const fix = {
+    cause: "The nudge is set a moment after the count.",
+    check: "OverlayServiceTest.handleCounts",
+    assertion: "expect(handle.deadlineNudge).toBe(true) (OverlayServiceTest.kt:88)",
+    bug: { title: "Wait for the nudge", story: "The test races the nudge.", scope: ["OverlayServiceTest.kt"] },
+  };
+
+  it("quotes the failing assertion in the bug and in the reason the ticket waits", async () => {
+    const { ticket } = await seed();
+    const detail = (await repository().ticketDetail(ticket.id))!;
+    const card = await requestFix(PROJECT, detail, fix);
+    const bug = (await repository().ticketDetail(card.id))!;
+    expect(bug.description).toContain("Failing assertion: expect(handle.deadlineNudge).toBe(true) (OverlayServiceTest.kt:88)");
+    const reason = waitingOnFixReason(fix, card.key);
+    expect(reason.split("\n")[0]).toContain(fix.cause);
+    expect(reason.split("\n")[1]).toBe(`Failing assertion: ${fix.assertion}`);
   });
 });

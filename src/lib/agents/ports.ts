@@ -307,6 +307,8 @@ export interface ReviewVerdict extends CodeChange {
 export interface BlockedByFix {
   cause: string;
   check: string;
+  /** The failing line as the check's log shows it, with its file:line. */
+  assertion: string;
   bug: { title: string; story: string; scope: string[] };
 }
 
