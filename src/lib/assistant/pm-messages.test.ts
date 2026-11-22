@@ -14,14 +14,14 @@ describe("postPmMessage", () => {
     publish.mockClear();
   });
 
-  it("stores a done PM message with its card links and publishes assistant.message", async () => {
+  it("stores a notice, never a PM reply, with its card links and publishes assistant.message", async () => {
     const project = await repository().ensureProject({ ownerId: null, repoFullName: "acme/pm", baseBranch: "main" });
     const card = { id: "c1", key: "ACME-1", title: "Follow up" };
     const posted = await postPmMessage(project.id, { content: "Worth doing?", cards: [card] });
 
     const { messages } = await repository().assistantMessages(project.id);
     expect(messages).toHaveLength(1);
-    expect(messages[0]).toMatchObject({ role: "assistant", status: "done", speaker: "assistant", cards: [card] });
+    expect(messages[0]).toMatchObject({ role: "assistant", kind: "notice", status: "done", speaker: "assistant", cards: [card] });
     expect(publish).toHaveBeenCalledWith(project.id, { type: "assistant.message", messageId: posted.id });
   });
 });

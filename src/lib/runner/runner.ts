@@ -49,6 +49,7 @@ import {
   ENGINEERING_PRACTICES,
   HANDOFF_RULE,
   CHECKS_RULE,
+  DISPLAY_RULE,
   VERIFY_RULE,
   withPlanningConventions,
   withProductConventions,
@@ -98,6 +99,7 @@ import {
 } from "@/lib/vcs";
 import { NO_CHANGES } from "@/lib/domain/notice";
 import { hostName, repoHost } from "@/lib/vcs/host";
+import { SCREENSHOT_RULE, isScreenshotPath, screenshotSection, skippedScreenshots, withoutScreenshotTrailers } from "./screenshots";
 import { openTicketPullRequest, stallTicket, taskFor } from "@/lib/coder/pipeline";
 import {
   ALREADY_DONE_TRAILER,
@@ -113,6 +115,7 @@ import {
   USAGE_TRAILER,
   attemptOfJob,
   workflowCeiling,
+  workflowTakesSession,
   RUNNER_JOB_MINUTES,
   cardOfJob,
   isAnswerMode,
@@ -130,6 +133,7 @@ import {
   type RunnerMode,
 } from "./workflow";
 import { GITLAB_CI_PATH, GITLAB_RUNNER_PATH } from "./gitlab-ci";
+import { lockForRun, runHolder, unlockBranch } from "./branch-lock";
 import { gitlabRunnerConfig, gitlabRunnerVersion, gitlabSetupBody, gitlabSetupBranch, withRunnerInclude } from "./gitlab-ci-config";
 import { gitlabHookToken, gitlabHookUrl } from "./gitlab-hook";
 import { sweepInterval } from "@/lib/usage/governor";
@@ -165,7 +169,9 @@ const cliRules = (mode: CodeMode) => `Rules that are enforced, not advisory:
 - ${mode === "implement" ? `${CODER_DESIGN_RULE}\n- ${CODER_SCOPE_RULE}\n- ${FOLLOW_UP_RULE}` : `${REVIEWER_SCOPE_RULE}\n- ${REVIEWER_FOLLOW_UP_RULE}`} Put follow-ups in the summary as a "Follow-ups:" section, one "- [needed] Title (N pt): what and why" or "- [nice to have] Title (N pt): what and why" per line, before the plan.\n- ${RUBRIC_FIX_RULE} Put them in the summary as a "Rubric fixes:" section, one "- Collum 5b: what is wrong -> the change you suggest" per line.${mode === "implement" ? "" : `\n- ${REVIEWER_PROOF_RULE}\n- ${REVIEWER_AUDIT_RULE}`}
 - Match the surrounding code. Read neighbouring files before you write.
 - ${CHECKS_RULE}
+- ${DISPLAY_RULE}
 - ${VERIFY_RULE}
+- ${SCREENSHOT_RULE}
 - The project's own checks must pass on your change, whatever the ticket says. A ticket that calls a failing check expected or fine is wrong about that.
 - Do not commit, push, or create branches. Formic does that after checking your changes.
 - Do not skip, delete or weaken a test to make a command pass.
@@ -240,7 +246,32 @@ export async function closeStaleSetupPulls(client: VcsClient): Promise<void> {
 export type RunnerState =
   | { ready: true }
   /** `update` when an older version of the workflow is already there. */
-  | { ready: false; setupUrl: string; update: boolean };
+  | { ready: false; setupUrl: string; update: boolean }
+  /** The base branch has a newer workflow than this server: see serverBehind. */
+  | { ready: false; behind: true };
+
+/** What a card or the setup dialog says when serverBehind holds. */
+export const SERVER_BEHIND_REASON =
+  "This repository has a newer Formic agent workflow than the Formic server running it. Deploy Formic from main (Actions → CI → Run workflow), then try again.";
+
+/**
+ * Whether the base branch changed the workflow after the commit this server
+ * was deployed from. Then the server is behind its own repository, and the
+ * setup pull request it would open puts the older workflow back. Only the
+ * repository Formic deploys from has that commit: for any other the
+ * comparison fails, and the answer is no.
+ */
+export async function serverBehind(client: VcsClient, baseBranch: string): Promise<boolean> {
+  const deployed = process.env.FORMIC_COMMIT ?? process.env.VERCEL_GIT_COMMIT_SHA;
+  if (!deployed) return false;
+  const { path } = hostRunner(client);
+  try {
+    const { files } = await client.compare(deployed, baseBranch);
+    return files.includes(path);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Whether the repository has the current runner workflow on its base
@@ -257,6 +288,7 @@ export async function ensureRunner(client: VcsClient, baseBranch: string): Promi
   const current = await client.readFile(RUNNER_WORKFLOW_PATH, baseBranch);
   if (current?.includes(version)) return { ready: true };
   const update = current !== null;
+  if (update && (await serverBehind(client, baseBranch))) return { ready: false, behind: true };
 
   await client.ensureBranch(branch, baseBranch);
   const onBranch = await client.readFile(RUNNER_WORKFLOW_PATH, branch);
@@ -522,6 +554,8 @@ export function loopPayload(input: {
   notes: string[];
   /** What agents on the repository's other tickets shared, one line each. */
   sharedNotes?: string[];
+  /** Lint rules failing on several pull requests, one line each. */
+  recurringLint?: string[];
   /** What the ticket already proposed as follow-ups, one line each. */
   followUps?: string[];
   /** What this run was asked to do from the ticket's chat, if anything. */
@@ -546,6 +580,7 @@ export function loopPayload(input: {
       storyPoints: ticket.storyPoints,
       ...(input.notes.length ? { notes: input.notes } : {}),
       ...(input.sharedNotes?.length ? { sharedNotes: input.sharedNotes } : {}),
+      ...(input.recurringLint?.length ? { recurringLint: input.recurringLint } : {}),
       ...(input.followUps?.length ? { followUps: input.followUps } : {}),
       ...(input.instruction ? { instruction: input.instruction } : {}),
       ...(input.origin ? { origin: input.origin } : {}),
@@ -651,9 +686,11 @@ export function cliPrompt(
   sharedNotes: string[] = [],
   /** The request the ticket's Epic came from, in the person's own words. */
   origin?: Origin,
+  /** Lint rules failing on several pull requests here, one line each. */
+  recurringLint: string[] = [],
 ): string {
   const brief = agent.brief ?? (mode === "implement" ? CODER_BRIEF : REVIEWER_BRIEF);
-  const task = taskFor(ticket, notes, instruction, sharedNotes, origin);
+  const task = taskFor(ticket, notes, instruction, sharedNotes, origin, recurringLint);
   const work = review
     ? [reviewBrief({ ...review, task }), "", review.conflicts ? CLI_RESOLVE : CLI_REVIEW]
     : [
@@ -734,6 +771,8 @@ async function dispatch(input: {
   merge?: string;
   /** The run's time budget; the job's timeout follows it, within the workflow's ceiling. */
   budgetMinutes?: number | null;
+  /** The board's PM session: where the job collects and saves it. Only for a runner that takes it. */
+  session?: string;
   /** Recorded before the dispatch: only this job's result is taken. */
   record: (job: string) => Promise<void>;
 }): Promise<{ ok: true } | { ok: false; reason: string; blocked: boolean }> {
@@ -741,6 +780,7 @@ async function dispatch(input: {
   try {
     const runner = await ensureRunner(client, input.baseBranch);
     if (!runner.ready) {
+      if ("behind" in runner) return { ok: false, reason: SERVER_BEHIND_REASON, blocked: true };
       return {
         ok: false,
         reason: `${agent.info.label} runs in this repository's GitHub Actions. Merge the setup pull request once (${runner.setupUrl}), then try again.`,
@@ -776,6 +816,7 @@ async function dispatch(input: {
       ...(ceiling.takesTimeout
         ? { timeout: String(jobTimeoutMinutes(input.budgetMinutes ?? null, ceiling.minutes)) }
         : {}),
+      ...(input.session ? { session: input.session } : {}),
     });
     return { ok: true };
   } catch (e) {
@@ -845,6 +886,11 @@ export async function startJobRun(input: {
   const withFiles = (prompt: string) => (files ? `${prompt}\n\n${files}` : prompt);
 
   const job = jobId(ticket.id, randomUUID().slice(0, 8));
+  // The run holds its branch for as long as its job may run, so the PM never
+  // pushes under it; it waits a moment if the PM is moving it right now.
+  if (ticket.branchName) {
+    await lockForRun(projectId, ticket.branchName, job, (RUNNER_JOB_MINUTES + JOB_HEADROOM_MINUTES) * 60_000).catch(() => false);
+  }
   const started = await dispatch({
     client,
     baseBranch: project.baseBranch,
@@ -867,6 +913,7 @@ export async function startJobRun(input: {
 
   if (!started.ok) {
     await repository().updateTicket(ticket.id, { runnerJob: null, runnerAgent: null });
+    if (ticket.branchName) await unlockBranch(projectId, ticket.branchName, runHolder(job)).catch(() => undefined);
     await stallTicket(projectId, ticket, started.reason, {
       blocked: started.blocked,
       stalledIn: input.stalledIn,
@@ -1440,6 +1487,49 @@ export async function startCliAsk(input: {
 }
 
 /**
+ * Whether the repository's installed runner can run the board's PM as a
+ * resumable session: a workflow or GitLab job from before the `session`
+ * input cannot, and its PM answers the old way until the setup refreshes it.
+ */
+export async function runnerTakesSession(client: VcsClient, baseBranch: string): Promise<boolean> {
+  if (client.name === "gitlab") {
+    return ((await client.readFile(GITLAB_RUNNER_PATH, baseBranch).catch(() => null)) ?? "").includes("FORMIC_SESSION");
+  }
+  return workflowTakesSession(await client.readFile(RUNNER_WORKFLOW_PATH, baseBranch).catch(() => null));
+}
+
+/**
+ * Starts one turn of the board's PM session in the repository's CI: an
+ * "ask" run for the assistant, with the address its job collects the
+ * session from and hands it back to (src/lib/assistant/session).
+ */
+export async function dispatchPmTurn(input: {
+  projectId: string;
+  messageId: string;
+  agent: CliAgent;
+  job: string;
+  prompt: string;
+  session: string;
+}): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const project = await projectFor(input.projectId);
+  const creds = await credentialsForProject(project);
+  const started = await dispatch({
+    client: vcs(project.repoFullName, creds.repoToken),
+    baseBranch: project.baseBranch,
+    agent: input.agent,
+    job: input.job,
+    mode: "ask",
+    cardKey: "assistant",
+    from: project.baseBranch,
+    prompt: input.prompt,
+    session: input.session,
+    record: (job) =>
+      repository().updateAssistantMessage(input.messageId, { runnerJob: job, runnerAgent: input.agent.presetId }),
+  });
+  return started.ok ? { ok: true } : { ok: false, reason: started.reason };
+}
+
+/**
  * Starts a CLI agent auditing as a sentinel, in the "ask" mode the board's
  * assistant uses: a report, not a change. The audit finishes when the job's
  * answer comes back, in completeCliSentinel.
@@ -1665,6 +1755,26 @@ async function completeCliAsk(projectId: string, result: RunnerResult): Promise<
     return;
   }
 
+  // The board's PM session: its reply is its own words, and its change lands
+  // on the branch it worked on, under the branch rules.
+  if (await repo.pmSessionByJob(result.job)) {
+    const { finishSessionAnswer } = await import("@/lib/assistant/turn");
+    if (result.conclusion !== "success") {
+      await cleanUp();
+      await finishSessionAnswer(projectId, message.id, result.job, {
+        reply: null,
+        failure: await whyItFailed(projectId, client, result, message.runnerAgent),
+        changeSha: null,
+      });
+      return;
+    }
+    const reply = await client.readFile(ANSWER_PATH, staging).catch(() => null);
+    const changeSha = await client.branchHead(changed).catch(() => null);
+    await finishSessionAnswer(projectId, message.id, result.job, { reply, failure: null, changeSha });
+    await cleanUp();
+    return;
+  }
+
   const { finishCliAnswer } = await import("@/lib/assistant/turn");
   // Without a token the client is the mock, which has no answer to read: say
   // so, rather than blame an agent whose answer is waiting on GitHub.
@@ -1770,6 +1880,7 @@ async function takeCliRun(projectId: string, result: RunnerResult): Promise<void
     return;
   }
   await repo.updateTicket(ticket.id, { runnerJob: null, runnerAgent: null });
+  if (ticket.branchName) await unlockBranch(projectId, ticket.branchName, runHolder(result.job)).catch(() => undefined);
 
   const stalledIn = isTicketImplementation(result.mode) ? "in_progress" : "in_review";
   const logLink = result.url ? `Log: ${result.url}` : "";
@@ -1873,7 +1984,8 @@ async function takeCliRun(projectId: string, result: RunnerResult): Promise<void
       files = files.filter((f) => !brought.has(f));
     }
 
-    let violations = violationsInDiff(files, ticket.fileScope);
+    // Screenshots are evidence, not the change: the scope does not judge them.
+    let violations = violationsInDiff(files.filter((f) => !isScreenshotPath(f)), ticket.fileScope);
     if (violations.length > 0 && isTicketImplementation(result.mode) && (await widenScope(projectId, ticket, violations))) {
       violations = [];
     }
@@ -1946,10 +2058,16 @@ async function takeCliRun(projectId: string, result: RunnerResult): Promise<void
       branch,
       change: {
         summary,
-        detail: withoutHandoff(rest.join("\n").trim()),
+        detail: withoutScreenshotTrailers(withoutHandoff(rest.join("\n").trim())),
         verifiedWith: null,
         handoff: handoffFromSummary(message),
       },
+      screenshots: screenshotSection({
+        repoFullName: project.repoFullName,
+        branch,
+        files,
+        skipped: skippedScreenshots(change.messages),
+      }),
       ...(usage ? { usage } : {}),
     });
   } catch (e) {
@@ -2165,6 +2283,11 @@ export async function receiveReport(input: {
       ? ((await repo.assistantMessage(cardId)) ?? (await repo.cardChatMessage(cardId)))
       : null;
     if (message && message.runnerJob === input.job && message.status === "pending") {
+      // The PM session's reply streams into its own message as it is written.
+      if ("speaker" in message && message.speaker === "assistant" && (await repo.pmSessionByJob(input.job))) {
+        const { streamSessionReply } = await import("@/lib/assistant/session");
+        await streamSessionReply(message.projectId, message.id, readStream(input.lines));
+      }
       for (const item of readStream(input.lines).slice(-MAX_REPORT_ITEMS)) {
         if (item.kind !== "log") continue;
         await publish(message.projectId, { type: "run.log", runId: input.job, stream: item.stream, line: item.line });
@@ -2263,6 +2386,7 @@ async function stopTicketRun(projectId: string, ticketId: string): Promise<boole
 
   const job = ticket.runnerJob;
   await repo.updateTicket(ticket.id, { runnerJob: null, runnerAgent: null });
+  if (job && ticket.branchName) await unlockBranch(projectId, ticket.branchName, runHolder(job)).catch(() => undefined);
   await stallTicket(projectId, ticket, STOPPED_BY_PERSON, {
     blocked: true,
     stalledIn: ticket.status === "review" ? "in_review" : "in_progress",

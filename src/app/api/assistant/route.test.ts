@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { repo, currentUser, activeProject, launch, answer, cancelPending, collectCliRuns, limited } = vi.hoisted(() => ({
+const { repo, currentUser, activeProject, launch, answer, cancelPending, collectCliRuns, limited, endPmSession, stopSessionTurn } = vi.hoisted(() => ({
   repo: {
     assistantAgent: vi.fn(),
     assistantMessages: vi.fn(),
@@ -19,6 +19,8 @@ const { repo, currentUser, activeProject, launch, answer, cancelPending, collect
   cancelPending: vi.fn(),
   collectCliRuns: vi.fn(),
   limited: vi.fn(),
+  endPmSession: vi.fn(),
+  stopSessionTurn: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ repository: () => repo }));
@@ -26,6 +28,7 @@ vi.mock("@/lib/auth/user", () => ({ currentUser, asSignedIn: <T,>(handler: T) =>
 vi.mock("@/lib/board/project", () => ({ activeProject, noProject: () => Response.json({}, { status: 409 }) }));
 vi.mock("@/lib/agents/pipeline", () => ({ launch }));
 vi.mock("@/lib/assistant/turn", () => ({ answer, cancelPending }));
+vi.mock("@/lib/assistant/session", () => ({ endPmSession, stopSessionTurn }));
 vi.mock("@/lib/runner/runner", () => ({ collectCliRuns }));
 vi.mock("@/lib/rate-limit", () => ({ limited, RUN: "run" }));
 
@@ -33,7 +36,8 @@ const route = await import("./route");
 
 // The handlers' inferred type admits undefined; they always respond.
 const GET = async (query = "") => (await route.GET(new Request(`http://localhost/api/assistant${query}`))) as Response;
-const PATCH = async () => (await route.PATCH()) as Response;
+const PATCH = async (body: unknown = { messageId: "m-2" }) =>
+  (await route.PATCH(new Request("http://localhost/api/assistant", { method: "PATCH", body: JSON.stringify(body) }))) as Response;
 const DELETE = async () => (await route.DELETE()) as Response;
 
 async function ask(body: unknown) {
@@ -159,6 +163,8 @@ describe("POST /api/assistant", () => {
     expect(res.status).toBe(200);
     expect(repo.addAssistantMessage).toHaveBeenCalledTimes(2);
     expect(launch).not.toHaveBeenCalled();
+    // A new message never stops the one being written.
+    expect(cancelPending).not.toHaveBeenCalled();
   });
 
   it("saves one pending reply per speaker, in order, and starts the first", async () => {
@@ -177,10 +183,15 @@ describe("POST /api/assistant", () => {
 });
 
 describe("PATCH /api/assistant", () => {
-  it("cancels the pending answer", async () => {
+  it("stops only the reply the person pressed Stop on", async () => {
     const res = await PATCH();
     expect(res.status).toBe(200);
-    expect(cancelPending).toHaveBeenCalledWith("p-1");
+    expect(cancelPending).toHaveBeenCalledWith("p-1", "m-2");
+  });
+
+  it("stops nothing without the reply's id", async () => {
+    expect((await PATCH({})).status).toBe(400);
+    expect(cancelPending).not.toHaveBeenCalled();
   });
 
   it("asks to sign in when there is no user", async () => {
@@ -195,6 +206,13 @@ describe("DELETE /api/assistant", () => {
     const res = await DELETE();
     expect(res.status).toBe(200);
     expect(repo.clearAssistant).toHaveBeenCalledWith("p-1");
+  });
+
+  it("ends the PM's session, so the next message starts a fresh one, and stops a turn in flight", async () => {
+    repo.pendingAssistantMessage.mockResolvedValue({ id: "m-3", runnerJob: "m-3--abc" });
+    await DELETE();
+    expect(stopSessionTurn).toHaveBeenCalledWith("p-1", "m-3--abc");
+    expect(endPmSession).toHaveBeenCalledWith("p-1");
   });
 
   it("refuses when there is no active project", async () => {

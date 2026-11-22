@@ -83,6 +83,8 @@ interface MockRepo {
   recordedMerges: Map<string, string>;
   /** Each card's checkpoint, with what it saved. */
   checkpoints: Map<string, Checkpoint & { input: CheckpointInput }>;
+  /** Agent secrets written, by name: there only once one is, so a test can tell nothing was. */
+  secrets?: Map<string, string>;
   /** Actions runs by branch, newest first, as a test says they went. */
   branchRuns: Map<string, BranchRun[]>;
   /** Artifact files by branch, as a test says CI uploaded them. */
@@ -412,7 +414,11 @@ export class MockVcsClient implements VcsClient {
     repo().dispatches.push({ file, ref, inputs });
   }
 
-  async compare(_base: string, head: string): Promise<Comparison> {
+  async compare(base: string, head: string): Promise<Comparison> {
+    // Compared from a pull request's head to the base: what the base has that it lacks, as for a branch behind.
+    for (const [number, pull] of pulls()) {
+      if (pull.headSha === base && repo().behind.has(number)) return { files: [], messages: ["Commits on the base"], headSha: head };
+    }
     const sha = repo().branches.get(head) ?? head;
     const commit = repo().commits.get(sha);
     return { files: commit?.files ?? [], messages: commit ? [commit.message] : [], headSha: sha };
@@ -548,6 +554,15 @@ export class MockVcsClient implements VcsClient {
 
   async deleteCheckpoint(card: string): Promise<void> {
     repo().checkpoints.delete(card);
+  }
+
+  async saveAgentSecret(name: string, value: string): Promise<void> {
+    (repo().secrets ??= new Map()).set(name, value);
+  }
+
+  /** The agent secret saved under `name`, for tests. */
+  static secret(name: string): string | undefined {
+    return repo().secrets?.get(name);
   }
 
   /* Test seams for the runner. */

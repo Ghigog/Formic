@@ -140,6 +140,26 @@ describe("the PM on call", () => {
   });
 });
 
+describe("the PM's wake-up limits", () => {
+  it("holds a question past the hourly limit, says so once, and leaves the card waiting", async () => {
+    await useAgent("groq");
+    await repository().setPmWakeLimits(PROJECT, { perHour: 0 });
+    const sent = fakeProvider([]);
+    const a = await waitingEpic();
+    const b = await waitingEpic();
+    const now = new Date(Date.UTC(2026, 10, 21, 10));
+
+    await wakePm(PROJECT, a.id, REASON, now);
+    await wakePm(PROJECT, b.id, REASON, now);
+
+    expect(sent).toEqual([]);
+    const chat = (await repository().assistantMessages(PROJECT)).messages;
+    expect(chat).toHaveLength(1);
+    expect(chat[0]!.content).toContain("pausing for a while");
+    expect(isQuestion((await repository().cardById(a.id))?.blockedReason)).toBe(true);
+  });
+});
+
 describe("a CLI PM's answers", () => {
   it("passes on the answers it gives, and leaves a card the person already answered alone", async () => {
     const epic = await waitingEpic();
@@ -174,5 +194,12 @@ describe("stallPrompt", () => {
     expect(text).toContain("T-9 (Motion)");
     expect(text).toContain("Out of reviews: build still failing");
     expect(text).toContain("card_status");
+    expect(text).toContain("propose");
+  });
+
+  it("asks a PM that can change code to fix it on the ticket's branch", () => {
+    const text = stallPrompt({ key: "T-9", title: "Motion" }, "Out of reviews", true);
+    expect(text).toContain("check out T-9's branch");
+    expect(text).toContain("rerun_checks");
   });
 });

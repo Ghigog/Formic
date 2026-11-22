@@ -12,11 +12,16 @@ import { boardPorts } from "@/lib/board/ports";
 import { repository } from "@/lib/db";
 import { validateDag } from "@/lib/domain/dag";
 import { describeProblems } from "@/lib/domain/problems";
+import { prdFromTickets } from "@/lib/domain/planned-epic";
 import { COLUMN_LABELS, COLUMNS, columnOf, hasActiveRun } from "@/lib/domain/status";
 import { publish } from "@/lib/events/bus";
 import { positionForIndex } from "@/lib/ordering";
 import { addFollowUpTicket } from "@/lib/board/follow-ups";
-import { rerunRedActions } from "@/lib/review/pipeline";
+import { mergeByPerson, rerunRedActions, updateFromMain } from "@/lib/review/pipeline";
+import { waitedOn, waitingOnReason } from "@/lib/domain/notice";
+import { postPmMessage } from "./pm-messages";
+import { ask as askCardChat } from "@/lib/agents/card-chat";
+import { isQuestion, PM_ANSWER_PREFIX } from "@/lib/domain/question";
 import { SENTINELS, sentinel as findSentinel } from "@/lib/sentinels/roster";
 import { reviseRubricCheck } from "@/lib/sentinels/service";
 import { vcs } from "@/lib/vcs";
@@ -71,6 +76,15 @@ export const assistantActionSchema = z.discriminatedUnion("type", [
       .describe("For a playtest note: the screenshot ids its [Playtest note] line lists, so the item carries the pictures."),
   }),
   z.object({
+    type: z.literal("create_todo_item"),
+    request: z.string().trim().min(1).describe("The one fix or behaviour, as the Architect Agent should read it."),
+    screenshots: z
+      .array(z.string().min(1))
+      .max(5)
+      .optional()
+      .describe("For a playtest note: the screenshot ids its [Playtest note] line lists, so the ticket carries the pictures."),
+  }),
+  z.object({
     type: z.literal("create_epic_with_tickets"),
     title: z.string().trim().min(1).max(80),
     summary: z.string().trim().min(1).describe("What this Epic delivers, in a sentence or two."),
@@ -92,6 +106,10 @@ export const assistantActionSchema = z.discriminatedUnion("type", [
     key: z.string().trim().min(1).describe("The ticket's key, as the board shows it."),
   }),
   z.object({
+    type: z.literal("update_branch"),
+    key: z.string().trim().min(1).describe("The ticket's key, as the board shows it."),
+  }),
+  z.object({
     type: z.literal("open_pull_request"),
     branch: z
       .string()
@@ -100,11 +118,23 @@ export const assistantActionSchema = z.discriminatedUnion("type", [
       .describe("The branch your change is on. Formic names it; use the one it gave you."),
     title: z.string().trim().min(1).max(120),
     body: z.string().trim().min(1).describe("What changed and why, and how it was checked."),
+    unblocks: z
+      .string()
+      .trim()
+      .min(1)
+      .optional()
+      .describe(
+        "The key of a blocked ticket this pull request fixes, when it does. That card then waits on this pull request and updates from main by itself once it merges.",
+      ),
   }),
   z.object({
     type: z.literal("move_card"),
     key: z.string().trim().min(1).describe("The card's key, as the board shows it."),
     to: z.enum(COLUMNS).describe("The column to move it to."),
+  }),
+  z.object({
+    type: z.literal("merge_pull_request"),
+    key: z.string().trim().min(1).describe("The ticket's key, as the board shows it."),
   }),
   z.object({
     type: z.literal("close_card"),
@@ -167,6 +197,25 @@ export function checkAction(
 /** Makes an approved change. Returns what now exists, for the conversation. */
 export async function applyAction(projectId: string, action: AssistantAction, approvedBy?: string): Promise<string> {
   if (action.type === "revise_rubric_check") return reviseRubric(projectId, action, approvedBy);
+  if (action.type === "create_todo_item") {
+    const shots = await ownScreenshots(projectId, action.screenshots ?? []);
+    const card = await boardPorts().service.createTodoItem(projectId, action.request);
+    // Copied, not moved: the note keeps its picture in the chat.
+    for (const shot of shots) {
+      const content = await repository().attachmentContent(shot.id);
+      if (!content) continue;
+      await repository().createAttachment({
+        projectId,
+        ticketId: card.id,
+        filename: shot.filename,
+        mimeType: content.mimeType,
+        kind: "image",
+        size: content.bytes.length,
+        bytes: content.bytes,
+      });
+    }
+    return `Added ${card.key} to To Do. The Architect Agent is drafting it.`;
+  }
   if (action.type === "create_backlog_item") {
     const shots = await ownScreenshots(projectId, action.screenshots ?? []);
     const card = await boardPorts().service.createBacklogItem(projectId, action.request);
@@ -189,8 +238,10 @@ export async function applyAction(projectId: string, action: AssistantAction, ap
   if (action.type === "add_follow_up") return addFollowUp(projectId, action);
   if (action.type === "move_card") return moveCard(projectId, action.key, action.to);
   if (action.type === "close_card") return closeCard(projectId, action.key);
+  if (action.type === "merge_pull_request") return mergePullRequest(projectId, action.key);
   if (action.type === "add_tickets_to_epic") return addTicketsToEpic(projectId, action.epic, action.tickets);
   if (action.type === "rerun_ci") return rerunCi(projectId, action.key);
+  if (action.type === "update_branch") return updateBranch(projectId, action.key);
   if (action.type === "open_pull_request") return openPullRequest(projectId, action);
 
   const repo = repository();
@@ -201,24 +252,27 @@ export async function applyAction(projectId: string, action: AssistantAction, ap
     rawRequest: action.summary,
     position: 0,
   });
-  await repo.setEpicPrd(
-    epic.id,
-    {
-      summary: action.summary,
-      problem: action.summary,
-      scope: tickets.map((t) => `${t.key}: ${t.title}`),
-      outOfScope: [],
-      technicalContext: [],
-      userStories: tickets.map((t) => t.description.split("\n")[0]!.replace(/^\*\*User story:\*\* /, "")),
-      successCriteria: tickets.flatMap((t) => t.acceptanceCriteria),
-    },
-    false,
-  );
+  await placePlannedEpic(projectId, epic.id, { summary: action.summary, tickets });
+  await applyTickets(projectId, epic.id, tickets);
+  return `Added ${epic.key} to To Do with ${tickets.length} ticket${tickets.length === 1 ? "" : "s"}.`;
+}
 
-  // Planned already, so it skips Backlog and lands in To Do with its tickets.
+/**
+ * An Epic that arrives already broken down (the PM's create_epic, or its
+ * approved create_epic_with_tickets): it gets a plan from its tickets and
+ * skips Backlog, landing in To Do beside them, ready to run. Without this it
+ * would sit in Backlog waiting for a Product Agent that never needs to run.
+ */
+export async function placePlannedEpic(
+  projectId: string,
+  epicId: string,
+  plan: { summary: string; tickets: ReadonlyArray<{ key: string; title: string; description: string; acceptanceCriteria: string[] }> },
+): Promise<void> {
+  const repo = repository();
+  await repo.setEpicPrd(epicId, prdFromTickets(plan.summary, plan.tickets), false);
   const positions = await repo.columnPositions(projectId, "todo");
   await repo.move({
-    cardId: epic.id,
+    cardId: epicId,
     kind: "epic",
     status: "ready",
     stalledIn: null,
@@ -226,15 +280,13 @@ export async function applyAction(projectId: string, action: AssistantAction, ap
   });
   await publish(projectId, {
     type: "card.status",
-    cardId: epic.id,
+    cardId: epicId,
     kind: "epic",
     status: "ready",
     stalledIn: null,
     stage: 3,
     blockedReason: null,
   });
-  await applyTickets(projectId, epic.id, tickets);
-  return `Added ${epic.key} to To Do with ${tickets.length} ticket${tickets.length === 1 ? "" : "s"}.`;
 }
 
 /** The source ticket and the index of the follow-up an add_follow_up names. */
@@ -360,6 +412,18 @@ async function moveCard(projectId: string, key: string, to: (typeof COLUMNS)[num
     throw new Error(result.problem);
   }
   return `Moved ${key} to ${COLUMN_LABELS[to]}.`;
+}
+
+/** A ticket's pull request, merged as the person's "Merge it" would: red CI still does not merge. */
+async function mergePullRequest(projectId: string, key: string): Promise<string> {
+  const card = await cardByKey(projectId, key);
+  if (card.kind !== "ticket" || !card.prNumber) throw new Error(`${key} has no pull request to merge.`);
+  if (card.status === "running" || card.workingSince) throw new Error(`An agent is still working on ${key}. Stop it first.`);
+  const ticket = await repository().ticketDetail(card.id);
+  if (!ticket) throw new Error(`${key} is not on the board.`);
+  const said = await mergeByPerson(projectId, ticket, card.prNumber);
+  if ((await repository().ticketDetail(card.id))?.status !== "merged") throw new Error(said);
+  return said;
 }
 
 async function closeCard(projectId: string, key: string): Promise<string> {
@@ -493,21 +557,81 @@ async function reopenEpic(projectId: string, epicId: string): Promise<void> {
   });
 }
 
+/**
+ * Whether a red check's failure is the code's: the ticket is blocked on a fix
+ * it waits for, or a failing check's annotations name a file in the
+ * repository. A lost runner or a network error names no file.
+ */
+async function failureIsInTheCode(
+  client: ReturnType<typeof vcs>,
+  branch: string,
+  checks: Awaited<ReturnType<ReturnType<typeof vcs>["checksFor"]>>,
+  blockedReason: string | null | undefined,
+): Promise<boolean> {
+  if (waitedOn(blockedReason)) return true;
+  const red = checks.filter((c) => c.status === "completed" && c.conclusion === "failure");
+  for (const check of red) {
+    const log = await client.checkLog(check.id).catch(() => null);
+    for (const { path } of log?.annotations ?? []) {
+      if ((await client.readFile(path, branch).catch(() => null)) !== null) return true;
+    }
+  }
+  return false;
+}
+
+/** Brings main into a blocked ticket's branch, so it can turn green. */
+export async function updateBranch(projectId: string, key: string): Promise<string> {
+  const card = await cardByKey(projectId, key);
+  if (card.kind !== "ticket" || !card.prNumber) throw new Error(`${key} has no pull request to bring up to date.`);
+  const ticket = await repository().ticketDetail(card.id);
+  if (!ticket) throw new Error(`${key} is not on the board.`);
+  return updateFromMain(projectId, ticket);
+}
+
 /** A ticket's red checks, run again: for a failure that is not the code's. */
-async function rerunCi(projectId: string, key: string): Promise<string> {
+export async function rerunCi(projectId: string, key: string): Promise<string> {
   const card = await cardByKey(projectId, key);
   if (card.kind !== "ticket" || !card.prNumber) throw new Error(`${key} has no pull request to run CI on.`);
   const project = await projectFor(projectId);
   const creds = await credentialsForProject(project);
   const client = vcs(project.repoFullName, creds.repoToken);
   const pull = await client.pullRequest(card.prNumber);
-  const started = await rerunRedActions(client, pull.headBranch, await client.checksFor(pull.headSha));
+  const checks = await client.checksFor(pull.headSha);
+  if (await failureIsInTheCode(client, pull.headBranch, checks, card.status === "blocked" ? card.blockedReason : null)) {
+    const reason = `The head of ${key}'s pull request has not changed, and a re-run tests the same commit, so it would fail the same way. Bringing main into the branch is the step that can turn it green.`;
+    await postPmMessage(projectId, {
+      content: `${key}: ${reason}`,
+      cards: [{ id: card.id, key: card.key, title: card.title }],
+      proposals: [{ summary: `Update ${key} from main`, action: { type: "update_branch", key }, state: "proposed" }],
+    });
+    throw new Error(reason);
+  }
+  const started = await rerunRedActions(client, pull.headBranch, checks);
   if (started === 0) {
     throw new Error(
       `${key} has no failed Actions check that can run again: it is green, still running, or already re-ran once and failed again.`,
     );
   }
   return `Re-running ${started === 1 ? "the failed check" : `${started} failed runs`} on ${key}'s pull request #${pull.number}.`;
+}
+
+/** A blocked card now waits on a pull request that fixes what blocked it: its reason says so, over the one it had. */
+export async function waitOnPullRequest(projectId: string, key: string, prNumber: number): Promise<void> {
+  const card = await cardByKey(projectId, key);
+  if (card.kind !== "ticket" || card.status !== "blocked") throw new Error(`${key} is not blocked, so there is nothing for #${prNumber} to unblock.`);
+  const detail = (card.blockedReason ?? "").split("\n");
+  const rest = waitedOn(detail[0]) ? detail.slice(1) : detail;
+  const reason = [waitingOnReason(`#${prNumber}`), ...rest].join("\n").trim();
+  await repository().updateTicket(card.id, { blockedReason: reason });
+  await publish(projectId, {
+    type: "card.status",
+    cardId: card.id,
+    kind: "ticket",
+    status: card.status,
+    stalledIn: card.stalledIn,
+    stage: card.stage,
+    blockedReason: reason,
+  });
 }
 
 /** The assistant's own change, as a pull request into the base branch. */
@@ -527,5 +651,154 @@ async function openPullRequest(
       title: action.title,
       body: `${action.body}\n\n_Opened from the board's assistant._`,
     }));
+  if (action.unblocks) await waitOnPullRequest(projectId, action.unblocks, pull.number);
   return `Opened pull request #${pull.number}: ${pull.url}`;
+}
+
+/*
+ * The PM's own actions: what it does without asking (PM chat plan, decision
+ * 2), held to the branch rules below whatever it was told to do.
+ */
+
+/** Branches the PM may work on besides a ticket's own. */
+export const PM_BRANCH_PREFIXES = ["formic-pm/", "formic-staging/", ASSISTANT_BRANCH_PREFIX] as const;
+
+/** Whether a change touches the repository's workflows, which nothing the PM does may. */
+export function touchesWorkflows(paths: string[]): boolean {
+  return paths.some((p) => p.replace(/^\/+/, "").startsWith(".github/workflows/"));
+}
+
+/**
+ * Why the PM may not use a branch, or null when it may: only a branch of the
+ * board's own repository, never the base branch, and only its own
+ * (`formic-pm/`, `formic-staging/`, `formic/chat-`) or one of the board's ticket branches.
+ */
+export function branchProblem(branch: string, rules: { baseBranch: string; ticketBranches: ReadonlySet<string> }): string | null {
+  const name = branch.trim();
+  if (!name || /[:\s~^?*[\\]|\.\.|^refs\/|^-|\/$/.test(name)) return `"${branch}" is not a branch name.`;
+  if (name === rules.baseBranch) return `${name} is the base branch; nothing goes onto it except through a merged pull request.`;
+  if (PM_BRANCH_PREFIXES.some((p) => name.startsWith(p)) || rules.ticketBranches.has(name)) return null;
+  return `${name} is not a branch of this board: use formic-pm/ for your own change, or a ticket's branch.`;
+}
+
+/** The branches of the board's tickets. */
+async function ticketBranches(projectId: string): Promise<Set<string>> {
+  const repo = repository();
+  const tickets = (await repo.boardCards(projectId)).filter((c) => c.kind === "ticket" && !c.archived);
+  const details = await Promise.all(tickets.map((t) => repo.ticketDetail(t.id)));
+  return new Set(details.flatMap((d) => (d?.branchName ? [d.branchName] : [])));
+}
+
+/** The board's repository, as the board's own credentials reach it. */
+async function boardRepo(projectId: string) {
+  const project = await projectFor(projectId);
+  if (!project.repoFullName) throw new Error("This board has no repository.");
+  const creds = await credentialsForProject(project);
+  return { project, client: vcs(project.repoFullName, creds.repoToken) };
+}
+
+/**
+ * A pull request for a change the PM made, into the base branch. The branch
+ * must pass branchProblem, already be on the board's repository, and leave
+ * the workflows alone. One already open for the branch is returned instead.
+ */
+export async function openPmPullRequest(
+  projectId: string,
+  input: { branch: string; title: string; body: string; unblocks?: string },
+): Promise<string> {
+  const { project, client } = await boardRepo(projectId);
+  const branch = input.branch.trim();
+  const problem = branchProblem(branch, { baseBranch: project.baseBranch, ticketBranches: await ticketBranches(projectId) });
+  if (problem) throw new Error(problem);
+  if (!(await client.branchHead(branch))) throw new Error(`${branch} is not on ${project.repoFullName}. Push it first.`);
+  const diff = await client.compare(project.baseBranch, branch);
+  if (diff.files.length === 0) throw new Error(`${branch} has nothing that ${project.baseBranch} does not.`);
+  if (touchesWorkflows(diff.files)) {
+    throw new Error("That branch changes .github/workflows/, which the PM may not. Say what to change and the person can do it.");
+  }
+  const pull =
+    (await client.findPullRequest(branch)) ??
+    (await client.openPullRequest({
+      headBranch: branch,
+      baseBranch: project.baseBranch,
+      title: input.title,
+      body: `${input.body}\n\n_Opened by the board's PM._`,
+    }));
+  if (input.unblocks) await waitOnPullRequest(projectId, input.unblocks, pull.number);
+  return `Opened pull request #${pull.number}: ${pull.url}`;
+}
+
+/**
+ * Brings the base branch into a ticket's pull request, as GitHub's "Update
+ * branch" does: a merge commit on the ticket's branch, never a rewrite, and
+ * never onto the base branch itself.
+ */
+export async function updateBranchFromBase(projectId: string, key: string): Promise<string> {
+  const card = await cardByKey(projectId, key);
+  if (card.kind !== "ticket" || !card.prNumber) throw new Error(`${key} has no pull request to bring up to date.`);
+  if (card.status === "running" || card.workingSince) throw new Error(`An agent is working ${key}; it brings the base in itself.`);
+  const { project, client } = await boardRepo(projectId);
+  const pull = await client.pullRequest(card.prNumber);
+  if (pull.merged || pull.state === "closed") throw new Error(`Pull request #${pull.number} is not open.`);
+  const problem = branchProblem(pull.headBranch, { baseBranch: project.baseBranch, ticketBranches: await ticketBranches(projectId) });
+  if (problem) throw new Error(problem);
+  const update = await client.updateBranch(pull.number);
+  if (!update.ok) {
+    throw new Error(
+      update.conflict
+        ? `${key} conflicts with ${pull.baseBranch}; it needs the conflict resolved on ${pull.headBranch}.`
+        : `GitHub would not update ${pull.headBranch}: ${update.reason}`,
+    );
+  }
+  return update.updated
+    ? `Brought ${pull.baseBranch} into ${key}'s pull request #${pull.number}. CI runs again on the new head.`
+    : `${key}'s pull request #${pull.number} already has everything on ${pull.baseBranch}.`;
+}
+
+/** Passes an answer to the agent that asked on a card; `own` marks it as the PM's, not the person's. */
+export async function answerCardQuestion(projectId: string, key: string, answer: string, own: boolean): Promise<string> {
+  const card = await cardByKey(projectId, key);
+  if (!isQuestion(card.blockedReason)) throw new Error(`${card.key} is not waiting on a question.`);
+  await askCardChat(projectId, card.kind, card.id, own ? `${PM_ANSWER_PREFIX}${answer}` : answer);
+  return `Passed on. ${card.key}'s agent has started again with the answer.`;
+}
+
+/**
+ * Makes one ticket wait for another, on this board. Refused when it already
+ * does, when the other has merged (there is nothing to wait for), or when it
+ * would make a loop.
+ */
+export async function addDependency(projectId: string, key: string, dependsOn: string): Promise<string> {
+  const cards = await repository().boardCards(projectId);
+  const find = (k: string) => cards.find((c) => c.key.toLowerCase() === k.trim().toLowerCase() && !c.archived);
+  const ticket = find(key);
+  const before = find(dependsOn);
+  if (!ticket || ticket.kind !== "ticket") throw new Error(`${key} is not a ticket on the board.`);
+  if (!before || before.kind !== "ticket") throw new Error(`${dependsOn} is not a ticket on the board.`);
+  if (ticket.id === before.id) throw new Error("A ticket cannot wait for itself.");
+  if (ticket.dependsOn.includes(before.id)) return `${ticket.key} already waits for ${before.key}.`;
+  if (before.status === "merged") throw new Error(`${before.key} has merged already; there is nothing to wait for.`);
+  const tickets = cards.filter((c) => c.kind === "ticket" && !c.archived);
+  const ids = new Set(tickets.map((t) => t.id));
+  const keyOf = new Map(tickets.map((t) => [t.id, t.key]));
+  const dag = validateDag(
+    tickets.map((t) => ({
+      key: t.key,
+      dependsOn: [...t.dependsOn.filter((d) => ids.has(d)), ...(t.id === ticket.id ? [before.id] : [])].map((d) => keyOf.get(d)!),
+      fileScope: [],
+    })),
+  );
+  const cycle = dag.problems.find((p) => p.kind === "cycle");
+  if (cycle) throw new Error(`That would make a loop:\n${describeProblems([cycle])}`);
+  await repository().addDependencies([{ ticketId: ticket.id, dependsOnTicketId: before.id }]);
+  await publish(projectId, {
+    type: "card.status",
+    cardId: ticket.id,
+    kind: "ticket",
+    status: ticket.status,
+    stalledIn: ticket.stalledIn,
+    stage: ticket.stage,
+    blockedReason: ticket.blockedReason,
+  });
+  return `${ticket.key} now waits for ${before.key}.`;
 }

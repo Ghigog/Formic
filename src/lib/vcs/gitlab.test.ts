@@ -326,3 +326,25 @@ describe("preparing a project for Formic's job", () => {
     expect(calls.at(-1)!.body).toMatchObject({ token: "tok", job_events: true, push_events: false });
   });
 });
+
+describe("GitLabClient agent secrets", () => {
+  it("replaces an existing CI/CD variable, masked and not protected", async () => {
+    on("PUT", /^\/variables\/FORMIC_CLAUDE_CODE_TOKEN$/, { key: "FORMIC_CLAUDE_CODE_TOKEN" });
+    await client().saveAgentSecret("FORMIC_CLAUDE_CODE_TOKEN", "sk-ant-oat01-abcdefgh");
+    expect(calls).toEqual([
+      { method: "PUT", path: "/variables/FORMIC_CLAUDE_CODE_TOKEN", body: { value: "sk-ant-oat01-abcdefgh", masked: true, protected: false } },
+    ]);
+  });
+
+  it("creates the variable when there is none yet", async () => {
+    on("POST", /^\/variables$/, { key: "FORMIC_CLAUDE_CODE_TOKEN" });
+    await client().saveAgentSecret("FORMIC_CLAUDE_CODE_TOKEN", "sk-ant-oat01-abcdefgh");
+    expect(calls.map((c) => c.method)).toEqual(["PUT", "POST"]);
+    expect(calls[1]!.body).toEqual({ key: "FORMIC_CLAUDE_CODE_TOKEN", value: "sk-ant-oat01-abcdefgh", masked: true, protected: false });
+  });
+
+  it("says why GitLab refused", async () => {
+    on("PUT", /^\/variables\//, () => Response.json({ message: "403 Forbidden" }, { status: 403 }));
+    await expect(client().saveAgentSecret("FORMIC_CLAUDE_CODE_TOKEN", "sk-ant-oat01-abcdefgh")).rejects.toThrow(/403/);
+  });
+});

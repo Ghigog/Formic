@@ -9,6 +9,7 @@ import { fallbackSecondsLeft } from "@/lib/sandbox/fallback-cap";
 import { getEffortByPoints, getLimitSettings, getNotificationSettings, getRunTimeBudgetSettings } from "@/lib/user-settings";
 import { listTokens } from "@/lib/access-tokens";
 import { configuredOrigin } from "@/lib/origin";
+import { wakeLimits } from "@/lib/domain/pm-wake";
 import { repository } from "@/lib/db";
 import { env } from "@/lib/secrets/env";
 import { hintFor } from "@/lib/secrets/vault";
@@ -44,6 +45,7 @@ export default async function SettingsPage({
           shareKeys: current.shareKeys,
           unlockAllSentinels: current.unlockAllSentinels,
           scoutPresetId: current.scoutPresetId,
+          pmWakeLimits: wakeLimits(await repository().pmWakeLimits(current.id)),
         }
     : null;
 

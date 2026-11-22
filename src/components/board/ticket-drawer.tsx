@@ -1,7 +1,7 @@
 "use client";
 
 import { AutoTour } from "@/components/onboarding/tour";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   keyboardStyles,
   useKeyboardInset,
@@ -22,7 +22,9 @@ import { CardChat } from "./card-chat";
 import { AttachmentGallery } from "./attachment-gallery";
 import { LinkifiedText } from "./linkified-text";
 import { TypeTag } from "./type-tag";
-import { NOTICE_INK, NoticeIcon, ProblemNotice, WorkTimer } from "./card";
+import { boardScopeClashes, type ScopeClash } from "@/lib/domain/dag";
+import type { BoardCard } from "@/lib/domain/entities";
+import { NOTICE_INK, NoticeChevron, clashTitle, NoticeIcon, ProblemNotice, WorkTimer } from "./card";
 import { classifyNotice, type Notice } from "@/lib/domain/notice";
 import { TicketUsage } from "./ticket-usage";
 import { TicketKpis } from "./ticket-kpis";
@@ -52,6 +54,7 @@ export type SubscribeToEvents = (
  */
 export function TicketDrawer({
   ticketId,
+  cards = [],
   onClose,
   onOpenEpic,
   onOpenTicket,
@@ -61,6 +64,8 @@ export function TicketDrawer({
   kpisUnlocked,
 }: {
   ticketId: string | null;
+  /** The board's cards, to tell which open siblings share files with this ticket. */
+  cards?: BoardCard[];
   onClose: () => void;
   onOpenEpic: (epicId: string) => void;
   onOpenTicket: (ticketId: string) => void;
@@ -169,6 +174,7 @@ export function TicketDrawer({
   const tagType = card ? (card.workType ?? (view?.epic?.workType === "bug" ? "bug" : null)) : null;
   const notice = card && !card.misplacedReason ? classifyNotice(card) : null;
   const working = Boolean(card?.workingSince);
+  const clashes = card && cards.length > 0 ? boardScopeClashes(cards)[card.id] : undefined;
 
   return (
     <div
@@ -198,6 +204,9 @@ export function TicketDrawer({
             ) : (
               <ProblemNotice card={card} className="mb-3" />
             ))}
+          {card && !kb.open && clashes && (
+            <ClashBanner clashes={clashes} className="mb-3" />
+          )}
           <div
             data-testid="drawer-header"
             className="flex flex-col-reverse gap-2 sm:flex-row sm:items-start"
@@ -434,6 +443,21 @@ const BANNER: Record<Notice["severity"], { ground: string; label: string }> = {
   paused: { ground: "bg-idle/15", label: "Paused" },
 };
 
+/** An alert banner, collapsed to its title, that opens to the paths two open tickets both claim. */
+function ClashBanner({ clashes, className }: { clashes: ScopeClash[]; className?: string }) {
+  return (
+    <NoticeBanner
+      className={className}
+      notice={{
+        severity: "alert",
+        title: clashTitle(clashes),
+        shortDescription: "Neither depends on the other, so two agents could change the same files. Order them with a dependency.",
+        longDescription: clashes.map((c) => `${c.key}: ${c.paths.join(", ")}`).join("\n"),
+      }}
+    />
+  );
+}
+
 /** A warning (red), alert (yellow), question (terracotta) or pause (gray) in full: title, the short line, then the long text. */
 function NoticeBanner({
   notice,
@@ -443,26 +467,39 @@ function NoticeBanner({
   className?: string;
 }) {
   const { ground, label } = BANNER[notice.severity];
+  const [open, setOpen] = useState(false);
+  const bodyId = useId();
   return (
     <div
       role="alert"
       data-severity={notice.severity}
       className={cn("text-ink rounded-md px-2.5 py-2 text-[12px] leading-5", ground, className)}
     >
-      <div className="flex items-center gap-2">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        onClick={() => setOpen((v) => !v)}
+        className="flex min-h-9 w-full cursor-pointer items-center gap-2 text-left"
+      >
         <NoticeIcon severity={notice.severity} />
         <span className={cn("text-[10px] font-bold uppercase", NOTICE_INK[notice.severity])}>{label}</span>
-        <span className="font-semibold">{notice.title}</span>
-      </div>
-      {notice.shortDescription && (
-        <p className="mt-1">
-          <LinkifiedText text={notice.shortDescription} />
-        </p>
-      )}
-      {notice.longDescription && (
-        <pre className="bg-sunken mt-1.5 max-h-40 overflow-auto rounded px-2 py-1.5 font-mono text-[11px] whitespace-pre-wrap">
-          <LinkifiedText text={notice.longDescription} />
-        </pre>
+        <span className="min-w-0 flex-1 font-semibold">{notice.title}</span>
+        <NoticeChevron open={open} />
+      </button>
+      {open && (
+        <div id={bodyId}>
+          {notice.shortDescription && (
+            <p className="mt-1">
+              <LinkifiedText text={notice.shortDescription} />
+            </p>
+          )}
+          {notice.longDescription && (
+            <pre className="bg-sunken mt-1.5 max-h-40 overflow-auto rounded px-2 py-1.5 font-mono text-[11px] whitespace-pre-wrap">
+              <LinkifiedText text={notice.longDescription} />
+            </pre>
+          )}
+        </div>
       )}
     </div>
   );

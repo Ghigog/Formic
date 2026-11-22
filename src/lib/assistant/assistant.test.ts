@@ -10,8 +10,8 @@ vi.mock("@/lib/agents/pipeline", async (importOriginal) => ({
   },
 }));
 
-import { answer, cancelPending, finishCliAnswer, history, MAX_ANSWER_MS } from "./turn";
-import { applyAction, checkAction } from "./actions";
+import { answer, cancelPending, PLAYTEST_RULE, finishCliAnswer, history, MAX_ANSWER_MS } from "./turn";
+import { applyAction, ASSISTANT_BRANCH_PREFIX, checkAction } from "./actions";
 import { savePreset } from "@/lib/agents/presets";
 import { resetAgents } from "@/lib/agents/registry";
 import { projectFor } from "@/lib/board/project";
@@ -274,10 +274,21 @@ describe("the chat's queue", () => {
     await answer(PROJECT, first!.id);
     expect(launched.map((l) => l.label)).toEqual([`assistant answer ${second!.id}`]);
 
-    await cancelPending(PROJECT);
+    await cancelPending(PROJECT, second!.id);
     expect(await reload(second!.id)).toMatchObject({ status: "failed", content: "Stopped." });
     expect(launched.map((l) => l.label)).toEqual([`assistant answer ${second!.id}`, `assistant answer ${third!.id}`]);
   });
+
+  it("stops a queued reply without starting the running one again", async () => {
+    await useAgent("groq");
+    const [first, second] = await askSpeakers("hi", ["assistant", "assistant"]);
+
+    await cancelPending(PROJECT, second!.id);
+    expect(await reload(second!.id)).toMatchObject({ status: "failed", content: "Stopped." });
+    expect(await reload(first!.id)).toMatchObject({ status: "pending" });
+    expect(launched).toEqual([]);
+  });
+
 
   it("shows each reply only the conversation up to its own message", async () => {
     await useAgent("groq");
@@ -443,6 +454,42 @@ describe("a turn's edges", () => {
     expect(history).toContain("Here is a plan.\n[Proposed: Add the export Epic. The person dismissed it.]");
   });
 
+  it("gives the model Formic's notices as board events, never as its own words", async () => {
+    await useAgent("groq");
+    const repo = repository();
+    await repo.addAssistantMessage({ projectId: PROJECT, role: "user", content: "How is T-1?" });
+    await repo.addAssistantMessage({ projectId: PROJECT, role: "assistant", content: "Still in review." });
+    await repo.addAssistantMessage({ projectId: PROJECT, role: "assistant", kind: "notice", content: "Opened pull request #726" });
+    const sent = fakeProvider([{ role: "assistant", content: "Noted." }]);
+    const pending = await ask("And now?");
+
+    await answer(PROJECT, pending.id);
+
+    const said = sent[0]!.messages as Array<{ role: string; content: string }>;
+    const withNotice = said.filter((m) => m.content.includes("Opened pull request #726"));
+    expect(withNotice).toHaveLength(1);
+    expect(withNotice[0]).toMatchObject({ role: "user" });
+    expect(withNotice[0]!.content).toContain("[Board: Opened pull request #726]");
+    // Joined with the person's next message: no provider sees two user turns in a row for it.
+    expect(withNotice[0]!.content).toContain("And now?");
+    expect(said.filter((m) => m.role === "assistant").map((m) => m.content)).toEqual(["Still in review."]);
+  });
+
+  it("shows a reply the conversation with notices moved above the question they landed after", async () => {
+    await useAgent("groq");
+    const repo = repository();
+    await repo.addAssistantMessage({ projectId: PROJECT, role: "user", content: "Give me the answer first." });
+    await repo.addAssistantMessage({ projectId: PROJECT, role: "assistant", kind: "notice", content: "EPIC-122-T3 added" });
+    const pending = await repo.addAssistantMessage({ projectId: PROJECT, role: "assistant", content: "", status: "pending" });
+    const sent = fakeProvider([{ role: "assistant", content: "Here it is." }]);
+
+    await answer(PROJECT, pending.id);
+
+    const said = sent[0]!.messages as Array<{ role: string; content: string }>;
+    // The person's question is the last thing it reads, not the notice.
+    expect(said.at(-1)!.content).toMatch(/\[Board: EPIC-122-T3 added\]\n\nGive me the answer first\.$/);
+  });
+
   it("turns a provider failure into a failed message the person can read", async () => {
     await useAgent("groq");
     vi.stubGlobal("fetch", async () => {
@@ -513,6 +560,31 @@ describe("applying an approved proposal", () => {
     expect((await repo.attachmentContent(onEpic[0]!.id))?.bytes).toEqual(new Uint8Array([7, 8]));
     // The note keeps its own picture.
     expect((await repo.attachmentsFor({ assistantMessageId: note.id })).map((a) => a.id)).toEqual([shot.id]);
+  });
+
+  it("accepts create_todo_item and files a To Do ticket carrying the note's screenshot", async () => {
+    const repo = repository();
+    const shot = await repo.createAttachment({ projectId: PROJECT, requestId: "playtest-note-2", filename: "shot.png", mimeType: "image/png", kind: "image", size: 2, bytes: new Uint8Array([7, 8]) });
+    const note = await repo.addAssistantMessage({ projectId: PROJECT, role: "user", content: "Night pick-up is off", playtestId: "pt2" });
+    await repo.claimAttachments("playtest-note-2", { assistantMessageId: note.id });
+
+    const checked = checkAction({ type: "create_todo_item", request: "Night pick-up should work by nearness", screenshots: [shot.id] });
+    if (!checked.ok) throw new Error(checked.problem);
+    const before = new Set((await repo.boardCards(PROJECT)).map((c) => c.id));
+    const said = await applyAction(PROJECT, checked.action);
+    const added = (await repo.boardCards(PROJECT)).filter((c) => !before.has(c.id));
+    const ticket = added.find((c) => c.kind === "ticket")!;
+
+    expect(said).toBe(`Added ${ticket.key} to To Do. The Architect Agent is drafting it.`);
+    expect(ticket.key).toMatch(/^T-\d+$/);
+    const onTicket = await repo.attachmentsFor({ ticketId: ticket.id });
+    expect(onTicket).toHaveLength(1);
+    expect((await repo.attachmentContent(onTicket[0]!.id))?.bytes).toEqual(new Uint8Array([7, 8]));
+    expect((await repo.attachmentsFor({ assistantMessageId: note.id })).map((a) => a.id)).toEqual([shot.id]);
+  });
+
+  it("tells the PM a single playtest fix is a To Do ticket", () => {
+    expect(PLAYTEST_RULE).toContain("create_todo_item");
   });
 
   async function plannedTickets() {
@@ -602,6 +674,21 @@ describe("the assistant on a CLI plan", () => {
 
     expect(await reload(reply!.id)).toMatchObject({ speaker: "architect", status: "done", content: "Here is the epic." });
     expect((await reload(reply!.id)).proposals.map((p) => p.summary)).toEqual(["Add the export tickets"]);
+  });
+
+  it("labels a notice in a CLI agent's prompt as the board's, not the person's or its own", async () => {
+    await useAgent("claude-code");
+    const base = (await projectFor(PROJECT)).baseBranch;
+    const client = new MockVcsClient("acme/widgets");
+    await client.commitFile(base, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "install");
+    await repository().addAssistantMessage({ projectId: PROJECT, role: "assistant", kind: "notice", content: "T-9 · Export is done." });
+    const pending = await ask("What next?");
+
+    await answer(PROJECT, pending.id);
+
+    const prompt = MockVcsClient.runner().dispatches.at(-1)!.inputs.prompt!;
+    expect(prompt).toContain("### Board (Formic, not the person and not you)\n[Board: T-9 · Export is done.]");
+    expect(prompt).not.toContain("### You\nT-9 · Export is done.");
   });
 
   it("answers from GitHub Actions and keeps only valid proposals", async () => {
@@ -798,5 +885,76 @@ describe("pictures in the chat", () => {
       { type: "image_url", image_url: { url: "data:image/png;base64,AQID" } },
       { type: "text", text: "what is this?" },
     ]);
+  });
+});
+
+describe("re-running CI on a red ticket", () => {
+  async function seedRed(blockedReason: string, status: "review" | "blocked" = "review") {
+    const repo = repository();
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "Coach", rawRequest: "r", position: 1 });
+    const [ticket] = await repo.createTickets([
+      { epicId: epic.id, key: "T-1", title: "Parallel tests", description: "d", acceptanceCriteria: ["c"], fileScope: ["src"], storyPoints: 3, position: 1, dependsOnKeys: [] },
+    ]);
+    const client = new MockVcsClient("acme/widgets");
+    const pull = await client.openPullRequest({ headBranch: "formic/t-1", baseBranch: "main", title: "T-1", body: "" });
+    MockVcsClient.setChecks(pull.number, "failure");
+    (await client.checksFor(pull.headSha))[0]!.detailsUrl = "https://github.com/acme/widgets/actions/runs/55/job/1";
+    MockVcsClient.runner().branchRuns.set(pull.headBranch, [
+      { name: "CI", sha: pull.headSha, status: "completed", conclusion: "failure", attempt: 1, startedAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", url: "https://github.com/acme/widgets/actions/runs/55" },
+    ]);
+    await repo.updateTicket(ticket!.id, {
+      status,
+      stalledIn: status === "blocked" ? "in_review" : null,
+      stage: 6,
+      prNumber: pull.number,
+      branchName: "formic/t-1",
+      blockedReason,
+    });
+    return { ticket: ticket!, client };
+  }
+
+  it("does not re-run a failure the code caused, and proposes updating from main", async () => {
+    const { ticket, client } = await seedRed("Waiting on #726, then updates from main", "blocked");
+    await client.commitFile("formic/t-1", "src/lib/example.ts", "x", "c");
+
+    await expect(applyAction(PROJECT, { type: "rerun_ci", key: ticket.key })).rejects.toThrow(/has not changed/);
+
+    expect(MockVcsClient.runner().reruns).toEqual([]);
+    const { messages } = await repository().assistantMessages(PROJECT);
+    const warning = messages.at(-1)!;
+    expect(warning.content).toContain("a re-run tests the same commit");
+    expect(warning.proposals[0]).toMatchObject({ summary: "Update T-1 from main", action: { type: "update_branch", key: "T-1" } });
+  });
+
+  it("does not re-run when the failing check's annotation names a file in the repository", async () => {
+    const { ticket, client } = await seedRed("CI is red on build.");
+    await client.commitFile("formic/t-1", "src/lib/example.ts", "x", "c");
+
+    await expect(applyAction(PROJECT, { type: "rerun_ci", key: ticket.key })).rejects.toThrow(/same commit/);
+    expect(MockVcsClient.runner().reruns).toEqual([]);
+  });
+
+  it("re-runs a failure with no code annotation, as before", async () => {
+    const { ticket } = await seedRed("CI is red on build.");
+
+    expect(await applyAction(PROJECT, { type: "rerun_ci", key: ticket.key })).toContain("Re-running");
+    expect(MockVcsClient.runner().reruns).toEqual([55]);
+  });
+
+  it("rewrites the reason of the card an opened pull request unblocks, keeping the reason's detail", async () => {
+    const { ticket, client } = await seedRed("CI is red on build.\nFailing assertion: x", "blocked");
+    const branch = `${ASSISTANT_BRANCH_PREFIX}fix`;
+    await client.commitFile(branch, "src/lib/fix.ts", "x", "c");
+
+    const said = await applyAction(PROJECT, { type: "open_pull_request", branch, title: "Fix", body: "b", unblocks: ticket.key });
+
+    const number = Number(/#(\d+)/.exec(said)![1]);
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).toBe("blocked");
+    expect(after.blockedReason!.split("\n")).toEqual([`Waiting on #${number}, then updates from main`, "CI is red on build.", "Failing assertion: x"]);
+  });
+
+  it("accepts update_branch and describes it to the PM", () => {
+    expect(checkAction({ type: "update_branch", key: "T-1" }).ok).toBe(true);
   });
 });

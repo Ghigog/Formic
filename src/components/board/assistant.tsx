@@ -4,6 +4,7 @@ import { AutoTour } from "@/components/onboarding/tour";
 import {
   Fragment,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -25,6 +26,7 @@ import { cn } from "@/components/ui/cn";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { GuestCoin } from "@/components/board/guest-coin";
 import { guestLabel, type GuestId } from "@/lib/assistant/guest-ids";
+import { kindOf, threadOrder } from "@/lib/domain/chat";
 import type { AgentPreset } from "@/lib/domain/entities";
 import type { AssistantMessageView } from "@/lib/hooks/use-assistant";
 import { useKeyboardInset } from "@/lib/hooks/use-keyboard-inset";
@@ -56,7 +58,8 @@ export interface AssistantControls {
   error: string | null;
   /** Sends a message; `speakers` are who answers it, in order (the PM by default), `requestId` the draft its images were uploaded under. */
   ask: (text: string, speakers?: string[], requestId?: string) => Promise<void>;
-  stop: () => void;
+  /** Stops one pending reply: only an explicit Stop does. */
+  stop: (messageId: string) => void;
   clear: () => Promise<void>;
   decide: (
     messageId: string,
@@ -244,23 +247,10 @@ function Composer({
             }}
           />
         </label>
-        {a.pending && !text.trim() && !images.hasImages ? (
-          <button
-            type="button"
-            onClick={() => {
-              a.stop();
-              field.current?.focus();
-            }}
-            aria-label="Stop"
-            className={cn(
-              "text-ink hover:bg-column absolute inline-flex size-8 items-center justify-center rounded-md",
-              toggle ? "right-9" : "right-1",
-            )}
-          >
-            <span className="bg-ink size-2.5 rounded-sm" aria-hidden />
-          </button>
-        ) : (
-          <button
+        {/* Always Send: a Stop here would sit under the pointer the moment a
+            message goes, and a second click would stop the answer. Stop is on
+            the pending reply itself. */}
+        <button
             type="submit"
             aria-label="Send"
             className={cn(
@@ -284,7 +274,6 @@ function Composer({
               />
             </svg>
           </button>
-        )}
         {toggle && (
           <button
             type="button"
@@ -432,7 +421,9 @@ export function ProposalCard({
     >
       <div className={cn(decided && "opacity-60")}>
         <div className="text-ink text-[13px] font-semibold">{p.summary}</div>
-        {p.action.type === "create_backlog_item" && p.action.request && (
+        {(p.action.type === "create_backlog_item" ||
+          p.action.type === "create_todo_item") &&
+          p.action.request && (
           <p className="text-muted mt-1 line-clamp-3 text-[12px]">
             {p.action.request}
           </p>
@@ -510,24 +501,180 @@ export function ProposalCard({
           </span>
         )}
       </div>
+      {p.state === "applied" && p.result && (
+        <p className="text-muted mt-1.5 text-[12px] break-words">{p.result}</p>
+      )}
     </div>
+  );
+}
+
+/** Copies a message's raw Markdown, and says so for a moment. */
+export function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // No clipboard API (an http page, an old browser): the textarea way.
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.setAttribute("readonly", "");
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand("copy");
+      area.remove();
+    }
+    setCopied(true);
+  };
+  return (
+    <button
+      type="button"
+      onClick={() => void copy()}
+      aria-label={copied ? "Copied" : "Copy message"}
+      title={copied ? "Copied" : "Copy"}
+      className="text-muted hover:text-ink hover:bg-column inline-flex size-8 shrink-0 items-center justify-center rounded-md md:size-6"
+    >
+      {copied ? (
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <path d="M2.5 6.5 5 9l4.5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ) : (
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <rect x="3.75" y="3.75" width="6.5" height="6.5" rx="1.25" stroke="currentColor" strokeWidth="1.2" />
+          <path d="M8.25 2.25V2A1.25 1.25 0 0 0 7 .75H3A1.25 1.25 0 0 0 1.75 2v4A1.25 1.25 0 0 0 3 7.25h.25" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
+function CardLinks({
+  cards,
+  onOpenCard,
+}: {
+  cards: NonNullable<AssistantMessageView["cards"]>;
+  onOpenCard: (cardId: string) => void;
+}) {
+  return (
+    <ul
+      data-testid="pm-cards"
+      className="m-0 mt-2 flex list-none flex-wrap gap-1.5 p-0"
+    >
+      {cards.map((c) => (
+        <li key={c.id} className="max-w-full">
+          <button
+            type="button"
+            onClick={() => onOpenCard(c.id)}
+            className="border-line bg-card hover:border-terracotta text-muted inline-flex min-h-11 max-w-full items-center rounded-md border px-2.5 text-left font-mono text-[10px] md:min-h-8"
+          >
+            <span className="truncate">
+              {c.key} · {c.title}
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * Formic's own word on the board, as a timeline line: an icon, its first
+ * line, the rest behind More, its cards and anything it asks the person to
+ * decide. Never a PM bubble: the PM did not say it.
+ */
+function Notice({
+  m,
+  onDecide,
+  onOpenCard,
+}: {
+  m: AssistantMessageView;
+  onDecide: (index: number, decision: "apply" | "dismiss") => Promise<void>;
+  onOpenCard: (cardId: string) => void;
+}) {
+  const [head = "", ...rest] = m.content.trim().split("\n");
+  const more = rest.join("\n").trim();
+  return (
+    <div
+      data-kind="notice"
+      role="note"
+      className="border-hairline flex items-start gap-2 border-l-2 py-0.5 pl-2.5"
+    >
+      <span className="text-clay mt-1 shrink-0" aria-hidden>
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+          <circle cx="5" cy="5" r="3" fill="currentColor" />
+        </svg>
+      </span>
+      <div className="text-muted min-w-0 flex-1 text-[12px] leading-[1.5]">
+        <MarkdownLite text={head} />
+        {more && (
+          <details className="mt-0.5">
+            <summary className="hover:text-ink w-fit cursor-pointer select-none text-[11px]">
+              More
+            </summary>
+            <MarkdownLite text={more} keepLineBreaks className="mt-1" />
+          </details>
+        )}
+        {!!m.cards?.length && <CardLinks cards={m.cards} onOpenCard={onOpenCard} />}
+        {m.proposals.map((p, i) => (
+          <ProposalCard key={i} p={p} onDecide={(d) => onDecide(i, d)} />
+        ))}
+      </div>
+      <CopyButton text={m.content} />
+    </div>
+  );
+}
+
+/**
+ * A CLI reply that has not said anything yet: its job is starting in the
+ * repository's CI, which takes about half a minute to a minute. The timer
+ * says it is alive.
+ */
+function Starting({ since }: { since?: string }) {
+  const start = since ? new Date(since).getTime() : NaN;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, []);
+  const seconds = Number.isFinite(start) ? Math.max(0, Math.floor((now - start) / 1000)) : 0;
+  const clock = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  return (
+    <span>
+      Starting… <span className="font-mono tabular-nums">{clock}</span>
+    </span>
   );
 }
 
 function Message({
   m,
   cli,
+  fastHint = false,
   onDecide,
   onOpenCard,
+  onStop,
 }: {
   m: AssistantMessageView;
   cli: boolean;
+  /** Whether to say, while it starts, that E2B would make replies faster. */
+  fastHint?: boolean;
   onDecide: (index: number, decision: "apply" | "dismiss") => Promise<void>;
   onOpenCard: (cardId: string) => void;
+  onStop: () => void;
 }) {
-  if (m.role === "user") {
+  const kind = kindOf(m);
+  if (kind === "notice") {
+    return <Notice m={m} onDecide={onDecide} onOpenCard={onOpenCard} />;
+  }
+  if (kind === "person") {
     return (
-      <div className="flex justify-end">
+      <div data-kind="person" className="flex justify-end">
         <div className="flex max-w-[80%] flex-col items-end">
           {!!m.attachments?.length && <SentImages images={m.attachments} />}
           {m.content && (
@@ -535,15 +682,16 @@ function Message({
               {m.content}
             </div>
           )}
+          {m.content && <CopyButton text={m.content} />}
         </div>
       </div>
     );
   }
   const speaker =
-    m.speaker && m.speaker !== "assistant" ? (m.speaker as GuestId) : null;
+    kind === "guest" && m.speaker ? (m.speaker as GuestId) : null;
   const tagged = (body: React.ReactNode) =>
     speaker ? (
-      <div className="flex items-start gap-2.5">
+      <div data-kind="guest" className="flex items-start gap-2.5">
         <GuestCoin id={speaker} />
         <div className="min-w-0">
           <p className="text-muted mb-1 font-mono text-[10px] tracking-[0.08em] uppercase">
@@ -553,22 +701,57 @@ function Message({
         </div>
       </div>
     ) : (
-      body
+      <div data-kind="pm">{body}</div>
     );
   if (m.status === "pending") {
+    const status = (
+      <div className="text-muted flex items-center gap-2 text-[13px]">
+        <span role="status" className="flex items-center gap-2">
+          <span
+            className="bg-clay size-1.5 animate-pulse rounded-full"
+            aria-hidden
+          />
+          {m.content
+            ? "Working…"
+            : cli
+              ? <Starting since={m.createdAt} />
+              : "Thinking…"}
+        </span>
+        <button
+          type="button"
+          onClick={onStop}
+          aria-label="Stop"
+          title="Stop this answer"
+          className="text-ink hover:bg-column inline-flex min-h-11 items-center gap-1.5 rounded-md px-2 text-[12px] md:min-h-7"
+        >
+          <span className="bg-ink size-2 rounded-sm" aria-hidden />
+          Stop
+        </button>
+      </div>
+    );
+    const hint =
+      !m.content && cli && fastHint ? (
+        <p data-testid="pm-e2b-hint" className="text-muted mt-1 text-[11px] leading-[1.5]">
+          Replies start in seconds with E2B: add your Claude Code token to this agent and your own E2B key in Settings.
+        </p>
+      ) : null;
+    // A PM session's words stream in as it writes them.
     return tagged(
-      <div
-        className="text-muted flex items-center gap-2 text-[13px]"
-        role="status"
-      >
-        <span
-          className="bg-clay size-1.5 animate-pulse rounded-full"
-          aria-hidden
-        />
-        {cli
-          ? "Working in your repository's CI. This takes a minute or two."
-          : "Thinking…"}
-      </div>,
+      hint ? (
+        <div>
+          {status}
+          {hint}
+        </div>
+      ) : m.content ? (
+        <div className="max-w-[92%]">
+          <div data-testid="pm-streaming" className="text-ink text-[13px] leading-[1.55]">
+            <MarkdownLite text={m.content} keepLineBreaks />
+          </div>
+          {status}
+        </div>
+      ) : (
+        status
+      ),
     );
   }
   return tagged(
@@ -587,29 +770,15 @@ function Message({
           <MarkdownLite text={m.content} keepLineBreaks />
         )}
       </div>
-      {!!m.cards?.length && (
-        <ul
-          data-testid="pm-cards"
-          className="m-0 mt-2 flex list-none flex-wrap gap-1.5 p-0"
-        >
-          {m.cards.map((c) => (
-            <li key={c.id} className="max-w-full">
-              <button
-                type="button"
-                onClick={() => onOpenCard(c.id)}
-                className="border-line bg-card hover:border-terracotta text-muted inline-flex min-h-11 max-w-full items-center rounded-md border px-2.5 text-left font-mono text-[10px] md:min-h-8"
-              >
-                <span className="truncate">
-                  {c.key} · {c.title}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      {!!m.cards?.length && <CardLinks cards={m.cards} onOpenCard={onOpenCard} />}
       {m.proposals.map((p, i) => (
         <ProposalCard key={i} p={p} onDecide={(d) => onDecide(i, d)} />
       ))}
+      {m.content && (
+        <div className="-ml-1.5 mt-0.5">
+          <CopyButton text={m.content} />
+        </div>
+      )}
     </div>,
   );
 }
@@ -701,9 +870,13 @@ function Shade({
   const cli = selected
     ? providerInfo(selected.provider)?.kind === "cli"
     : false;
+  // A Claude Code PM with no token kept answers from CI, a minute at a time.
+  const fastHint = !!selected && providerInfo(selected.provider)?.cli === "claude" && !selected.hasKey;
 
+  // A reply always sits directly under the message it answers.
+  const thread = useMemo(() => threadOrder(a.messages), [a.messages]);
   // The first PM message written after the person last read the chat.
-  const firstNew = a.messages.find(
+  const firstNew = thread.find(
     (m) =>
       m.role === "assistant" &&
       m.status !== "pending" &&
@@ -719,6 +892,22 @@ function Shade({
         behavior: "smooth",
       });
   }, [a.open, list]);
+
+  // While a drag that began in the thread is in progress, everything else is
+  // unselectable (globals.css), so the browser keeps the selection inside the
+  // thread and keeps auto-scrolling it. Ending the drag only removes the
+  // attribute; the selection already made stays, so Copy still works.
+  useEffect(() => {
+    const root = document.documentElement;
+    const end = () => root.removeAttribute("data-pm-selecting");
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    return () => {
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      end();
+    };
+  }, []);
 
   useEffect(() => {
     if (!a.open) return;
@@ -747,7 +936,7 @@ function Shade({
       }}
     >
       {a.open && <AutoTour id="chat" delay={500} />}
-      <header className="border-hairline flex shrink-0 items-center gap-2 border-b px-4 py-2.5">
+      <header className="border-hairline flex select-none shrink-0 items-center gap-2 border-b px-4 py-2.5">
         <div className="w-[240px] max-w-[70%]">
           <AgentSelect
             slot="assistant"
@@ -770,7 +959,16 @@ function Shade({
         )}
       </header>
 
-      <div ref={list} className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+      <div
+        ref={list}
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          if ((e.target as Element).closest("button, a, input, textarea"))
+            return;
+          document.documentElement.setAttribute("data-pm-selecting", "");
+        }}
+        className="pm-thread flex-1 space-y-4 overflow-y-auto px-5 py-4"
+      >
         {a.messages.length === 0 ? (
           <div className="text-muted mx-auto max-w-[460px] pt-6 text-center text-[13px] leading-[1.6]">
             <p className="text-ink font-serif text-[15px]">
@@ -797,12 +995,14 @@ function Shade({
                 onLoad={() => void keepPlace(a.loadEarlier!)}
               />
             )}
-            {a.messages.map((m) => (
+            {thread.map((m) => (
               <Fragment key={m.id}>
                 {m.id === firstNew && <NewRule />}
                 <Message
                   m={m}
                   cli={cli}
+                  fastHint={fastHint}
+                  onStop={() => a.stop(m.id)}
                   onDecide={(i, d) => a.decide(m.id, i, d)}
                   onOpenCard={(id) => {
                     a.setOpen(false);
@@ -821,7 +1021,7 @@ function Shade({
         )}
       </div>
 
-      <footer className="flex shrink-0 items-end gap-2 px-3 pt-1 pb-3">
+      <footer className="flex shrink-0 items-end select-none gap-2 px-3 pt-1 pb-3">
         {withComposer ? (
           <Composer
             a={a}

@@ -680,7 +680,9 @@ async function draftPrd(
         ticket: outcome.value.ticket,
       });
     }
-  } else {
+  } else if (!prdSchema.safeParse((await repository().epicDetail(epicId))?.prd).success) {
+    // Stalled only while it still has no plan: one stopped and planned from
+    // its tickets meanwhile, or given a PRD by hand, is left as it is.
     await stallEpic(projectId, epicId, outcome.error, {
       blocked: outcome.blocked,
       stalledIn: "backlog",

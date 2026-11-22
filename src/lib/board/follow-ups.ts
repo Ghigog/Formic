@@ -8,6 +8,7 @@ import { mergeFollowUps, type FollowUp } from "@/lib/agents/follow-ups";
 import { publish } from "@/lib/events/bus";
 import { positionBetween } from "@/lib/ordering";
 import { boardPorts } from "@/lib/board/ports";
+import { waitingOnReason } from "@/lib/domain/notice";
 import { columnOf } from "@/lib/domain/status";
 import { postPmMessage } from "@/lib/assistant/pm-messages";
 import type { BlockedByFix } from "@/lib/agents/ports";
@@ -19,8 +20,8 @@ import type { BlockedByFix } from "@/lib/agents/ports";
 
 /**
  * Keeps what an agent proposed on its ticket, beside what was there. A needed
- * follow-up becomes a ticket at the end of To Do at once; a nice one waits as
- * pending. A repeat of one already recorded does neither.
+ * follow-up becomes a ticket at the end of To Do at once, depending on the
+ * ticket it came from; a nice one waits as pending. A repeat of one already recorded does neither.
  */
 export async function recordFollowUps(ticketId: string, more: FollowUp[]): Promise<void> {
   if (more.length === 0) return;
@@ -58,7 +59,9 @@ export type FollowUpAnswer = { ok: true; message: string } | { ok: false; error:
 /**
  * Makes a follow-up a tech debt ticket at the end of To Do. On a real Epic it
  * joins that Epic (EPIC-n-Tm); from a standalone ticket it becomes a
- * standalone ticket of its own (T-n), as createTodoItem makes them.
+ * standalone ticket of its own (T-n), as createTodoItem makes them. It builds
+ * on the ticket it came from, so it waits for that to merge (releaseWaiting
+ * starts it); from a merged ticket it is ready at once.
  */
 export async function addFollowUpTicket(
   projectId: string,
@@ -89,6 +92,7 @@ export async function addFollowUpTicket(
     key = `T-${await repo.nextStandaloneTicketNumber(projectId)}`;
   }
 
+  const sourceMerged = source.status === "merged";
   const positions = await repo.columnPositions(projectId, "todo");
   const [created] = await repo.createTickets([
     {
@@ -102,15 +106,17 @@ export async function addFollowUpTicket(
       storyPoints: followUp.points,
       workType: "tech_debt",
       position: positionBetween(positions.at(-1) ?? null, null),
-      dependsOnKeys: [],
+      dependsOnKeys: sourceMerged ? [] : [source.key],
     },
   ]);
   const card = created!;
+  // createTickets only resolves keys inside its own batch, so the edge is added here.
+  if (!sourceMerged) await repo.addDependencies([{ ticketId: card.id, dependsOnTicketId: source.id }]);
   if (!realEpic) {
     await repo.move({
       cardId: card.id,
       kind: "ticket",
-      status: "ready",
+      status: sourceMerged ? "ready" : "waiting",
       stalledIn: null,
       position: card.position,
       detached: true,
@@ -148,7 +154,7 @@ export async function answerFollowUp(
 
 /** The reason a ticket shows while it waits on the fix it asked for. */
 export function waitingOnFixReason(fix: BlockedByFix, key: string): string {
-  return `Waiting on ${key}: ${fix.check} fails and this change does not touch it. ${fix.cause.trim()}`;
+  return `${waitingOnReason(key)}\n${fix.check} fails and this change does not touch it. ${fix.cause.trim()}\nFailing assertion: ${fix.assertion.trim()}`;
 }
 
 /**
@@ -169,7 +175,7 @@ export async function requestFix(projectId: string, source: TicketDetail, fix: B
       epicId: source.epicId,
       key,
       title: fix.bug.title,
-      description: [fix.bug.story, `Blocks ${source.key}: ${fix.check} fails. ${fix.cause}`].join("\n\n"),
+      description: [fix.bug.story, `Failing assertion: ${fix.assertion.trim()}`, `Blocks ${source.key}: ${fix.check} fails. ${fix.cause}`].join("\n\n"),
       acceptanceCriteria: [],
       fileScope: fix.bug.scope,
       storyPoints: null,
@@ -194,7 +200,7 @@ export async function requestFix(projectId: string, source: TicketDetail, fix: B
     });
   } else {
     await postPmMessage(projectId, {
-      content: `${source.key} is blocked: ${fix.check} fails and its change does not touch it. ${fix.cause}\n\nThe fix needs to go first, so I added ${card.key}: ${fix.bug.title}. Shall I start it?`,
+      content: `${source.key} is blocked: ${fix.check} fails and its change does not touch it. ${fix.cause}\n\nThe fix needs to go first: added ${card.key}: ${fix.bug.title}. Start it?`,
       cards: [{ id: card.id, key: card.key, title: card.title }],
       proposals: [
         {

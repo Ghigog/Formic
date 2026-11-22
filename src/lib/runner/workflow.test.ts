@@ -123,6 +123,12 @@ describe("the installed workflow", () => {
     expect(workflowCeiling(null).minutes).toBe(180);
   });
 
+  it("lets a Claude Code command run 5 minutes by default, for software-rendered screenshots", () => {
+    const text = runnerWorkflow();
+    expect(text).toContain('BASH_DEFAULT_TIMEOUT_MS: "300000"');
+    expect(text).toContain('BASH_MAX_TIMEOUT_MS: "600000"');
+  });
+
   it("parses as the YAML a runner will accept", () => {
     expect(() => parse(text)).not.toThrow();
     // The version is the first line, so anything reading the installed copy —
@@ -184,7 +190,7 @@ describe("the installed workflow", () => {
       "GITHUB_WORKSPACE", "GITHUB_ENV", "GITHUB_OUTPUT", "GITHUB_PATH",
       "GITHUB_TOKEN", "GITHUB_SHA", "GITHUB_REF", "GITHUB_REF_NAME", "GITHUB_HEAD_REF",
       "GITHUB_REPOSITORY", "GITHUB_REPOSITORY_OWNER", "GITHUB_RUN_ID", "GITHUB_RUN_NUMBER",
-      "GITHUB_JOB", "GITHUB_ACTOR", "GITHUB_EVENT_NAME", "GITHUB_SERVER_URL",
+      "GITHUB_JOB", "GITHUB_ACTOR", "GITHUB_EVENT_NAME", "GITHUB_SERVER_URL", "GITHUB_ACTIONS",
       // Bash's own, which no workflow has to declare.
       "PIPESTATUS", "BASH_REMATCH", "SECONDS", "RANDOM", "LINENO", "FUNCNAME",
       "IFS", "OSTYPE", "HOSTNAME", "SHLVL", "OLDPWD",

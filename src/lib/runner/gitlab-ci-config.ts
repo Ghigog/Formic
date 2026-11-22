@@ -26,6 +26,7 @@ import { createHash } from "node:crypto";
 import { parseDocument, isSeq, YAMLSeq } from "yaml";
 
 import { REPO_SETUP_HOOK, setupScript } from "../toolchains";
+import { screenshotStep } from "./screenshots";
 import {
   ALREADY_DONE_TRAILER,
   ANSWER_PATH,
@@ -37,6 +38,8 @@ import {
   RUNNER_ACTION,
   RUNNER_JOB_MINUTES,
   RUNNER_SETUP_PREFIX,
+  SESSION_RESTORE_SCRIPT,
+  SESSION_SAVE_SCRIPT,
   USAGE_TRAILER,
   ATTACHMENTS_DIR_VAR,
 } from "./workflow";
@@ -66,7 +69,7 @@ function indent(text: string, spaces: number): string {
 }
 
 /** The inputs a run carries, the same as the GitHub workflow's. */
-const INPUTS = ["job", "mode", "ticket", "cli", "model", "from", "secret", "prompt", "report", "merge", "timeout"];
+const INPUTS = ["job", "mode", "ticket", "cli", "model", "from", "secret", "prompt", "report", "merge", "timeout", "session"];
 
 /** The job's script: one bash program, so its steps share their variables. */
 function script(): string {
@@ -204,7 +207,26 @@ else
       printf '%s' '${NOTES_HOOK}' > "$T/formic-hooks.json"
       args=(-p "$FORMIC_PROMPT" --output-format stream-json --verbose --settings "$T/formic-hooks.json" --dangerously-skip-permissions)
       if [ -n "$MODEL" ]; then args+=(--model "$MODEL"); fi
-      CLAUDE_CODE_OAUTH_TOKEN="$SECRET_VALUE" timeout "\${MINUTES}m" claude "\${args[@]}" | tee -a "$FORMIC_STREAM"
+      if [ -n "\${FORMIC_SESSION:-}" ]; then
+        # The board's PM: its own session, resumed, with Formic's tools, and
+        # handed back to Formic whatever happens.
+        (
+          export SESSION="$FORMIC_SESSION" FORMIC_ENV_OUT="$T/formic-session.env"
+${indent(SESSION_RESTORE_SCRIPT, 10)}
+        )
+        set -a; . "$T/formic-session.env"; set +a
+        if [ "\${FORMIC_SESSION_RESUME:-}" = "1" ]; then args+=(--resume "$FORMIC_SESSION_ID"); else args+=(--session-id "$FORMIC_SESSION_ID"); fi
+        args+=(--mcp-config "$FORMIC_MCP_CONFIG")
+        status=0
+        CLAUDE_CODE_OAUTH_TOKEN="$SECRET_VALUE" timeout "\${MINUTES}m" claude "\${args[@]}" | tee -a "$FORMIC_STREAM" || status=$?
+        (
+          export SESSION="$FORMIC_SESSION"
+${indent(SESSION_SAVE_SCRIPT, 10)}
+        ) || true
+        if [ "$status" != 0 ]; then exit "$status"; fi
+      else
+        CLAUDE_CODE_OAUTH_TOKEN="$SECRET_VALUE" timeout "\${MINUTES}m" claude "\${args[@]}" | tee -a "$FORMIC_STREAM"
+      fi
       jq -Rrj 'fromjson? | select(.type == "result") | (.result // empty)' "$FORMIC_STREAM" > "$FORMIC_STDOUT"
       ;;
     codex)
@@ -243,6 +265,9 @@ case "$MODE" in
       if ! git diff --cached --quiet; then
         git commit -q -m "Changes from the board's assistant"
         git push -q "$PUSH_URL" "HEAD:refs/heads/formic-staging/\${JOB}${ASSISTANT_CHANGE_SUFFIX}"
+      # A PM session commits its own work: that is kept too.
+      elif [ -n "\${FORMIC_SESSION:-}" ] && [ "$(git rev-parse HEAD)" != "$FORMIC_START" ]; then
+        git push -q "$PUSH_URL" "HEAD:refs/heads/formic-staging/\${JOB}${ASSISTANT_CHANGE_SUFFIX}" || echo "The PM's change could not be kept."
       fi
     fi
     # The answer, on its own: only it leaves on this branch.
@@ -291,6 +316,7 @@ if ! grep -q '^${USAGE_TRAILER}' "$FORMIC_SUMMARY" && [ -s "$FORMIC_STREAM" ]; t
   if [ -n "$usage" ]; then printf '\\n${USAGE_TRAILER} %s\\n' "$(jq -c . <<< "$usage")" >> "$FORMIC_SUMMARY"; fi
 fi
 if [ -n "$FORMIC_MERGED" ]; then printf '\\n${MERGED_TRAILER} %s\\n' "$FORMIC_MERGED" >> "$FORMIC_SUMMARY"; fi
+${screenshotStep()}
 # A merge stays the merge commit it is: GitLab cannot add the parent later.
 git commit -q --allow-empty -F "$FORMIC_SUMMARY"
 git push -q "$PUSH_URL" "HEAD:refs/heads/formic-staging/\${JOB}"`;

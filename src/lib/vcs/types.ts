@@ -356,6 +356,12 @@ export interface VcsClient {
   readonly repoPath?: string;
   /** Drops a card's checkpoint. Quiet when there is none. */
   deleteCheckpoint(card: string): Promise<void>;
+  /**
+   * Writes (or replaces) the secret a CLI agent signs in with, where the
+   * repository's CI reads it: an Actions secret on GitHub, a masked CI/CD
+   * variable on GitLab. Write-only: neither host lets anyone read it back.
+   */
+  saveAgentSecret(name: string, value: string): Promise<void>;
 }
 
 export interface CheckpointFile {

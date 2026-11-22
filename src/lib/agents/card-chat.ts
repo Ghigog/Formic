@@ -6,6 +6,7 @@ import { MODELS } from "./anthropic";
 import { applyCardAction, cardActionSchema, CARD_ACTIONS_GUIDE, type CardAction } from "./card-actions";
 import { scopeAsked } from "@/lib/coder/scope-request";
 import { claudeSpeak, openAiSpeak, runChatLoop, type Speak, type ToolDef } from "./chat-loop";
+import { DISPLAY_RULE } from "./prompts";
 import { truncate } from "./coding-loop";
 import { launch } from "./pipeline";
 import { columnChatAgentFor } from "./presets";
@@ -619,6 +620,7 @@ export function cliPrompt(
     system,
     "",
     "You are running in a checkout of the repository: read it directly.",
+    DISPLAY_RULE,
     "",
     "The conversation so far, oldest first. Answer the last message from the person.",
     "",

@@ -257,6 +257,19 @@ describe("aiming", () => {
     expect(onAim).toHaveBeenLastCalledWith(null);
   });
 
+  it("aims below the press when a right-button drag travels down, armed past the threshold", () => {
+    const onAim = vi.fn();
+    const onSwap = vi.fn();
+    const g = createSwapGestures(onSwap, vi.fn(), onAim);
+    g.pointerDown({ ...at(100, 300), button: 2, target }, boundary);
+    g.pointerMove({ ...at(100, 330), buttons: 2 });
+    expect(onAim).toHaveBeenLastCalledWith({ x: 100, y: 360, armed: false });
+    g.pointerMove({ ...at(100, 365), buttons: 2 });
+    expect(onAim).toHaveBeenLastCalledWith({ x: 100, y: 360, armed: true });
+    g.pointerUp({ ...at(100, 365), button: 2 });
+    expect(onSwap).toHaveBeenCalledWith("up");
+  });
+
   it("aims a two-finger swipe at one threshold in its direction, armed once it has travelled that far", () => {
     const onAim = vi.fn();
     const g = createSwapGestures(vi.fn(), vi.fn(), onAim);

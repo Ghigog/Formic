@@ -24,6 +24,10 @@ import type {
   RunTimeBudgetColumns,
   UserRecord,
   AccessTokenRecord,
+  PmSessionRecord,
+  NewPmWake,
+  PmWakeRecord,
+  PmWakeLimitSettings,
   NewAccessToken,
   PushPreferences,
   PushSubscriptionRecord,
@@ -77,9 +81,10 @@ import { severityFor } from "@/lib/domain/entities";
 import { DEFAULT_ALLOWANCE_WINDOW_DAYS } from "@/lib/domain/limit-settings";
 import { type ColumnId, columnOf } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
-import { provider as providerInfo } from "@/lib/llm/providers";
+import { keepsKey, provider as providerInfo } from "@/lib/llm/providers";
 import { normalizeScope } from "@/lib/domain/scope";
 import { HEAT_WINDOW_MS, mergeScore } from "@/lib/colony/game";
+import { kindOf, type MessageKind } from "@/lib/domain/chat";
 
 /**
  * Runs the whole board with no database. Used when DATABASE_URL is unset so a
@@ -213,6 +218,11 @@ interface Store {
   /** endpoint to the subscription and the person it belongs to. */
   pushSubscriptions: Map<string, PushSubscriptionRecord & { userId: string }>;
   accessTokens: Map<string, AccessTokenRecord>;
+  /** Board id to its PM session. */
+  pmSessions: Map<string, PmSessionRecord>;
+  pmWakes: PmWakeRecord[];
+  /** Board id to its PM wake-up limits. */
+  pmWakeLimits: Map<string, PmWakeLimitSettings>;
   /** Sign-in links by token hash. */
   loginTokens: Map<string, NewLoginToken & { usedAt: Date | null; createdAt: Date }>;
   /** `${projectId}:${column}` to preset id. */
@@ -252,6 +262,9 @@ function store(): Store {
     existing.users ??= new Map();
     existing.pushSubscriptions ??= new Map();
     existing.accessTokens ??= new Map();
+    existing.pmSessions ??= new Map();
+    existing.pmWakes ??= [];
+    existing.pmWakeLimits ??= new Map();
     existing.loginTokens ??= new Map();
     existing.epicNumbers ??= new Map();
     existing.standaloneTicketNumbers ??= new Map();
@@ -325,6 +338,9 @@ function store(): Store {
     users: new Map(),
     pushSubscriptions: new Map(),
     accessTokens: new Map(),
+    pmSessions: new Map(),
+    pmWakes: [],
+    pmWakeLimits: new Map(),
     loginTokens: new Map(),
     columnAgents: new Map(),
     columnOverrides: new Map(),
@@ -715,6 +731,12 @@ export class MemoryRepository implements Repository {
       s.queensSpent.delete(projectId);
       s.goldenBellsUsed.delete(projectId);
       s.goldenBellsArmed.delete(projectId);
+      for (const [id, token] of s.accessTokens) {
+        if (token.projectId === projectId) s.accessTokens.delete(id);
+      }
+      s.pmSessions.delete(projectId);
+      s.pmWakes = s.pmWakes.filter((w) => w.projectId !== projectId);
+      s.pmWakeLimits.delete(projectId);
       s.projects.delete(projectId);
     }
     for (const preset of [...s.presets.values()]) {
@@ -771,7 +793,15 @@ export class MemoryRepository implements Repository {
   }
 
   async createAccessToken(token: NewAccessToken): Promise<AccessTokenRecord> {
-    const record: AccessTokenRecord = { ...token, id: randomUUID(), revokedAt: null, createdAt: new Date(), lastUsedAt: null };
+    const record: AccessTokenRecord = {
+      ...token,
+      projectId: token.projectId ?? null,
+      sessionId: token.sessionId ?? null,
+      id: randomUUID(),
+      revokedAt: null,
+      createdAt: new Date(),
+      lastUsedAt: null,
+    };
     store().accessTokens.set(record.id, record);
     return { ...record };
   }
@@ -798,6 +828,92 @@ export class MemoryRepository implements Repository {
   async touchAccessToken(id: string, at: Date): Promise<void> {
     const found = store().accessTokens.get(id);
     if (found) found.lastUsedAt = at;
+  }
+
+  async revokeBoardTokens(projectId: string, sessionId?: string): Promise<number> {
+    const now = new Date();
+    let count = 0;
+    for (const t of store().accessTokens.values()) {
+      if (t.projectId !== projectId || t.revokedAt || (sessionId !== undefined && t.sessionId !== sessionId)) continue;
+      t.revokedAt = now;
+      count++;
+    }
+    return count;
+  }
+
+  async pmSession(projectId: string): Promise<PmSessionRecord | null> {
+    const found = store().pmSessions.get(projectId);
+    return found ? { ...found } : null;
+  }
+
+  async savePmSession(
+    projectId: string,
+    update: Partial<Omit<PmSessionRecord, "projectId" | "createdAt" | "updatedAt">> & Pick<PmSessionRecord, "sessionId" | "where">,
+  ): Promise<PmSessionRecord> {
+    const s = store();
+    const now = new Date();
+    const row: PmSessionRecord = {
+      projectId,
+      sandboxId: null,
+      fileCipher: null,
+      bytes: 0,
+      summary: "",
+      turnJob: null,
+      handoff: null,
+      branch: null,
+      resumed: false,
+      lastTurnAt: null,
+      createdAt: now,
+      ...s.pmSessions.get(projectId),
+      ...update,
+      updatedAt: now,
+    };
+    s.pmSessions.set(projectId, row);
+    return { ...row };
+  }
+
+  async updatePmSession(
+    projectId: string,
+    update: Partial<Omit<PmSessionRecord, "projectId" | "createdAt" | "updatedAt">>,
+  ): Promise<boolean> {
+    const found = store().pmSessions.get(projectId);
+    if (!found) return false;
+    Object.assign(found, update, { updatedAt: new Date() });
+    return true;
+  }
+
+  async pmSessionByJob(job: string): Promise<PmSessionRecord | null> {
+    for (const row of store().pmSessions.values()) if (row.turnJob === job) return { ...row };
+    return null;
+  }
+
+  async deletePmSession(projectId: string): Promise<void> {
+    store().pmSessions.delete(projectId);
+  }
+
+  async addPmWake(wake: NewPmWake): Promise<void> {
+    store().pmWakes.push({ ...wake, id: id("pmwake") });
+  }
+
+  async pmWakes(projectId: string, filter: { since?: Date; cardId?: string }): Promise<PmWakeRecord[]> {
+    return store()
+      .pmWakes.filter(
+        (w) =>
+          w.projectId === projectId &&
+          (!filter.since || w.createdAt >= filter.since) &&
+          (!filter.cardId || w.cardId === filter.cardId),
+      )
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map((w) => ({ ...w }));
+  }
+
+  async pmWakeLimits(projectId: string): Promise<PmWakeLimitSettings> {
+    return { fixCap: null, perHour: null, perDay: null, ...store().pmWakeLimits.get(projectId) };
+  }
+
+  async setPmWakeLimits(projectId: string, limits: Partial<PmWakeLimitSettings>): Promise<void> {
+    if (!store().projects.has(projectId)) return;
+    store().pmWakeLimits.set(projectId, { ...(await this.pmWakeLimits(projectId)), ...limits });
   }
 
   async savePushSubscription(userId: string, subscription: PushSubscriptionRecord): Promise<void> {
@@ -2208,7 +2324,10 @@ export class MemoryRepository implements Repository {
     const s = store();
     const existing = record.id ? s.presets.get(record.id) : undefined;
     const cli = providerInfo(record.provider)?.kind === "cli";
-    const keep = record.apiKeyCipher === undefined && !cli;
+    // Claude Code keeps its PM's sandbox token; any other CLI agent keeps none.
+    const noKey = !keepsKey(record.provider);
+    // A key belongs to the provider it was saved for.
+    const keep = record.apiKeyCipher === undefined && !noKey && (!existing || existing.provider === record.provider);
     const row = {
       id: existing?.id ?? id("preset"),
       ownerId: existing ? existing.ownerId : (record.ownerId ?? null),
@@ -2220,8 +2339,8 @@ export class MemoryRepository implements Repository {
       provider: record.provider,
       model: record.model,
       prompt: record.prompt,
-      apiKeyCipher: cli ? null : keep ? (existing?.apiKeyCipher ?? null) : record.apiKeyCipher!,
-      keyHint: cli ? null : keep ? (existing?.keyHint ?? null) : (record.apiKeyHint ?? null),
+      apiKeyCipher: noKey ? null : keep ? (existing?.apiKeyCipher ?? null) : (record.apiKeyCipher ?? null),
+      keyHint: noKey ? null : keep ? (existing?.keyHint ?? null) : (record.apiKeyHint ?? null),
       secretName: cli
         ? record.secretName === undefined
           ? (existing?.secretName ?? null)
@@ -2229,8 +2348,9 @@ export class MemoryRepository implements Repository {
         : null,
       hasKey: false,
       // A new key is likely a new account, with its own usage.
-      limitedUntil: keep ? (existing?.limitedUntil ?? null) : null,
-      limitNote: keep ? (existing?.limitNote ?? null) : null,
+      // Saving a CLI agent is the person saying its sign-in is good: its usage mark goes.
+      limitedUntil: keep && !cli ? (existing?.limitedUntil ?? null) : null,
+      limitNote: keep && !cli ? (existing?.limitNote ?? null) : null,
       tokenAllowance: existing?.tokenAllowance ?? null,
       tokenAllowanceWindowDays: existing?.tokenAllowanceWindowDays ?? DEFAULT_ALLOWANCE_WINDOW_DAYS,
     };
@@ -2394,6 +2514,7 @@ export class MemoryRepository implements Repository {
     content: string;
     status?: AssistantMessage["status"];
     speaker?: string;
+    kind?: MessageKind;
     cards?: AssistantMessage["cards"];
     proposals?: AssistantProposal[];
     playtestId?: string | null;
@@ -2405,6 +2526,7 @@ export class MemoryRepository implements Repository {
       speaker: "assistant",
       createdAt: new Date(),
       ...input,
+      kind: input.kind ?? kindOf(input),
       playtestId: input.playtestId ?? null,
       cards: input.cards ?? [],
       attachments: [],

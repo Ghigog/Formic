@@ -257,10 +257,12 @@ export async function rebaseOntoTarget(
 export function pullRequestBody(
   ticket: TicketDetail,
   change: { summary: string; detail: string; verifiedWith: string | null; handoff?: string[] },
+  screenshots = "",
 ): string {
   return [
     change.detail,
     "",
+    ...(screenshots ? [screenshots, ""] : []),
     // Links the pull request to the ticket's issue on GitHub.
     ...(ticket.issueNumber ? [`Closes #${ticket.issueNumber}.`, ""] : []),
     `## ${ticket.key} — ${ticket.title}`,

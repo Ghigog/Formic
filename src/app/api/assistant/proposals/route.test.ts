@@ -16,6 +16,7 @@ const { repo, currentUser, activeProject, applyAction, checkAction, dismissActio
 }));
 
 vi.mock("@/lib/db", () => ({ repository: () => repo }));
+vi.mock("@/lib/events/bus", () => ({ publish: vi.fn(async () => 1) }));
 vi.mock("@/lib/auth/user", () => ({ currentUser, asSignedIn: <T,>(handler: T) => handler }));
 vi.mock("@/lib/board/project", () => ({ activeProject, noProject: () => Response.json({}, { status: 409 }) }));
 vi.mock("@/lib/assistant/actions", () => ({ applyAction, checkAction, dismissAction }));
@@ -37,6 +38,7 @@ beforeEach(() => {
   repo.assistantMessages.mockResolvedValue({ messages: [], earlierCursor: null });
   checkAction.mockReturnValue({ ok: true, action });
   applyAction.mockResolvedValue("Done.");
+  repo.addAssistantMessage.mockResolvedValue({ id: "m-2" });
   dismissAction.mockResolvedValue(undefined);
 });
 
@@ -51,13 +53,13 @@ describe("POST /api/assistant/proposals", () => {
     });
   });
 
-  it("applies a proposal and posts the outcome", async () => {
+  it("applies a proposal and keeps the outcome on it, not as a message of its own", async () => {
     const res = await decide({ messageId: "m-1", index: 0, decision: "apply" });
     expect(res.status).toBe(200);
     expect(applyAction).toHaveBeenCalledWith("p-1", action, "u-1");
-    expect(repo.addAssistantMessage).toHaveBeenCalledWith({ projectId: "p-1", role: "assistant", content: "Done." });
+    expect(repo.addAssistantMessage).not.toHaveBeenCalled();
     expect(repo.updateAssistantMessage).toHaveBeenLastCalledWith("m-1", {
-      proposals: [{ state: "applied", action }],
+      proposals: [{ state: "applied", action, result: "Done." }],
     });
   });
 

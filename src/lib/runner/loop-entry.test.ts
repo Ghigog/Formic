@@ -229,6 +229,13 @@ describe("the loop entry a GitHub Actions job runs", () => {
     expect(messages(onItsOwn, 0)[0]!.content).not.toContain("FORMIC_PROGRESS");
   });
 
+  it("tells the loop where to leave screenshots, for the job to put on the branch", async () => {
+    const sent = fakeProvider([finish()]);
+    await runLoopEntry(payload(), { workspace: new MemoryWorkspace(), log: () => {} });
+
+    expect(messages(sent, 0)[0]!.content).toContain(".formic/screenshots/");
+  });
+
   it("turns the ticket's budget into the loop's own turn ceiling", async () => {
     // Ten turns a minute, so a six-second budget is one turn: the loop ends
     // and says which ceiling it hit, instead of being held to a wall of turns

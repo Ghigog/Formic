@@ -124,6 +124,18 @@ function contract(name: string, make: () => Repository) {
       expect(await repo.pmReadAt(user.id, "no-such-project")).toBeNull();
     });
 
+    it("keeps each chat message's kind: the person's, the PM's, a guest's and a notice", async () => {
+      const p = await repo.ensureProject({ ownerId: null, repoFullName: `acme/${randomUUID()}`, baseBranch: "main" });
+      await repo.addAssistantMessage({ projectId: p.id, role: "user", content: "hi" });
+      await repo.addAssistantMessage({ projectId: p.id, role: "assistant", content: "hello" });
+      await repo.addAssistantMessage({ projectId: p.id, role: "assistant", content: "from review", speaker: "reviewer" });
+      const notice = await repo.addAssistantMessage({ projectId: p.id, role: "assistant", content: "T-1 is done.", kind: "notice" });
+      expect(notice.kind).toBe("notice");
+      expect((await repo.assistantMessage(notice.id))?.kind).toBe("notice");
+      const { messages } = await repo.assistantMessages(p.id);
+      expect(messages.map((m) => m.kind)).toEqual(["person", "pm", "guest", "notice"]);
+    });
+
     it("adds host usage per day and totals it from a given day on", async () => {
       // A random year far in the past, so this case meets neither a real
       // deployment's days nor an earlier run's on a database that is kept.
@@ -860,18 +872,27 @@ function contract(name: string, make: () => Repository) {
         expect(await repo.columnAgents(p.id)).toEqual({});
       });
 
-      it("keeps no credential for a CLI agent, only for an API provider", async () => {
+      it("keeps no credential for a CLI agent but Claude Code's PM token, and drops a key on a provider change", async () => {
         const base = { ownerId: null, model: "", prompt: "p", apiKeyCipher: "sealed", apiKeyHint: "…1234" };
-        const cli = await repo.savePreset({ ...base, provider: "claude-code", name: `contract-${randomUUID()}` });
+        const cli = await repo.savePreset({ ...base, provider: "codex", name: `contract-${randomUUID()}` });
         expect(cli).toMatchObject({ hasKey: false, keyHint: null });
         expect((await repo.presetForRun(cli.id))?.apiKeyCipher).toBeNull();
 
-        // Switching an API agent to a CLI provider drops the key it held.
+        // Claude Code keeps its token (for the board's PM sandbox), and keeps it on an edit that leaves it alone.
+        const claude = await repo.savePreset({ ...base, provider: "claude-code", name: `contract-${randomUUID()}` });
+        expect(claude).toMatchObject({ hasKey: true, keyHint: "…1234" });
+        const edited = await repo.savePreset({ ownerId: null, model: "", prompt: "q", id: claude.id, provider: "claude-code", name: claude.name });
+        expect(edited.hasKey).toBe(true);
+        expect((await repo.presetForRun(claude.id))?.apiKeyCipher).toBe("sealed");
+
+        // Switching provider drops the key it held: an API key is never taken for a Claude Code token.
         const api = await repo.savePreset({ ...base, provider: "anthropic", model: "m", name: `contract-${randomUUID()}` });
         expect(api.hasKey).toBe(true);
-        const switched = await repo.savePreset({ ...base, id: api.id, provider: "codex", name: api.name });
+        const switched = await repo.savePreset({ ownerId: null, model: "", prompt: "p", id: api.id, provider: "claude-code", name: api.name });
         expect(switched.hasKey).toBe(false);
         expect((await repo.presetForRun(api.id))?.apiKeyCipher).toBeNull();
+        const toCodex = await repo.savePreset({ ...base, id: claude.id, provider: "codex", name: claude.name });
+        expect(toCodex.hasKey).toBe(false);
       });
 
       it("keeps auto-escalation off until switched on, per project", async () => {
@@ -2043,6 +2064,85 @@ function contract(name: string, make: () => Repository) {
         expect((await repo.userByEmail(address))?.id).toBe(gh.id);
         expect((await repo.projectById(board.id))?.ownerId).toBe(gh.id);
         expect((await repo.accessTokenByHash(token.tokenHash))?.userId).toBe(gh.id);
+      });
+
+      it("keeps a PM token's board and session, and revokes a board's tokens by session", async () => {
+        const id = githubId();
+        const user = await repo.upsertUser({ githubId: id, login: `pm-${id}`, name: null, avatarUrl: null });
+        const board = await repo.ensureProject({ ownerId: user.id, repoFullName: null, name: "PM", baseBranch: "main" });
+        const make = (sessionId: string | null) =>
+          repo.createAccessToken({
+            userId: user.id, name: "pm", tokenHash: randomUUID(), lastFour: "abcd", readOnly: false, expiresAt: null,
+            projectId: sessionId ? board.id : null, sessionId,
+          });
+        const a = await make("s1");
+        const b = await make("s2");
+        const own = await make(null);
+        expect(await repo.accessTokenByHash(a.tokenHash)).toMatchObject({ projectId: board.id, sessionId: "s1" });
+        expect(await repo.accessTokenByHash(own.tokenHash)).toMatchObject({ projectId: null, sessionId: null });
+
+        expect(await repo.revokeBoardTokens(board.id, "s1")).toBe(1);
+        expect((await repo.accessTokenByHash(a.tokenHash))?.revokedAt).toBeInstanceOf(Date);
+        expect((await repo.accessTokenByHash(b.tokenHash))?.revokedAt).toBeNull();
+        expect(await repo.revokeBoardTokens(board.id)).toBe(1);
+        expect((await repo.accessTokenByHash(b.tokenHash))?.revokedAt).toBeInstanceOf(Date);
+        expect((await repo.accessTokenByHash(own.tokenHash))?.revokedAt).toBeNull();
+      });
+
+      it("keeps one PM session per board, finds it by its turn's job, and drops it with the board", async () => {
+        const id = githubId();
+        const user = await repo.upsertUser({ githubId: id, login: `pms-${id}`, name: null, avatarUrl: null });
+        const board = await repo.ensureProject({ ownerId: user.id, repoFullName: null, name: "PMS", baseBranch: "main" });
+        expect(await repo.pmSession(board.id)).toBeNull();
+        expect(await repo.updatePmSession(board.id, { summary: "x" })).toBe(false);
+
+        const made = await repo.savePmSession(board.id, { sessionId: "s1", where: "actions", turnJob: `job-${id}` });
+        expect(made).toMatchObject({ projectId: board.id, sessionId: "s1", where: "actions", fileCipher: null, bytes: 0, summary: "" });
+        expect((await repo.pmSessionByJob(`job-${id}`))?.projectId).toBe(board.id);
+
+        // The latest only: saving again replaces, never adds.
+        await repo.savePmSession(board.id, { sessionId: "s2", where: "gitlab", fileCipher: "sealed", bytes: 12 });
+        expect(await repo.pmSession(board.id)).toMatchObject({ sessionId: "s2", where: "gitlab", fileCipher: "sealed", bytes: 12, turnJob: `job-${id}` });
+        expect(await repo.updatePmSession(board.id, { turnJob: null, summary: "said" })).toBe(true);
+        expect(await repo.pmSessionByJob(`job-${id}`)).toBeNull();
+        expect((await repo.pmSession(board.id))?.summary).toBe("said");
+
+        await repo.deleteUser(user.id);
+        expect(await repo.pmSession(board.id)).toBeNull();
+      });
+
+      it("deletes a PM session on its own", async () => {
+        const id = githubId();
+        const user = await repo.upsertUser({ githubId: id, login: `pmd-${id}`, name: null, avatarUrl: null });
+        const board = await repo.ensureProject({ ownerId: user.id, repoFullName: null, name: "PMD", baseBranch: "main" });
+        await repo.savePmSession(board.id, { sessionId: "s", where: "e2b", sandboxId: "sb" });
+        await repo.deletePmSession(board.id);
+        expect(await repo.pmSession(board.id)).toBeNull();
+      });
+
+      it("keeps the PM's wake-ups by board and card, in order, with the board's limits, and drops them with the board", async () => {
+        const id = githubId();
+        const user = await repo.upsertUser({ githubId: id, login: `pmw-${id}`, name: null, avatarUrl: null });
+        const board = await repo.ensureProject({ ownerId: user.id, repoFullName: null, name: "PMW", baseBranch: "main" });
+        const at = (minute: number) => new Date(Date.UTC(2026, 0, 1, 0, minute));
+        await repo.addPmWake({ projectId: board.id, cardId: "c2", head: "", kind: "question", createdAt: at(5) });
+        await repo.addPmWake({ projectId: board.id, cardId: "c1", head: "abc", kind: "stall", createdAt: at(1) });
+        await repo.addPmWake({ projectId: board.id, cardId: "c1", head: "def", kind: "landed", createdAt: at(9) });
+
+        expect((await repo.pmWakes(board.id, {})).map((w) => w.createdAt)).toEqual([at(1), at(5), at(9)]);
+        expect((await repo.pmWakes(board.id, { since: at(5) })).map((w) => w.kind)).toEqual(["question", "landed"]);
+        expect(await repo.pmWakes(board.id, { cardId: "c1" })).toMatchObject([
+          { cardId: "c1", head: "abc", kind: "stall" },
+          { cardId: "c1", head: "def", kind: "landed" },
+        ]);
+
+        expect(await repo.pmWakeLimits(board.id)).toEqual({ fixCap: null, perHour: null, perDay: null });
+        await repo.setPmWakeLimits(board.id, { fixCap: 3 });
+        await repo.setPmWakeLimits(board.id, { perDay: 40 });
+        expect(await repo.pmWakeLimits(board.id)).toEqual({ fixCap: 3, perHour: null, perDay: 40 });
+
+        await repo.deleteUser(user.id);
+        expect(await repo.pmWakes(board.id, {})).toEqual([]);
       });
 
       it("spends a sign-in link once, even when two spends race", async () => {

@@ -229,6 +229,13 @@ model Project {
   /// keys and agents when they have none of their own. Off by default: each
   /// person brings their own.
   shareKeys                  Boolean   @default(false)
+  /// The PM's automatic wake-ups (docs/limits.md). Null is the default.
+  /// Fix attempts on one stuck ticket before it is left to the person.
+  pmFixCap                   Int?
+  /// Wake-ups an hour, every ticket together.
+  pmWakesPerHour             Int?
+  /// Wake-ups a day (UTC), every ticket together.
+  pmWakesPerDay              Int?
 
   members           ProjectMember[]
   memberAgents      MemberAgent[]
@@ -242,6 +249,9 @@ model Project {
   audits            Audit[]
   rubricFixes       RubricFix[]
   playtests         PlaytestSession[]
+  accessTokens      AccessToken[]
+  pmSession         PmSession?
+  pmWakes           PmWake[]
 
   @@index([ownerId])
   @@map("project")
@@ -772,6 +782,9 @@ model AssistantMessage {
   runnerAgent String?
   /// Who a reply comes from: "assistant", a column role or "sentinel:<id>".
   speaker     String   @default("assistant")
+  /// "person", "pm", "guest" or "notice" (Formic's own word on the board,
+  /// never the PM's). See src/lib/domain/chat.ts.
+  kind        String   @default("pm")
   /// The playtest a note was written in, and its replies. See docs/plans/playtest.md.
   playtestId  String?
   createdAt   DateTime @default(now())
@@ -999,13 +1012,77 @@ model AccessToken {
   tokenHash  String    @unique
   lastFour   String
   readOnly   Boolean   @default(true)
+  /// Set on a PM token: it works on this one board only, with the PM's
+  /// tools, for one session. Null on a person's own token.
+  projectId  String?
+  project    Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// The PM session a board token was made for; revoked when it ends.
+  sessionId  String?
   expiresAt  DateTime?
   revokedAt  DateTime?
   createdAt  DateTime  @default(now())
   lastUsedAt DateTime?
 
   @@index([userId])
+  @@index([projectId, sessionId])
   @@map("access_token")
+}
+
+/// The board's PM as a resumable Claude Code session (docs/plans/pm-chat.md,
+/// PR 3): one per board, the latest only. The session file is the truth and
+/// is sealed with the API-key cipher; the sandbox or job that ran it is only
+/// a cache. Deleted on Clear and with the board.
+model PmSession {
+  projectId   String    @id
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Claude Code's own session id, resumed with `claude --resume`.
+  sessionId   String
+  /// Where it last ran: "e2b", "actions" or "gitlab".
+  where       String
+  /// The E2B sandbox holding it, paused between turns. Null off E2B.
+  sandboxId   String?
+  /// The session file (JSONL, gzipped, base64), sealed. Null when there is
+  /// none yet or it was over the cap: the next turn starts from the summary.
+  fileCipher  String?
+  /// The gzipped size of the session file.
+  bytes       Int       @default(0)
+  /// A short running summary of the conversation, kept after each turn.
+  summary     String    @default("")
+  /// The job running the current turn, if one is.
+  turnJob     String?
+  /// What that job collects once (its PM token), sealed; cleared when taken.
+  handoff     String?
+  /// The branch the PM's checkout was on when the turn ended.
+  branch      String?
+  /// Whether the current turn resumed a saved session (a failure then falls
+  /// back to a fresh one) or started fresh.
+  resumed     Boolean   @default(false)
+  /// When the last turn finished: what the chat said after it is new to the session.
+  lastTurnAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("pm_session")
+}
+
+/// What the PM did on its own, for its wake-up limits (docs/plans/pm-chat.md,
+/// safety rows 3 and 5): a wake-up for a ticket's question or stop, a commit
+/// it landed on a ticket's branch, and each "held" notice it posted, so a
+/// limit is said once.
+model PmWake {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  cardId    String
+  /// The ticket branch's head at the time, or the commit the PM landed.
+  head      String   @default("")
+  /// "question", "stall", "landed", "fix-cap", "hourly" or "daily".
+  kind      String
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
+  @@index([projectId, cardId])
+  @@map("pm_wake")
 }
 
 /// A one-time sign-in link sent by email. Only the SHA-256 of the token is

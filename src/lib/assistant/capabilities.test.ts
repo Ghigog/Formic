@@ -258,6 +258,23 @@ describe("what the assistant knows of the board", () => {
     expect(prompt).not.toContain("T-201 (ticket)");
   });
 
+  it("tells a CLI agent a bare T1 fits several cards, and hands it each", async () => {
+    await useAgent("claude-code");
+    await new MockVcsClient(REPO).commitFile((await projectFor(PROJECT)).baseBranch, RUNNER_WORKFLOW_PATH, runnerWorkflow(), "install");
+    const repo = repository();
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "Many", rawRequest: "r", position: 1 });
+    const mk = (key: string) => ({ epicId: epic.id, key, title: key, description: "d", acceptanceCriteria: ["c"], fileScope: ["src/a"], storyPoints: 1, position: 1, dependsOnKeys: [] });
+    await repo.createTickets([mk("EPIC-9-T1"), mk("T-1")]);
+    const pending = await ask("Is T1 stalled?");
+
+    await answer(PROJECT, pending.id);
+
+    const prompt = MockVcsClient.runner().dispatches.at(-1)!.inputs.prompt!;
+    expect(prompt).toContain('"T1" fits several cards: EPIC-9-T1, T-1');
+    expect(prompt).toContain("EPIC-9-T1 (ticket)");
+    expect(prompt).toContain("T-1 (ticket)");
+  });
+
   it("lets a column agent read any card's live state with card_status", async () => {
     await seedRedTicket();
     const preset = await savePreset({ name: "col", provider: "groq", model: "llama-3.3-70b", prompt: "", apiKey: "gsk_test" });

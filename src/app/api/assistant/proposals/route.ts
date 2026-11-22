@@ -51,7 +51,9 @@ async function postHandler(req: Request) {
     try {
       if (!checked.ok) throw new Error(checked.problem);
       const done = await applyAction(project.id, checked.action, user.id);
-      await repo.addAssistantMessage({ projectId: project.id, role: "assistant", content: done, playtestId: message.playtestId });
+      // What happened is Formic's word, not the PM's: "Opened pull request #726", "Re-running…".
+      // It rides on the proposal, so the PM's answer stays the message and comes first.
+      proposals[body.data.index] = { ...proposal, state: "applied", result: done };
     } catch (e) {
       proposals[body.data.index] = {
         ...proposal,

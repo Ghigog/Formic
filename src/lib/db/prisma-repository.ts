@@ -8,6 +8,11 @@ import { Prisma } from "@/generated/prisma/client";
 
 import { prisma } from "./client";
 import type {
+  PmSessionRecord,
+  NewPmWake,
+  PmWakeKind,
+  PmWakeRecord,
+  PmWakeLimitSettings,
   AttachmentContent,
   AttachmentRef,
   CreateAttachmentInput,
@@ -89,9 +94,10 @@ import { DEFAULT_ALLOWANCE_WINDOW_DAYS } from "@/lib/domain/limit-settings";
 import { z } from "zod";
 import { type ColumnId, type TicketStatus, columnOf } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
-import { provider as providerInfo } from "@/lib/llm/providers";
+import { keepsKey, provider as providerInfo } from "@/lib/llm/providers";
 import { normalizeScope } from "@/lib/domain/scope";
 import { HEAT_WINDOW_MS, mergeScore } from "@/lib/colony/game";
+import { kindOf, type MessageKind } from "@/lib/domain/chat";
 
 type EpicRow = {
   id: string;
@@ -649,6 +655,83 @@ export class PrismaRepository implements Repository {
 
   async touchAccessToken(id: string, at: Date): Promise<void> {
     await prisma().accessToken.updateMany({ where: { id }, data: { lastUsedAt: at } });
+  }
+
+  async revokeBoardTokens(projectId: string, sessionId?: string): Promise<number> {
+    const { count } = await prisma().accessToken.updateMany({
+      where: { projectId, revokedAt: null, ...(sessionId !== undefined ? { sessionId } : {}) },
+      data: { revokedAt: new Date() },
+    });
+    return count;
+  }
+
+  async pmSession(projectId: string): Promise<PmSessionRecord | null> {
+    const row = await prisma().pmSession.findUnique({ where: { projectId } });
+    return row ? toPmSession(row) : null;
+  }
+
+  async savePmSession(
+    projectId: string,
+    update: Partial<Omit<PmSessionRecord, "projectId" | "createdAt" | "updatedAt">> & Pick<PmSessionRecord, "sessionId" | "where">,
+  ): Promise<PmSessionRecord> {
+    const row = await prisma().pmSession.upsert({
+      where: { projectId },
+      create: { projectId, ...update },
+      update,
+    });
+    return toPmSession(row);
+  }
+
+  async updatePmSession(
+    projectId: string,
+    update: Partial<Omit<PmSessionRecord, "projectId" | "createdAt" | "updatedAt">>,
+  ): Promise<boolean> {
+    const { count } = await prisma().pmSession.updateMany({ where: { projectId }, data: update });
+    return count > 0;
+  }
+
+  async pmSessionByJob(job: string): Promise<PmSessionRecord | null> {
+    const row = await prisma().pmSession.findFirst({ where: { turnJob: job } });
+    return row ? toPmSession(row) : null;
+  }
+
+  async deletePmSession(projectId: string): Promise<void> {
+    await prisma().pmSession.deleteMany({ where: { projectId } });
+  }
+
+  async addPmWake(wake: NewPmWake): Promise<void> {
+    await prisma().pmWake.create({ data: wake });
+  }
+
+  async pmWakes(projectId: string, filter: { since?: Date; cardId?: string }): Promise<PmWakeRecord[]> {
+    const rows = await prisma().pmWake.findMany({
+      where: {
+        projectId,
+        ...(filter.since && { createdAt: { gte: filter.since } }),
+        ...(filter.cardId && { cardId: filter.cardId }),
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+    return rows.map((r) => ({ ...r, kind: r.kind as PmWakeKind }));
+  }
+
+  async pmWakeLimits(projectId: string): Promise<PmWakeLimitSettings> {
+    const row = await prisma().project.findUnique({
+      where: { id: projectId },
+      select: { pmFixCap: true, pmWakesPerHour: true, pmWakesPerDay: true },
+    });
+    return { fixCap: row?.pmFixCap ?? null, perHour: row?.pmWakesPerHour ?? null, perDay: row?.pmWakesPerDay ?? null };
+  }
+
+  async setPmWakeLimits(projectId: string, limits: Partial<PmWakeLimitSettings>): Promise<void> {
+    await prisma().project.updateMany({
+      where: { id: projectId },
+      data: {
+        ...(limits.fixCap !== undefined && { pmFixCap: limits.fixCap }),
+        ...(limits.perHour !== undefined && { pmWakesPerHour: limits.perHour }),
+        ...(limits.perDay !== undefined && { pmWakesPerDay: limits.perDay }),
+      },
+    });
   }
 
   async savePushSubscription(userId: string, subscription: PushSubscriptionRecord): Promise<void> {
@@ -2193,10 +2276,12 @@ export class PrismaRepository implements Repository {
     // A preset made before columns were scoped has none (null) and shows for
     // every column; an update may give it one, once, but never move a
     // preset that already has one.
-    const claimingColumn =
-      !!record.id &&
-      !!record.column &&
-      (await db.agentPreset.findUnique({ where: { id: record.id }, select: { column: true } }))?.column == null;
+    const existing = record.id
+      ? await db.agentPreset.findUnique({ where: { id: record.id }, select: { column: true, provider: true } })
+      : null;
+    const claimingColumn = !!record.id && !!record.column && existing?.column == null;
+    // A key belongs to the provider it was saved for.
+    const switched = !!existing && existing.provider !== record.provider;
     const data = {
       name: record.name,
       provider: record.provider,
@@ -2212,8 +2297,13 @@ export class PrismaRepository implements Repository {
       // never here. A new key is likely a new account, with its own usage.
       // Formic cannot see a secret change, so saving a CLI agent is the
       // person saying it has one: its usage mark goes too.
-      ...(providerInfo(record.provider)?.kind === "cli"
+      // Claude Code may keep its token, for the board's PM sandbox.
+      ...(!keepsKey(record.provider)
         ? { apiKeyCipher: null, apiKeyHint: null, limitedUntil: null, limitNote: null }
+        : record.apiKeyCipher === undefined && switched
+        ? { apiKeyCipher: null, apiKeyHint: null, limitedUntil: null, limitNote: null }
+        : providerInfo(record.provider)?.kind === "cli" && record.apiKeyCipher === undefined
+        ? { limitedUntil: null, limitNote: null }
         : record.apiKeyCipher !== undefined
         ? {
             apiKeyCipher: record.apiKeyCipher,
@@ -2402,6 +2492,7 @@ export class PrismaRepository implements Repository {
     content: string;
     status?: AssistantMessage["status"];
     speaker?: string;
+    kind?: MessageKind;
     cards?: AssistantMessage["cards"];
     proposals?: AssistantProposal[];
     playtestId?: string | null;
@@ -2409,6 +2500,7 @@ export class PrismaRepository implements Repository {
     const row = await prisma().assistantMessage.create({
       data: {
         ...input,
+        kind: input.kind ?? kindOf(input),
         cards: input.cards?.length ? input.cards : undefined,
         proposals: input.proposals?.length ? (input.proposals as unknown as Prisma.InputJsonValue) : undefined,
         status: input.status ?? "done",
@@ -2820,14 +2912,17 @@ function toAssistantMessage(row: {
   runnerJob: string | null;
   runnerAgent: string | null;
   speaker: string;
+  kind?: string | null;
   playtestId?: string | null;
   createdAt: Date;
 }, attachments: AttachmentSummary[] = []): AssistantMessage {
+  const role = row.role === "user" ? "user" : "assistant";
   return {
     ...row,
+    kind: kindOf({ role, speaker: row.speaker, kind: row.kind }),
     attachments,
     playtestId: row.playtestId ?? null,
-    role: row.role === "user" ? "user" : "assistant",
+    role,
     status: row.status === "pending" || row.status === "failed" ? row.status : "done",
     proposals: Array.isArray(row.proposals) ? (row.proposals as AssistantProposal[]) : [],
     cards: Array.isArray(row.cards) ? (row.cards as AssistantMessage["cards"]) : [],
@@ -3099,3 +3194,8 @@ function toAuditRecord(row: {
 
 /** The one row of host_usage_check: the meter of the host this deployment runs on. */
 const HOST_METER = "vercel";
+
+function toPmSession(row: Omit<PmSessionRecord, "where"> & { where: string }): PmSessionRecord {
+  const where = row.where === "e2b" || row.where === "gitlab" ? row.where : "actions";
+  return { ...row, where };
+}

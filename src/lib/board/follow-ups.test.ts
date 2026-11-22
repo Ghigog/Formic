@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { addFollowUpTicket, answerFollowUp, nextTicketKey, recordFollowUps } from "./follow-ups";
+import { waitingOnReason } from "@/lib/domain/notice";
+import { addFollowUpTicket, answerFollowUp, nextTicketKey, recordFollowUps, requestFix, waitingOnFixReason } from "./follow-ups";
 import { repository } from "@/lib/db";
 import type { FollowUp } from "@/lib/agents/follow-ups";
 
@@ -55,6 +56,24 @@ describe("recordFollowUps triage", () => {
     expect(rec.outcome).toEqual({ kind: "added", key: `${epic.key}-T2`, cardId: added.id });
   });
 
+  it("makes a needed follow-up wait for the ticket it came from", async () => {
+    const { ticket } = await seed();
+    await recordFollowUps(ticket.id, [needed]);
+    const rec = (await repository().ticketDetail(ticket.id))!.followUps.find((f) => f.title === needed.title)!;
+    const cardId = rec.outcome?.kind === "added" ? rec.outcome.cardId : "";
+    const card = (await repository().boardCards(PROJECT)).find((c) => c.id === cardId)!;
+    expect(card.dependsOn).toEqual([ticket.id]);
+  });
+
+  it("leaves a needed follow-up waiting in To Do while its source is in review", async () => {
+    const { ticket } = await seed();
+    await repository().updateTicket(ticket.id, { status: "review" });
+    await recordFollowUps(ticket.id, [needed]);
+    const rec = (await repository().ticketDetail(ticket.id))!.followUps.find((f) => f.title === needed.title)!;
+    const cardId = rec.outcome?.kind === "added" ? rec.outcome.cardId : "";
+    expect((await repository().ticketDetail(cardId))!.status).toBe("waiting");
+  });
+
   it("creates no ticket for a nice one and stores it as pending", async () => {
     const { epic, ticket } = await seed();
     expect((await repository().ticketsForEpic(epic.id)).length).toBe(1);
@@ -100,6 +119,24 @@ describe("answerFollowUp", () => {
     expect(added.description).toContain("About 540 branches are uncovered.");
     expect(added.description).toContain(`Found while working on ${ticket.key}.`);
     expect((await repo.ticketDetail(ticket.id))!.followUps.map((f) => f.title)).toEqual(["Fix order-dependent tests"]);
+  });
+
+  it("makes the added ticket depend on a source that is in review", async () => {
+    const { epic, ticket } = await seed();
+    await repository().updateTicket(ticket.id, { status: "review" });
+    await answerFollowUp(PROJECT, ticket.id, 0, true);
+    const added = (await repository().boardCards(PROJECT)).find((c) => c.key === `${epic.key}-T2`)!;
+    expect(added.dependsOn).toEqual([ticket.id]);
+    expect(added.status).toBe("waiting");
+  });
+
+  it("adds no dependency on a source that has merged", async () => {
+    const { epic, ticket } = await seed();
+    await repository().updateTicket(ticket.id, { status: "merged" });
+    await answerFollowUp(PROJECT, ticket.id, 0, true);
+    const added = (await repository().boardCards(PROJECT)).find((c) => c.key === `${epic.key}-T2`)!;
+    expect(added.dependsOn ?? []).toEqual([]);
+    expect(added.status).toBe("ready");
   });
 
   it("dismisses one without adding a ticket", async () => {
@@ -151,9 +188,10 @@ describe("addFollowUpTicket", () => {
     const card = await addFollowUpTicket(PROJECT, detail, followUp);
 
     expect(card.key).toBe("T-2");
+    expect((await repo.boardCards(PROJECT)).find((c) => c.id === card.id)!.dependsOn).toEqual([source!.id]);
     expect(card.epicId).not.toBe(holder.id);
     const added = (await repo.ticketDetail(card.id))!;
-    expect(added).toMatchObject({ status: "ready", workType: "tech_debt", fileScope: ["src/a.ts"], storyPoints: 3 });
+    expect(added).toMatchObject({ status: "waiting", workType: "tech_debt", fileScope: ["src/a.ts"], storyPoints: 3 });
     expect((await repo.cardById(card.epicId!))?.standalone).toBe(true);
     const todo = await repo.columnPositions(PROJECT, "todo");
     expect(card.position).toBeGreaterThanOrEqual(Math.max(...todo));
@@ -164,5 +202,26 @@ describe("addFollowUpTicket", () => {
     const card = await addFollowUpTicket(PROJECT, (await repository().ticketDetail(ticket.id))!, followUp);
     expect(card.key).toBe(`${epic.key}-T2`);
     expect(card.epicId).toBe(epic.id);
+  });
+});
+
+describe("a fix raised from red CI", () => {
+  const fix = {
+    cause: "The nudge is set a moment after the count.",
+    check: "OverlayServiceTest.handleCounts",
+    assertion: "expect(handle.deadlineNudge).toBe(true) (OverlayServiceTest.kt:88)",
+    bug: { title: "Wait for the nudge", story: "The test races the nudge.", scope: ["OverlayServiceTest.kt"] },
+  };
+
+  it("quotes the failing assertion in the bug and in the reason the ticket waits", async () => {
+    const { ticket } = await seed();
+    const detail = (await repository().ticketDetail(ticket.id))!;
+    const card = await requestFix(PROJECT, detail, fix);
+    const bug = (await repository().ticketDetail(card.id))!;
+    expect(bug.description).toContain("Failing assertion: expect(handle.deadlineNudge).toBe(true) (OverlayServiceTest.kt:88)");
+    const reason = waitingOnFixReason(fix, card.key);
+    expect(reason.split("\n")[0]).toBe(waitingOnReason(card.key));
+    expect(reason.split("\n")[1]).toContain(fix.cause);
+    expect(reason.split("\n")[2]).toBe(`Failing assertion: ${fix.assertion}`);
   });
 });

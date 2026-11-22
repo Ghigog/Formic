@@ -10,6 +10,9 @@ import { COLUMNS, columnOf, type ColumnId } from "@/lib/domain/status";
 import { applyTransition, createBacklogItem } from "@/lib/board/service";
 import { applyPrd } from "@/lib/agents/pipeline";
 import { publish } from "@/lib/events/bus";
+import { placePlannedEpic } from "@/lib/assistant/actions";
+import { validateDag } from "@/lib/domain/dag";
+import { describeProblems } from "@/lib/domain/problems";
 import { positionForIndex } from "@/lib/ordering";
 import type { Prd } from "@/lib/domain/entities";
 import type { TicketUpdate } from "@/lib/db/repository";
@@ -149,10 +152,13 @@ export interface EpicTicketInput {
 export function createEpic(caller: Caller, input: { board: string; title: string; rawRequest: string; tickets: EpicTicketInput[] }) {
   return writeOn(caller, input.board, async (project) => {
     const handles = new Set(input.tickets.map((t) => t.key));
+    if (handles.size !== input.tickets.length) return { ok: false as const, error: "Two tickets share a key." };
     for (const t of input.tickets) {
       const missing = (t.dependsOn ?? []).find((d) => !handles.has(d));
       if (missing) return { ok: false as const, error: `${t.key} depends on ${missing}, which is not one of the tickets.` };
     }
+    const dag = validateDag(input.tickets.map((t) => ({ key: t.key, dependsOn: t.dependsOn ?? [], fileScope: t.fileScope ?? [] })));
+    if (!dag.ok) return { ok: false as const, error: `Those tickets are not safe to run:\n${describeProblems(dag.problems)}` };
     const repo = repository();
     const backlog = await repo.columnPositions(project.id, "backlog");
     const epic = await repo.createEpic({
@@ -178,6 +184,11 @@ export function createEpic(caller: Caller, input: { board: string; title: string
       })),
     );
     await publish(project.id, { type: "card.created", cardId: epic.id, kind: "epic", epicId: epic.id });
+    // Already broken down: it goes to To Do with its tickets, as a planned Epic does.
+    await placePlannedEpic(project.id, epic.id, {
+      summary: input.rawRequest,
+      tickets: input.tickets.map((t) => ({ ...t, key: keyFor.get(t.key)! })),
+    });
     return { ok: true as const, value: { id: epic.id, key: epic.key, tickets: made.map((c) => ({ id: c.id, key: c.key })) } };
   });
 }

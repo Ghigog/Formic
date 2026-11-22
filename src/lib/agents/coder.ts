@@ -60,6 +60,12 @@ export function taskBrief(task: CoderTask): string {
           ...task.sharedNotes.map((n) => `- ${n}`),
         ]
       : []),
+    ...(task.recurringLint?.length
+      ? [
+          "",
+          `Lint rules that failed on several pull requests here: ${task.recurringLint.join(", ")}. Run lint and check for them before you push.`,
+        ]
+      : []),
     ...(task.followUps?.length
       ? [
           "",

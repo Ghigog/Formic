@@ -291,6 +291,22 @@ describe("applyTransition of an epic into To Do", () => {
     expect(launched).toEqual([`product agent for ${epic.key}`]);
   });
 
+  it("plans an Epic that already has its tickets from them, with no Product or Architect Agent", async () => {
+    // The PM made it broken down, and it was left in Backlog: the tickets are the plan.
+    const epic = makeCard({ kind: "epic", status: "draft", size: null });
+    seedMemory([epic]);
+    await repository().createTickets([
+      { epicId: epic.id, key: `${epic.key}-T1`, title: "Measure CI", description: "**User story:** As a dev, I'd like numbers, so that we fix the right thing.", acceptanceCriteria: ["Given runs, when measured, then the slowest step is named."], fileScope: [], position: 1, dependsOnKeys: [] },
+    ]);
+
+    const result = await drop(epic.id);
+
+    expect(result).toMatchObject({ ok: true, status: "ready" });
+    expect(launched).toEqual([]);
+    const prd = (await repository().epicDetail(epic.id))?.prd;
+    expect(prd).toMatchObject({ scope: [`${epic.key}-T1: Measure CI`], successCriteria: ["Given runs, when measured, then the slowest step is named."] });
+  });
+
   it("writes the PRD again for an epic whose Product Agent stalled", async () => {
     const epic = makeCard({
       kind: "epic",

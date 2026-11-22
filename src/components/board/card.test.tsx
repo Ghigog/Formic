@@ -602,8 +602,32 @@ describe("a problem notice", () => {
     blockedReason: `Something broke. ${"A long detail. ".repeat(30)}`,
   });
 
+  it("starts folded to the lead, and the header unfolds and folds the text", () => {
+    render(<ProblemNotice card={long} onOpenChat={vi.fn()} />);
+    const header = screen.getByRole("button", { name: /This needs you/ });
+    expect(header).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText(/Something broke/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
+    fireEvent.click(header);
+    expect(header).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText(/Something broke/)).toBeTruthy();
+    fireEvent.click(header);
+    expect(header).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText(/Something broke/)).toBeNull();
+  });
+
+  it("titles a question 'Question' and keeps the chat button inside", () => {
+    const onOpenChat = vi.fn();
+    render(<ProblemNotice card={{ ...long, blockedReason: "Question: Which one?\nThe agent is waiting." }} onOpenChat={onOpenChat} />);
+    expect(screen.queryByRole("button", { name: "Answer in the chat" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Question/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Answer in the chat" }));
+    expect(onOpenChat).toHaveBeenCalled();
+  });
+
   it("clamps a long text to three lines and toggles the rest", () => {
     render(<ProblemNotice card={long} />);
+    fireEvent.click(screen.getByRole("button", { name: /This needs you/ }));
     const text = screen.getByText(/Something broke/).closest("p")!;
     expect(text.className).toContain("line-clamp-3");
     fireEvent.click(screen.getByRole("button", { name: "Show more" }));
@@ -616,6 +640,7 @@ describe("a problem notice", () => {
 
   it("has no toggle on a short text", () => {
     render(<ProblemNotice card={{ ...long, blockedReason: "Short." }} />);
+    fireEvent.click(screen.getByRole("button", { name: /This needs you/ }));
     expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
   });
 });
@@ -656,5 +681,39 @@ describe("an Epic that waits for another Epic", () => {
   it("drops the line once that Epic is done", () => {
     renderWaiting({ doneCount: 2 });
     expect(screen.queryByText(/Waits for/)).toBeNull();
+  });
+});
+
+describe("shared-files flag on a card", () => {
+  function renderTodo(card: BoardCard, extras: CardExtras) {
+    const env = { epics: new Map(), nextFor: () => null, onAdvance: vi.fn() };
+    return renderInDnd(
+      <CardEnvContext.Provider value={env}>
+        <Column id="todo" cards={[card]} extras={{ [card.id]: extras }} view={EMPTY_VIEW} onViewChange={vi.fn()} onOpen={vi.fn()} />
+      </CardEnvContext.Provider>,
+    );
+  }
+  const clashes = [{ key: "EPIC-119-T3", paths: ["src/a"] }];
+
+  it("shows the clay alert mark and 'Shares files with' the sibling", () => {
+    renderTodo(makeCard({ status: "ready" }), { scopeClashes: clashes });
+    const line = screen.getByTestId("card-clash");
+    expect(line.textContent).toBe("?Shares files with EPIC-119-T3");
+    expect(line.className).toContain("text-clay");
+  });
+
+  it("shows nothing without a clash", () => {
+    renderTodo(makeCard({ status: "ready" }), {});
+    expect(screen.queryByTestId("card-clash")).toBeNull();
+  });
+
+  it("keeps a stalled notice before the flag", () => {
+    renderTodo(
+      makeCard({ status: "failed", stalledIn: "todo", blockedReason: "Boom\nlog" }),
+      { scopeClashes: clashes },
+    );
+    const notice = screen.getByTestId("card-notice");
+    const clash = screen.getByTestId("card-clash");
+    expect(notice.compareDocumentPosition(clash) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

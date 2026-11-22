@@ -987,6 +987,21 @@ export class GitHubClient implements VcsClient {
     return parent ? { sha, parent, message: commit.message } : null;
   }
 
+  async saveAgentSecret(name: string, value: string): Promise<void> {
+    // GitHub takes a secret only sealed to the repository's own public key.
+    const { data: key } = await this.request<{ key_id: string; key: string }>("GET", "/actions/secrets/public-key");
+    const sodium = (await import("libsodium-wrappers")).default;
+    await sodium.ready;
+    const sealed = sodium.crypto_box_seal(
+      sodium.from_string(value),
+      sodium.from_base64(key.key, sodium.base64_variants.ORIGINAL),
+    );
+    await this.request("PUT", `/actions/secrets/${encodeURIComponent(name)}`, {
+      encrypted_value: sodium.to_base64(sealed, sodium.base64_variants.ORIGINAL),
+      key_id: key.key_id,
+    });
+  }
+
   async deleteCheckpoint(card: string): Promise<void> {
     try {
       await this.request("DELETE", `/git/${checkpointPath(card)}`);

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DISPLAY_RULE } from "@/lib/agents/prompts";
 
 import {
   STOPPED_BY_PERSON,
@@ -574,6 +575,29 @@ describe("starting a CLI agent", () => {
     // A branch per version, so each setup starts from the base as it is now.
     expect(branch).toBe(`formic/setup-runner-${version.split(": ")[1]}`);
     expect(runner.dispatches).toHaveLength(0);
+  });
+
+  it("asks for a deploy, not a setup pull request, when main's workflow is newer than the server", async () => {
+    await assignClaudeCode();
+    const base = (await projectFor(PROJECT)).baseBranch;
+    await new MockVcsClient("acme/widgets").commitFile(base, RUNNER_WORKFLOW_PATH, "# formic-runner: newer\n", "newer");
+    vi.stubEnv("FORMIC_COMMIT", "deployedsha");
+    const compare = vi.spyOn(MockVcsClient.prototype, "compare").mockResolvedValue({
+      files: [RUNNER_WORKFLOW_PATH],
+      messages: ["newer"],
+      headSha: "mainsha",
+    });
+    const ticket = await seedTicket();
+
+    await runCoderAgent(PROJECT, ticket.id);
+
+    const after = (await repository().ticketDetail(ticket.id))!;
+    expect(after.status).toBe("blocked");
+    expect(after.blockedReason).toMatch(/newer Formic agent workflow than the Formic server.*Deploy Formic/);
+    const runner = MockVcsClient.runner();
+    expect([...runner.files.keys()].some((k) => k.startsWith(`${runnerSetupBranch()}:`))).toBe(false);
+    expect(runner.dispatches).toHaveLength(0);
+    compare.mockRestore();
   });
 
   it("dispatches the workflow with the agent's own secret name and writes no secret", async () => {
@@ -1379,6 +1403,7 @@ describe("a CLI agent fixing red CI", () => {
       attempt: 1,
       maxAttempts: 3,
     });
+    expect(prompt).toContain(DISPLAY_RULE);
     expect(prompt).toContain("- Seed the test (1 pt): waiting for the person");
     expect(prompt).toContain("- Old idea (2 pt): dismissed");
 

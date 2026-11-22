@@ -67,6 +67,38 @@ Notes:
 | Attachments per request | files | 5 | one request | Gate | No |
 | Attachment size | bytes | 10 MiB | one file | Gate | No |
 
+## The board's PM session
+
+What bounds a Claude Code PM's resumable session (docs/plans/pm-chat.md).
+
+| Limit | Unit | Value | Scope | Enforcement | Settable |
+| :-- | :-- | :-- | :-- | :-- | :-- |
+| Session file (`PM_SESSION_MAX_BYTES`) | bytes, gzipped | 8 MiB | one board's session | Gate: a bigger file is dropped and the next turn starts fresh from the summary | No |
+| Running summary (`SUMMARY_LINES`, `SUMMARY_CHARS`) | lines, characters | 30, 6,000 | one board's session | Kept after each turn, newest lines win | No |
+| PM token (`PM_TOKEN_HOURS`, `PM_TOKEN_MAX_HOURS`) | hours | 4, at most 12 | one turn | Revoked when the turn ends or is stopped | No |
+| Session address (`SESSION_URL_TTL_MS`) | minutes | 90 | one turn's job | Gate; its handoff is collected once | No |
+| PM's branch lock (`PM_LOCK_MS`) | minutes | 2 | one branch | Hard rail (the lease lapses) | No |
+| A ticket run's branch lock | minutes | 65 (`RUNNER_JOB_MINUTES` + headroom) | one branch | Hard rail (the lease lapses) | No |
+| A run's wait for the PM (`RUN_WAIT_MS`) | seconds | 60 | one dispatch | Gate, then the run starts anyway | No |
+| PM sandbox turn (`PM_TURN_MS`) | minutes | 60 (`RUNNER_JOB_MINUTES`) | one turn in the PM's E2B sandbox | Hard rail (the command and the sandbox's timeout) | No |
+| PM sandbox idle | minutes | 5 | the sandbox after a turn, if Formic's own pause never lands | Hard rail (E2B pauses or ends it) | No |
+| PM sandbox key | | the board owner's own E2B key only | one board | Gate: without one, or without a Claude Code token on the PM agent, the turn runs in CI | Yes (Settings, and the PM agent) |
+
+## The PM's wake-ups
+
+A ticket that stops, or an agent's question, wakes the board's PM on its
+own (`src/lib/pm/questions.ts`). These bound that, so it never runs away with
+the person's Claude usage (`src/lib/pm/wake-gate.ts`, docs/plans/pm-chat.md
+safety rows 3 and 5). Only wake-ups count: a message the person types is
+never held. Past a limit the PM says so once in the chat, and the ticket
+comes to the person as it would with no PM.
+
+| Limit | Unit | Default | Scope | Enforcement | Settable |
+| :-- | :-- | :-- | :-- | :-- | :-- |
+| Fix cap (`pmFixCap`) | looks at one stuck ticket | 2; 0 to 10 | one ticket, until an agent or a person moves its branch (a commit the PM lands does not reset it) | Gate | Yes, per board in Settings |
+| Hourly wake-ups (`pmWakesPerHour`) | wake-ups in any hour | 6; 0 to 60 | one board, every ticket | Gate | Yes, per board in Settings |
+| Daily PM allowance (`pmWakesPerDay`) | wake-ups per UTC day | 20; 0 to 500 | one board, apart from the coders' allowances | Gate | Yes, per board in Settings |
+
 ## Epic budget
 
 `DEFAULT_EPIC_BUDGET` (`src/lib/budget/limits.ts`) is 2,000¢, 2 hours and 12

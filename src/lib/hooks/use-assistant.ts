@@ -3,6 +3,8 @@
 import { mergeMessages } from "./merge-messages";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AttachmentSummary } from "@/lib/domain/entities";
+import type { MessageKind } from "@/lib/domain/chat";
+import type { SubscribeToEvents } from "@/components/board/ticket-drawer";
 
 /** One message, as the assistant API returns it. */
 export interface AssistantMessageView {
@@ -12,6 +14,8 @@ export interface AssistantMessageView {
   status: "done" | "pending" | "failed";
   /** Who a reply is from: "assistant", a column role or "sentinel:<id>". */
   speaker?: string;
+  /** person, pm, guest or notice (Formic's own word, a timeline line). Implied by role and speaker when absent. */
+  kind?: MessageKind;
   /** When it was written (ISO). */
   createdAt?: string;
   /** Cards it links to. */
@@ -23,9 +27,11 @@ export interface AssistantMessageView {
     action: {
       type:
         | "create_backlog_item"
+        | "create_todo_item"
         | "create_epic_with_tickets"
         | "add_tickets_to_epic"
         | "rerun_ci"
+        | "update_branch"
         | "open_pull_request"
         | "move_card"
         | "close_card"
@@ -41,6 +47,8 @@ export interface AssistantMessageView {
     };
     state: "proposed" | "applied" | "dismissed" | "failed";
     error?: string;
+    /** What applying it did, shown under the proposal. */
+    result?: string;
   }>;
 }
 
@@ -57,11 +65,9 @@ async function send(
   url: string,
   method: string,
   body?: unknown,
-  signal?: AbortSignal,
 ): Promise<State> {
   const res = await fetch(url, {
     method,
-    signal,
     headers:
       body === undefined ? undefined : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -81,7 +87,7 @@ const POLL_MS = 4_000;
  * answer is pending checks back until it lands: an API agent answers in
  * seconds, a CLI agent in GitHub Actions in a minute or two.
  */
-export function useAssistant(enabled: boolean) {
+export function useAssistant(enabled: boolean, subscribe?: SubscribeToEvents) {
   const [state, setStateRaw] = useState<State>({ presetId: null, messages: [] });
   // Earlier pages live apart from the polled newest page, so a poll cannot drop them.
   const [earlier, setEarlier] = useState<{ messages: AssistantMessageView[]; cursor: string | null } | null>(null);
@@ -97,7 +103,6 @@ export function useAssistant(enabled: boolean) {
   const [error, setError] = useState<string | null>(null);
   const alive = useRef(true);
   const [asking, setAsking] = useState(false);
-  const asked = useRef<AbortController | null>(null);
 
   useEffect(() => {
     alive.current = true;
@@ -113,7 +118,6 @@ export function useAssistant(enabled: boolean) {
       setError(null);
       setState(next);
     } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") return;
       if (alive.current) setError(e instanceof Error ? e.message : String(e));
     }
   }, [setState]);
@@ -140,6 +144,24 @@ export function useAssistant(enabled: boolean) {
     }
   }, [setState]);
 
+  // A message the PM writes unasked lands as an event: refetch the newest page,
+  // once the chat has been opened. A burst shares the fetch already running.
+  const refetching = useRef(false);
+  useEffect(() => {
+    if (!subscribe) return;
+    return subscribe((event) => {
+      if (event.type !== "assistant.message" && event.type !== "assistant.failed") return;
+      if (!loaded.current || refetching.current) return;
+      refetching.current = true;
+      void send("/api/assistant", "GET")
+        .then((next) => alive.current && setState(next))
+        .catch(() => undefined)
+        .finally(() => {
+          refetching.current = false;
+        });
+    });
+  }, [subscribe, setState]);
+
   const answering = state.messages.some((m) => m.status === "pending");
   const pending = asking || answering;
   useEffect(() => {
@@ -155,34 +177,32 @@ export function useAssistant(enabled: boolean) {
 
   const ask = useCallback(
     async (text: string, speakers?: string[], requestId?: string) => {
-      const controller = new AbortController();
-      asked.current = controller;
       setAsking(true);
       try {
         await run(() =>
-          send(
-            "/api/assistant",
-            "POST",
-            { text, ...(speakers ? { speakers } : {}), ...(requestId ? { requestId } : {}) },
-            controller.signal,
-          ),
+          send("/api/assistant", "POST", {
+            text,
+            ...(speakers ? { speakers } : {}),
+            ...(requestId ? { requestId } : {}),
+          }),
         );
       } finally {
-        if (asked.current === controller) asked.current = null;
-        if (alive.current && !controller.signal.aborted) setAsking(false);
+        if (alive.current) setAsking(false);
       }
     },
     [run],
   );
-  /** Give up on the question being sent; the box is free again at once. */
-  const stop = useCallback(() => {
-    asked.current?.abort();
-    asked.current = null;
-    setAsking(false);
-    setError(null);
-    // The POST only enqueues the answer: cancel it on the server too.
-    void run(() => send("/api/assistant", "PATCH"));
-  }, [run]);
+  /**
+   * The person pressed Stop on one pending reply. Only that reply stops, as
+   * "Stopped."; sending another message never stops one, it queues.
+   */
+  const stop = useCallback(
+    (messageId: string) => {
+      setError(null);
+      void run(() => send("/api/assistant", "PATCH", { messageId }));
+    },
+    [run],
+  );
   const clear = useCallback(
     () => run(() => send("/api/assistant", "DELETE")),
     [run],

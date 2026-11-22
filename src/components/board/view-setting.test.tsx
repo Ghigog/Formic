@@ -1,45 +1,17 @@
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  BOARD_VIEW_KEY,
-  COLUMN_VIEWS_KEY,
-  loadBoardView,
-  loadColumnViews,
-  saveBoardView,
-  saveColumnViews,
-} from "./view-setting";
+import { COLUMN_VIEWS_KEY, loadColumnViews, saveColumnViews } from "./view-setting";
 import { EMPTY_VIEW } from "./view";
 
 afterEach(() => window.localStorage.clear());
 
-describe("board view setting", () => {
-  it("is the default view when nothing is saved", () => {
-    expect(loadBoardView()).toEqual(EMPTY_VIEW);
-  });
-
-  it("round-trips a saved view", () => {
-    const view = { query: "login", sort: "title" as const, types: ["bug" as const], collapsed: true };
-    saveBoardView(view);
-    expect(loadBoardView()).toEqual(view);
-  });
-
-  it("falls back to the default view on corrupt JSON or a non-object", () => {
-    window.localStorage.setItem(BOARD_VIEW_KEY, "{nope");
-    expect(loadBoardView()).toEqual(EMPTY_VIEW);
-    window.localStorage.setItem(BOARD_VIEW_KEY, "42");
-    expect(loadBoardView()).toEqual(EMPTY_VIEW);
-  });
-
-  it("drops unknown sorts and types", () => {
-    window.localStorage.setItem(
-      BOARD_VIEW_KEY,
-      JSON.stringify({ query: "x", sort: "weird", types: ["bug", "epic"], collapsed: "yes" }),
-    );
-    expect(loadBoardView()).toEqual({ query: "x", sort: "position", types: ["bug"], collapsed: false });
-  });
-});
-
 describe("column views setting", () => {
   const all = (v: typeof EMPTY_VIEW) => ({ backlog: v, todo: v, in_progress: v, in_review: v, done: v });
+
+  it("removes the retired board-wide view on load", () => {
+    window.localStorage.setItem("formic:board-view:v1", "{}");
+    loadColumnViews();
+    expect(window.localStorage.getItem("formic:board-view:v1")).toBeNull();
+  });
 
   it("is empty when nothing is saved", () => {
     expect(loadColumnViews()).toEqual({});

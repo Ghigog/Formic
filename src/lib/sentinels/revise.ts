@@ -39,7 +39,7 @@ function pathsIn(check: RubricCheck): string[] {
 async function tellFailed(fix: RubricFix, reason: string) {
   const who = findSentinel(fix.sentinel)?.who ?? fix.sentinel;
   await postPmMessage(fix.projectId, {
-    content: `I did not change ${who}'s check ${code(fix.checkId)}: ${reason} The rubric is as it was.`,
+    content: `${who}'s check ${code(fix.checkId)} was not changed: ${reason} The rubric is as it was.`,
   });
 }
 

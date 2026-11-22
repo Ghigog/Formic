@@ -104,6 +104,17 @@ export type FormicEvent =
     }
   | {
       /**
+       * Lint rules that failed on a pull request's lint check, recorded when
+       * its review is built, so coders on the repository hear which rules
+       * keep failing (src/lib/coder/recurring-lint.ts).
+       */
+      type: "repo.lint.failed";
+      ticketId: string;
+      prNumber: number;
+      rules: string[];
+    }
+  | {
+      /**
        * An agent saying a shared note helped it or is no longer true. What
        * keeps a useful note in briefings and drops a stale one
        * (src/lib/domain/trail.ts).

@@ -1,4 +1,4 @@
-# formic-runner: 1cb0ab7fc535
+# formic-runner: 6e4506d20e16
 # Installed by Formic. Runs a coding agent
 # on your own plan when a Formic card asks for one, and pushes its work to a
 # formic-staging/ branch for Formic to check. Formic replaces this file when
@@ -49,6 +49,10 @@ on:
         description: Minutes the job may run, at most 60
         required: false
         default: "60"
+      session:
+        description: Where the board's PM session is collected from and saved to, or empty
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -152,6 +156,39 @@ jobs:
             *) echo "Unknown agent: $CLI"; exit 1 ;;
           esac
 
+      # The board's PM only, as a resumable Claude Code session: its session
+      # file and its board-scoped MCP token, collected once from Formic. It
+      # also fetches the repository's branches so the PM can work on a
+      # ticket's branch; the token that fetches them never reaches the agent.
+      # Skipped, and nothing below changes, when there is no session.
+      - name: Restore the PM's session
+        if: inputs.session != '' && inputs.cli == 'claude'
+        env:
+          SESSION: ${{ inputs.session }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          export FORMIC_ENV_OUT="$GITHUB_ENV"
+          set -euo pipefail
+          curl -fsS --retry 3 "$SESSION" -o "$RUNNER_TEMP/formic-session.json"
+          id="$(jq -r '.sessionId' "$RUNNER_TEMP/formic-session.json")"
+          token="$(jq -r '.mcp.token' "$RUNNER_TEMP/formic-session.json")"
+          if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::add-mask::$token"; fi
+          dir="$HOME/.claude/projects/$(pwd | sed 's/[^A-Za-z0-9]/-/g')"
+          mkdir -p "$dir"
+          if [ -n "$(jq -r '.file // ""' "$RUNNER_TEMP/formic-session.json")" ]; then
+            jq -r '.file' "$RUNNER_TEMP/formic-session.json" | base64 -d | gunzip > "$dir/$id.jsonl"
+            echo "FORMIC_SESSION_RESUME=1" >> "$FORMIC_ENV_OUT"
+          fi
+          jq '{mcpServers: {formic: {type: "http", url: .mcp.url, headers: {Authorization: ("Bearer " + .mcp.token)}}}}' "$RUNNER_TEMP/formic-session.json" > "$RUNNER_TEMP/formic-mcp.json"
+          rm -f "$RUNNER_TEMP/formic-session.json"
+          echo "FORMIC_SESSION_ID=$id" >> "$FORMIC_ENV_OUT"
+          echo "FORMIC_MCP_CONFIG=$RUNNER_TEMP/formic-mcp.json" >> "$FORMIC_ENV_OUT"
+          # The PM commits its own work, under its own name.
+          git config user.name > /dev/null || git config user.name "Formic PM"
+          git config user.email > /dev/null || git config user.email formic-agent@users.noreply.github.com
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c "http.https://github.com/.extraheader=$auth" fetch --quiet --no-tags --depth=50 origin '+refs/heads/*:refs/remotes/origin/*' || true
+
       # Ready before the agent starts, so it spends its turns on the ticket:
       # whatever toolchains the checkout uses (src/lib/toolchains), then the
       # repository's own .github/formic/setup.sh. The coding modes need them, and so does a sentinel's audit, which runs
@@ -174,6 +211,33 @@ jobs:
           }
           formic_note() { printf '%s\n' "$*" >> "$FORMIC_CHECKS"; }
           export -f formic_bin formic_note
+
+          if [ "$(uname -s)" = Linux ]; then
+            echo "Setting up a virtual display..."
+            formic_mesa_ok() { ! command -v dpkg > /dev/null || dpkg -s libgl1-mesa-dri > /dev/null 2>&1; }
+            if ! command -v xvfb-run > /dev/null || ! formic_mesa_ok; then
+              if sudo -n true > /dev/null 2>&1; then
+                sudo -n apt-get install -y -qq xvfb xauth libgl1-mesa-dri > /dev/null 2>&1 || echo "Installing the virtual display failed."
+              fi
+            fi
+            if command -v xvfb-run > /dev/null; then
+            if [ -z "${DISPLAY:-}" ] && command -v Xvfb > /dev/null; then
+              nohup Xvfb :99 -screen 0 1920x1080x24 > /dev/null 2>&1 &
+              export DISPLAY=:99
+              if [ -n "${GITHUB_ENV:-}" ]; then echo DISPLAY=:99 >> "$GITHUB_ENV"; fi
+              formic_display_on_job=1
+            fi
+              formic_note '## Display'
+              formic_note 'There is no physical screen. Wrap any GUI app or screenshot run in `xvfb-run -a -s "-screen 0 1920x1080x24" <command>`.'
+              if [ -n "${formic_display_on_job:-}" ]; then formic_note 'DISPLAY=:99 is already set here, so a plain command also opens a window.'; fi
+              formic_note 'Rendering is software (Mesa llvmpipe), so a screenshot run can take one to two minutes: give the command a timeout of at least 3 minutes and do not give up early. Save screenshots under /tmp and look at them (read the PNG) before you finish.'
+            else
+              echo "No virtual display is available on this machine."
+              formic_note '## Display'
+              formic_note 'There is no physical screen and no virtual display could be set up (xvfb-run is missing and could not be installed), so GUI apps and screenshots are unavailable here.'
+            fi
+            unset -f formic_mesa_ok
+          fi
 
           if [ -f package-lock.json ] || [ -f pnpm-lock.yaml ] || [ -f yarn.lock ]; then
             echo "Setting up Node..."
@@ -277,7 +341,7 @@ jobs:
               godot --headless --version
 
               formic_note "## Godot"
-              formic_note "Godot $tag, headless, is installed: run it as \`godot\`. There is no display, so always pass --headless."
+              formic_note "Godot $tag, headless, is installed: run it as \`godot\`. Use --headless for the import, tests and scripts. To see or screenshot the game, run it under xvfb-run (see Display) with \`--rendering-driver opengl3\` and without --headless."
               formic_note "A fresh checkout has nothing imported. When there is no .godot/ folder, or after you add or change an asset, run \`godot --headless --import\` first: a script that loads an unimported resource fails."
               if [ -f addons/gut/gut_cmdln.gd ]; then formic_note 'Tests (GUT): `godot --headless -s addons/gut/gut_cmdln.gd -gexit`. A non-zero exit means a test failed; read the log above the summary for which.'
               else formic_note "No test framework Formic knows (GUT) is installed in addons/."
@@ -519,6 +583,10 @@ jobs:
           # plan and progress bar are read from it.
           CLAUDE_CODE_ENABLE_TODO_TOOLS: "true"
           CLAUDE_CODE_ENABLE_TASKS: "false"
+          # A software-rendered screenshot run takes a minute or two; Claude
+          # Code's own default cuts a command off at 2 minutes.
+          BASH_DEFAULT_TIMEOUT_MS: "300000"
+          BASH_MAX_TIMEOUT_MS: "600000"
           FORMIC_ATTACHMENTS: ${{ runner.temp }}/formic-attachments
           CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.cli == 'claude' && startsWith(inputs.secret, 'FORMIC_CLAUDE_CODE_TOKEN') && secrets[inputs.secret] || '' }}
           CODEX_CREDENTIAL: ${{ inputs.cli == 'codex' && startsWith(inputs.secret, 'FORMIC_CODEX_AUTH') && secrets[inputs.secret] || '' }}
@@ -531,6 +599,11 @@ jobs:
               printf '%s' '{"hooks":{"PostToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"f=\"$FORMIC_NOTES\"; if [ -s \"$f\" ] && mv \"$f\" \"$f.taking\" 2>/dev/null; then cat \"$f.taking\" >&2; rm -f \"$f.taking\"; exit 2; fi; exit 0"}]}]}}' > "$RUNNER_TEMP/formic-hooks.json"
               args=(-p "$PROMPT" --output-format stream-json --verbose --settings "$RUNNER_TEMP/formic-hooks.json" --dangerously-skip-permissions)
               if [ -n "$MODEL" ]; then args+=(--model "$MODEL"); fi
+              # The board's PM: its own session, resumed, with Formic's tools.
+              if [ -n "${FORMIC_SESSION_ID:-}" ]; then
+                if [ "${FORMIC_SESSION_RESUME:-}" = "1" ]; then args+=(--resume "$FORMIC_SESSION_ID"); else args+=(--session-id "$FORMIC_SESSION_ID"); fi
+                args+=(--mcp-config "$FORMIC_MCP_CONFIG")
+              fi
               claude "${args[@]}" | tee -a "$FORMIC_STREAM"
               jq -Rrj 'fromjson? | select(.type == "result") | (.result // empty)' "$FORMIC_STREAM" > "$FORMIC_STDOUT"
               ;;
@@ -558,6 +631,26 @@ jobs:
               jq -Rrj 'fromjson? | select(.type == "message" and .role == "assistant") | (.content // empty)' "$FORMIC_STREAM" > "$FORMIC_STDOUT"
               ;;
           esac
+
+      # The PM's session back to Formic, whatever happened above.
+      - name: Save the PM's session
+        if: always() && inputs.session != '' && inputs.cli == 'claude'
+        # Never the run's failure: the reply still reaches the chat.
+        continue-on-error: true
+        env:
+          SESSION: ${{ inputs.session }}
+          FORMIC_STREAM: ${{ runner.temp }}/formic-stream.jsonl
+        run: |
+          id="$(jq -Rr 'fromjson? | select(.type == "result") | (.session_id // empty)' "$FORMIC_STREAM" 2>/dev/null | tail -n 1 || true)"
+          if [ -z "$id" ]; then id="${FORMIC_SESSION_ID:-}"; fi
+          file="$(ls "$HOME"/.claude/projects/*/"$id".jsonl 2>/dev/null | head -n 1 || true)"
+          if [ -n "$id" ] && [ -n "$file" ]; then gzip -c "$file" | base64 -w0 > "$RUNNER_TEMP/formic-session.b64"; else : > "$RUNNER_TEMP/formic-session.b64"; fi
+          branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"
+          jq -n --arg id "$id" --arg branch "$branch" --rawfile file "$RUNNER_TEMP/formic-session.b64" '{sessionId: $id, branch: $branch, file: $file}' > "$RUNNER_TEMP/formic-session-up.json"
+          if ! curl -fsS --retry 3 -X POST -H "content-type: application/json" --data-binary "@$RUNNER_TEMP/formic-session-up.json" "$SESSION" > /dev/null; then
+            echo "Could not save the PM's session; the next turn starts from Formic's summary."
+          fi
+          rm -f "$RUNNER_TEMP/formic-session.b64" "$RUNNER_TEMP/formic-session-up.json"
 
       # Whatever happened above: tell the reporter it is the last round, and
       # give it a moment to post the end of the stream and the final checkpoint.
@@ -600,7 +693,15 @@ jobs:
                 git reset -q -- .github/workflows
                 if ! git diff --cached --quiet; then
                   git commit -q -m "Changes from the board's assistant"
-                  git push "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "HEAD:refs/heads/formic-staging/${JOB}-change"
+                  # A PM session's commits that this token may not push (a
+                  # workflow change) never cost the person its reply.
+                  if ! git push "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "HEAD:refs/heads/formic-staging/${JOB}-change"; then
+                    if [ -z "${FORMIC_SESSION_ID:-}" ]; then exit 1; fi
+                    echo "::warning::The PM's change could not be kept."
+                  fi
+                # A PM session commits its own work: that is kept too.
+                elif [ -n "${FORMIC_SESSION_ID:-}" ] && [ "$(git rev-parse HEAD)" != "$FORMIC_START" ]; then
+                  git push "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "HEAD:refs/heads/formic-staging/${JOB}-change"                     || echo "::warning::The PM's change could not be kept."
                 fi
               fi
               # The answer, on its own: only it leaves on this branch.
@@ -676,6 +777,32 @@ jobs:
           fi
           if [ -n "${FORMIC_MERGED:-}" ]; then
             printf '\nFormic-Merged: %s\n' "$FORMIC_MERGED" >> "$FORMIC_SUMMARY"
+          fi
+          # Screenshots the agent left behind: PNGs within the caps go on the branch.
+          if [ -d ".formic/screenshots" ]; then
+            shot_kept=0
+            for shot in ".formic/screenshots"/*; do
+              [ -f "$shot" ] || continue
+              shot_name="$(basename "$shot" | tr -c 'A-Za-z0-9._\n-' '-')"
+              shot_why=""
+              case "$(printf '%s' "$shot_name" | tr 'A-Z' 'a-z')" in
+                *.png) ;;
+                *) shot_why="not a PNG" ;;
+              esac
+              if [ -z "$shot_why" ] && [ "$(head -c 8 "$shot" | od -An -tx1 | tr -d ' \n')" != "89504e470d0a1a0a" ]; then shot_why="not a PNG"; fi
+              if [ -z "$shot_why" ] && [ "$(wc -c < "$shot")" -gt 1500000 ]; then shot_why="over 1500000 bytes"; fi
+              if [ -z "$shot_why" ] && [ "$shot_kept" -ge 8 ]; then shot_why="over the limit of 8 screenshots"; fi
+              if [ -n "$shot_why" ]; then
+                printf '\nFormic-Screenshot-Skipped: %s (%s)\n' "$shot_name" "$shot_why" >> "$FORMIC_SUMMARY"
+              else
+                mkdir -p "docs/screenshots/$TICKET"
+                cp "$shot" "docs/screenshots/$TICKET/$shot_name"
+                git add -f "docs/screenshots/$TICKET/$shot_name"
+                shot_kept=$((shot_kept + 1))
+              fi
+            done
+            git rm -r -q -f --cached --ignore-unmatch ".formic/screenshots" > /dev/null
+            rm -rf ".formic/screenshots"
           fi
           git commit --allow-empty -F "$FORMIC_SUMMARY"
           git push "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "HEAD:refs/heads/formic-staging/${JOB}"

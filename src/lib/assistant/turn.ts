@@ -25,7 +25,7 @@ import { extractJson } from "@/lib/llm/openai-compat";
 import { attachmentsPrompt, startCliAsk } from "@/lib/runner/runner";
 import { vcs, type VcsClient } from "@/lib/vcs";
 import { ASSISTANT_BRANCH_PREFIX, assistantActionSchema, checkAction } from "./actions";
-import { boardSnapshot, cardReport, mentionedKeys } from "./context";
+import { boardSnapshot, cardReport, resolveMentions } from "./context";
 import { outOfRoundsMessage, readWindow } from "./reads";
 import {
   ACT_ON_CARD_DEF,
@@ -42,6 +42,9 @@ import type { AgentRole } from "@/lib/domain/entities";
 import { DESIGN_RULE, ENGINEERING_PRACTICES, TICKET_TEMPLATE } from "@/lib/agents/prompts";
 import { askedIn, isQuestion, PM_ANSWER_PREFIX } from "@/lib/domain/question";
 import type { BoardCard } from "@/lib/domain/entities";
+import { kindOf, noticeEvent, threadOrder } from "@/lib/domain/chat";
+import { attemptOfJob } from "@/lib/runner/workflow";
+import { finishSessionTurn, startSessionTurn, stopSessionTurn, type TurnOutcome } from "./session";
 
 /**
  * One turn of the board's assistant: the person asked something, the agent
@@ -76,12 +79,18 @@ const MAX_CLI_REPORTS = 4;
 /** How many cards in review or blocked it is handed when the person names none. */
 const MAX_CLI_FALLBACK_REPORTS = 8;
 
+/** Which card, and what first: the PM never guesses a card, and answers before it acts. */
+export const ANSWER_RULES = [
+  "When the person's words fit several cards (\"T1\" is EPIC-122-T1 and T-1), or they name no card while two or more are blocked or stalled, ask which card they mean, or cover each. Never guess. Formic notes it on their message when it happens.",
+  "Answer a direct question in the first lines of your reply, before you propose or act. What a proposal did once approved is shown under it by Formic, after your answer.",
+].join("\n");
+
 /** How the PM treats a note written while playtesting. See docs/plans/playtest.md. */
 export const PLAYTEST_RULE = [
   "Messages that start with [Playtest note] were written while the person played the default branch in Playtest. They are quick notes, not orders: never change code for one. For each note, or each group of notes about the same thing, check it against the Epics' PRDs, the tickets and the code, and start your answer with one bold verdict:",
   "- **Intended**: the PRD, a ticket or the code means it to work this way. Quote the line that says so.",
   "- **Already known**: a card or pull request already covers it. Name its key.",
-  "- **Worth a ticket**: propose create_backlog_item with the note in the person's words and what you found, and pass the note's screenshot ids as screenshots.",
+  "- **Worth a ticket**: a note that is one fix or one behaviour goes in the Epic it belongs to with add_tickets_to_epic when one is on the board, otherwise propose create_todo_item. Propose create_backlog_item only when the note asks for a new capability that needs a PRD and several tickets. Give the note in the person's words and what you found, and pass the note's screenshot ids as screenshots.",
   "One or two lines each. Use playtest_sessions to look at earlier playtests when a note refers back to one.",
 ].join("\n");
 
@@ -233,16 +242,21 @@ export async function systemPrompt(projectId: string, brief: string | null): Pro
     "",
     "Read the repository before you answer a question about its code. Do not guess at what a file contains.",
     "",
+    ANSWER_RULES,
+    "",
     "You see the board below, and each card's live state on GitHub (its checks, the log of a red one, its agent runs). When asked about a card, look before you answer; never answer that you cannot see it.",
     "",
     "A card that stops is brought to you first: explain what happened (what the agents tried, what is failing and why) before you ask anything of the person.",
     "",
     "You can do the work, not only describe it. Each of these is a proposal: it happens only if the person approves it.",
     "- open_pull_request, for a change to the code you made yourself, on your own branch. It goes through CI and review like any other pull request. Make the change yourself, without a ticket, when you can finish and check it in this conversation: a bug fix, a follow-up, a small feature.",
-    "- rerun_ci, to run a ticket's failed checks again when the failure is not the code's (a network error in an install, a lost runner). A head that does not change never gets new CI, so a card waiting on one stays stuck until it re-runs.",
+    "- rerun_ci, only for a failure that is not the code's (a network error in an install, a lost runner). A re-run tests the same commit, so a failure in the code fails again; Formic refuses it and proposes update_branch instead.",
+    "- update_branch, to bring main into a ticket's branch. Use it for a blocked card whose fix has since merged to main: the head moves, CI runs on it, and the card goes back to In Review. A conflict goes to the Reviewer Agent.",
+    "Before you write a follow-up or a fix from an agent's note, read the failing check's log (card_status) and quote the failing assertion in the ticket. An agent's note can name the wrong cause.",
     "- add_tickets_to_epic, for work that belongs to an Epic already on the board: a follow-up or a bug in a ticket's work goes in that ticket's Epic.",
     "- create_epic_with_tickets, for a new capability that is already planned. An Epic is a user-facing capability: user stories made of several user flows, each flow one or more tickets. One fix is not an Epic, and an Epic of one ticket is almost always wrong: add the ticket to the Epic it belongs to, or make the change yourself. It lands in To Do.",
-    "- create_backlog_item, for a request that still needs a PRD. The Product Agent writes one.",
+    "- create_todo_item, for a request that is one fix or one behaviour and belongs to no Epic on the board. It lands in To Do as a ticket the Architect Agent drafts. Use add_tickets_to_epic instead when an Epic it belongs to is on the board.",
+    "- create_backlog_item, for a request that needs a PRD and an Epic. The Product Agent writes one.",
     "- move_card, to move a card to another column. It follows the same rules as the person dragging it, so a move the board refuses (a ticket to Done with no pull request, say) fails: say so rather than propose it.",
     "- close_card, for a card that is no longer needed (a duplicate, work already done elsewhere). A ticket is archived; an Epic is deleted with all its tickets.",
     "- revise_rubric_check, when the person asks to correct one check of a Sentinel's rubric: give sentinel, check (its id, such as 5b) and note (what is wrong and the change wanted). The person must approve it; only then does the Sentinel revise that one check, and every other check stays as it was. Never change a rubric any other way, and never suggest lowering the bar.",
@@ -264,13 +278,94 @@ export async function systemPrompt(projectId: string, brief: string | null): Pro
   ].join("\n");
 }
 
-/** What the reply `messageId` sees: the conversation up to its own message. */
+/**
+ * The brief a Claude Code PM's session starts with (docs/plans/pm-chat.md,
+ * PR 3). The session keeps it, and the conversation, from turn to turn; it
+ * looks the board up live with Formic's tools instead of being handed it.
+ */
+export async function sessionSystemPrompt(projectId: string, brief: string | null): Promise<string> {
+  const project = await projectFor(projectId);
+  const cards = await repository().boardCards(projectId);
+  const questions = openQuestions(cards);
+  const asked = await visions(cards);
+  return [
+    `You are the PM: the project manager who directs the agents on a Formic board for the repository ${project.repoFullName} (base branch ${project.baseBranch}). You work for the person you are talking to, the stakeholder who owns this board. The Product Agent, the Architect, the Coder and the Reviewer each do one column's work; you hold the person's vision across all of it.`,
+    "",
+    "This is a Claude Code session that lasts: you are resumed for every message in the board's chat, and you remember the conversation. Each message brings only what is new: the person's words, and lines in [Board: …] or [Formic: …], which are events Formic tells you, never the person speaking and never your own words.",
+    "",
+    "Your job:",
+    "- Keep the work true to what the person asked for, in their own words, and to the product's standards: its design, its tests, its PRDs. Every question an agent asks comes to you first.",
+    "- When an agent asks, settle it if what the person already asked for settles it: answer with answer_card_question, own set to true, and tell the person in a line what you answered and why. When only the person can settle it, put it to them in plain words with your suggested answer.",
+    "- Be the person's single point of contact. Speak like a trusted colleague: brief, clear, kind, never technical unless they are.",
+    "- A card that stops is brought to you: find out why (card_status: its runs, checks and the failed log), fix it when you can, and tell the person in one line.",
+    "- Tidy the board when it gets messy: missing dependencies (add_dependency), overlapping scopes, branches that need the base (update_branch_from_base).",
+    "",
+    "Your tools:",
+    `- Claude Code's own: read, search, edit and run commands in a checkout of the repository. Read the code before you say anything about it.`,
+    `- Formic's, on the MCP server "formic". This board's id is ${projectId}: pass it as board to every one. list_cards and get_card show the board live; card_status shows a card's column, runs, pull request, checks and failed log. Use them before you answer about a card, rather than guessing.`,
+    "",
+    "Act, then say what you did. Create tickets and Epics, move cards, re-run checks, answer a card's question, add dependencies, change code and open pull requests without asking first.",
+    "Some things are always the person's to decide, and Formic's tools turn them into a proposal in the chat whatever you ask: closing, archiving or deleting a card (close_card), merging a pull request (merge_pull_request, or moving a card to Done), and optional cards. A nice-to-have or a follow-up the person did not ask for always goes through propose_card (add_follow_up for a ticket's own follow-up), never create_backlog_card or create_epic. Say you proposed it; never say it happened.",
+    "",
+    "Changing code:",
+    `- Work on a branch. For a change of your own: git checkout -b formic-pm/<short-name>. To fix a ticket: git checkout -B <its branch> origin/<its branch> (card_status names it), then commit on top of it. Never commit to ${project.baseBranch}, never rewrite or rebase a branch's history, never force anything, and never change .github/workflows/.`,
+    "- Install the project's dependencies if they are missing, and run its checks on your change before you finish. Commit with a plain message saying what changed.",
+    "- You cannot push. When your turn ends, Formic pushes the branch your checkout is on, as a fast-forward and only while no agent is working that ticket; anything else goes to a formic-pm/ branch of its own. Formic opens the pull request for a formic-pm/ branch, titled with your last commit's message. So leave the checkout on the branch you want pushed, one branch per message.",
+    "",
+    ...(questions.length ? ["Questions the board is waiting on the person for, when this session started:", ...questions, ""] : []),
+    ...(asked.length ? ["What the person asked for, in their own words, for each Epic still in progress:", ...asked, ""] : []),
+    PLAYTEST_RULE,
+    "",
+    ANSWER_RULES,
+    "",
+    "A ticket's fileScope lists the directories it may change, as prefixes from the repository root: 1 to 12 entries. Tickets that could run at the same time must not share a scope: make one depend on the other instead.",
+    "",
+    TICKET_TEMPLATE,
+    "",
+    DESIGN_RULE,
+    "",
+    ENGINEERING_PRACTICES,
+    "",
+    "Your reply streams into the chat as you write it: plain, short Markdown, no JSON and no preamble. Lead with the answer, then what you did, then what needs the person.",
+    "",
+    "The board when this session started (it changes; look it up live):",
+    boardSnapshot(cards),
+    ...(brief ? ["", "The person's instructions for you:", brief] : []),
+  ].join("\n");
+}
+
+/** What the reply `messageId` sees: the conversation up to its own message, in the order the chat shows it. */
 async function historyBefore(projectId: string, messageId: string) {
-  const { messages: all } = await repository().assistantMessages(projectId);
+  const all = threadOrder((await repository().assistantMessages(projectId)).messages);
   const at = all.findIndex((m) => m.id === messageId);
   const past = await history(at < 0 ? all : all.slice(0, at));
   // Another speaker's reply may be the last: the person's question still stands.
   return past.at(-1)?.role === "assistant" ? [...past, { role: "user" as const, content: "Now it is your turn to answer the person's last message." }] : past;
+}
+
+/**
+ * The conversation as an API model is sent it. A notice is an event the
+ * model is told, so it travels on the user side; joined with its neighbours
+ * there, so no provider sees two user turns in a row because of one.
+ */
+export function forModel(past: PastMessage[]): PastMessage[] {
+  const out: PastMessage[] = [];
+  for (const m of past) {
+    const last = out.at(-1);
+    if (last && last.role === "user" && m.role === "user" && (last.notice || m.notice)) {
+      const images = [...(last.images ?? []), ...(m.images ?? [])];
+      const files = [...(last.files ?? []), ...(m.files ?? [])];
+      out[out.length - 1] = {
+        role: "user",
+        content: [last.content, m.content].filter((c) => c.trim()).join("\n\n"),
+        ...(images.length ? { images } : {}),
+        ...(files.length ? { files } : {}),
+        // Still only Formic's word if both were.
+        ...(last.notice && m.notice ? { notice: true } : {}),
+      };
+    } else out.push(m);
+  }
+  return out;
 }
 
 /** How many of the person's latest messages go to the model with their pictures; older pictures are a text line. */
@@ -288,6 +383,17 @@ export async function history(messages: AssistantMessage[]): Promise<PastMessage
   );
   return Promise.all(
     kept.map(async (m): Promise<PastMessage> => {
+      // Formic's own word: an event on the board, never something the model said.
+      if (kindOf(m) === "notice") {
+        return {
+          role: "user",
+          notice: true,
+          content: [
+            noticeEvent(m.content),
+            ...m.proposals.map((p) => `[Formic proposed: ${p.summary}. The person ${decided(p.state)}.]`),
+          ].join("\n"),
+        };
+      }
       const pictures = m.attachments.filter((a) => a.kind === "image");
       const images: NonNullable<PastMessage["images"]> = [];
       const lines: string[] = [];
@@ -311,7 +417,7 @@ export async function history(messages: AssistantMessage[]): Promise<PastMessage
               ? [playtestLabel(m)]
             : []),
           ...lines,
-          ...m.proposals.map((p) => `[Proposed: ${p.summary}. The person ${p.state === "proposed" ? "has not decided yet" : p.state === "applied" ? "approved it" : p.state === "dismissed" ? "dismissed it" : "approved it, but it failed"}.]`),
+          ...m.proposals.map((p) => `[Proposed: ${p.summary}. The person ${decided(p.state)}${p.state === "applied" && p.result ? `: ${p.result.replace(/\.$/, "")}` : ""}.]`),
         ].join("\n"),
         ...(images.length ? { images } : {}),
         ...(pictures.length ? { files: pictures } : {}),
@@ -320,7 +426,11 @@ export async function history(messages: AssistantMessage[]): Promise<PastMessage
   );
 }
 
-/** How a playtest note reads to the PM: what it is, and the ids of its screenshots for create_backlog_item. */
+function decided(state: AssistantProposal["state"]): string {
+  return state === "proposed" ? "has not decided yet" : state === "applied" ? "approved it" : state === "dismissed" ? "dismissed it" : "approved it, but it failed";
+}
+
+/** How a playtest note reads to the PM: what it is, and the ids of its screenshots for create_todo_item or create_backlog_item. */
 export function playtestLabel(m: AssistantMessage): string {
   const shots = m.attachments.filter((a) => a.kind === "image").map((a) => a.id);
   return `[Playtest note${shots.length ? `, screenshots: ${shots.join(", ")}` : ""}]`;
@@ -455,19 +565,27 @@ export async function startNext(projectId: string): Promise<void> {
   if (next) launch(() => answer(projectId, next.id), `assistant answer ${next.id}`);
 }
 
-/** The person stopped waiting: the answer being written is failed, and the next one queued starts. */
-export async function cancelPending(projectId: string): Promise<void> {
+/**
+ * The person pressed Stop on the reply `messageId`: it is failed as
+ * "Stopped.", and if it was the one being written, the next one queued
+ * starts. Nothing else ever stops a reply: a new message queues behind it.
+ */
+export async function cancelPending(projectId: string, messageId: string): Promise<void> {
   const repo = repository();
-  const current = await repo.pendingAssistantMessage(projectId);
-  if (!current) return;
-  await repo.updateAssistantMessage(current.id, {
+  const target = await repo.assistantMessage(messageId);
+  if (!target || target.projectId !== projectId || target.role !== "assistant" || target.status !== "pending") return;
+  const running = (await repo.pendingAssistantMessage(projectId, "assistant"))?.id === messageId;
+  // A PM session's turn: its job stops and its token goes with it.
+  if (target.runnerJob) await stopSessionTurn(projectId, target.runnerJob);
+  await repo.updateAssistantMessage(messageId, {
     content: "Stopped.",
     proposals: [],
     status: "failed",
     runnerJob: null,
     runnerAgent: null,
   });
-  await startNext(projectId);
+  // A queued reply that never started leaves the running one alone.
+  if (running) await startNext(projectId);
 }
 
 /**
@@ -496,6 +614,22 @@ export async function answer(projectId: string, messageId: string, prompt?: stri
       return;
     }
 
+    // A Claude Code PM is a session of its own, resumed for each message,
+    // where its board's runner can host one. Otherwise it answers as before.
+    if (
+      agent.kind === "cli" &&
+      (await startSessionTurn({
+        projectId,
+        messageId,
+        agent: agent.agent,
+        brief: await sessionSystemPrompt(projectId, agent.agent.brief),
+        wake: prompt,
+        fail: (content) => finish(messageId, { content, status: "failed" }),
+      }))
+    ) {
+      return;
+    }
+
     const past = withPrompt(await historyBefore(projectId, messageId), prompt);
     const brief = agent.kind === "cli" ? agent.agent.brief : agent.brief;
     const system = await systemPrompt(projectId, brief);
@@ -510,14 +644,16 @@ export async function answer(projectId: string, messageId: string, prompt?: stri
       return;
     }
 
+    // A CLI agent is told in its reports header; the API path gets the same note on the message.
+    const spoken = prompt ? past : await withUnclearNote(projectId, past);
     const { info } = agent;
     let speak: Speak;
     if (info.kind === "anthropic") {
-      speak = claudeSpeak(agent.apiKey, agent.model ?? MODELS.product, system, past, TOOL_DEFS);
+      speak = claudeSpeak(agent.apiKey, agent.model ?? MODELS.product, system, forModel(spoken), TOOL_DEFS);
     } else {
       if (!agent.apiKey) throw new Error(`This agent has no ${info.label} API key. Edit it and add one.`);
       if (!agent.model) throw new Error(`This agent has no ${info.label} model. Edit it and pick one.`);
-      speak = openAiSpeak(info, agent.apiKey, agent.model, system, past, TOOL_DEFS);
+      speak = openAiSpeak(info, agent.apiKey, agent.model, system, forModel(spoken), TOOL_DEFS);
     }
 
     const project = await projectFor(projectId);
@@ -668,11 +804,11 @@ async function answerAsGuest(projectId: string, messageId: string, speaker: stri
   const { info } = agent;
   let speak: Speak;
   if (info.kind === "anthropic") {
-    speak = claudeSpeak(agent.apiKey, agent.model ?? MODELS.product, system, past, tools);
+    speak = claudeSpeak(agent.apiKey, agent.model ?? MODELS.product, system, forModel(past), tools);
   } else {
     if (!agent.apiKey) throw new Error(`This agent has no ${info.label} API key. Edit it and add one.`);
     if (!agent.model) throw new Error(`This agent has no ${info.label} model. Edit it and pick one.`);
-    speak = openAiSpeak(info, agent.apiKey, agent.model, system, past, tools);
+    speak = openAiSpeak(info, agent.apiKey, agent.model, system, forModel(past), tools);
   }
 
   const client = vcs(project.repoFullName, (await credentialsForProject(project)).repoToken);
@@ -736,14 +872,54 @@ const cliAnswerSchema = z.object({
  * A CLI agent cannot call card_status, so the live state of the cards the
  * person has been asking about is read for it before it starts.
  */
+/**
+ * When the person's latest message does not say which card: its words fit
+ * several ("T1": EPIC-122-T1 and T-1), or it names none while two or more
+ * cards are blocked or stalled. The candidates, or null when it is clear.
+ */
+export async function unclearCard(
+  projectId: string,
+  past: PastMessage[],
+): Promise<{ note: string; keys: string[]; ambiguous: boolean } | null> {
+  const latest = past.at(-1);
+  if (latest?.role !== "user" || latest.notice) return null;
+  const cards = (await repository().boardCards(projectId)).filter((c) => !c.archived);
+  const { keys, ambiguous } = resolveMentions(latest.content, cards);
+  if (ambiguous.length) {
+    const candidates = [...new Set(ambiguous.flatMap((a) => a.candidates))];
+    return {
+      keys: candidates,
+      ambiguous: true,
+      note: `"${ambiguous.map((a) => a.text).join('", "')}" fits several cards: ${candidates.join(", ")}. Ask the person which one they mean, or cover each. Never guess.`,
+    };
+  }
+  if (keys.length) return null;
+  const stuck = cards.filter((c) => c.blockedReason || c.stalledIn);
+  if (stuck.length < 2) return null;
+  return {
+    keys: stuck.map((c) => c.key),
+    ambiguous: false,
+    note: `The person named no card, and ${stuck.length} cards are blocked or stalled: ${stuck.map((c) => c.key).join(", ")}. Ask the person which one they mean, or cover each. Never guess.`,
+  };
+}
+
+/** The Formic note on the person's latest message, so the API path is told the same as a CLI agent. */
+async function withUnclearNote(projectId: string, past: PastMessage[]): Promise<PastMessage[]> {
+  const unclear = await unclearCard(projectId, past);
+  return unclear ? withPrompt(past, `[Formic: ${unclear.note}]`) : past;
+}
+
 async function cliReports(projectId: string, past: PastMessage[]): Promise<string> {
   const asked = past.filter((m) => m.role === "user").slice(-3).map((m) => m.content).join("\n");
   const cards = await repository().boardCards(projectId);
-  const named = mentionedKeys(asked, cards).slice(0, MAX_CLI_REPORTS);
+  const unclear = await unclearCard(projectId, past);
+  const named = unclear ? [] : resolveMentions(asked, cards).keys.slice(0, MAX_CLI_REPORTS);
   // With no card named, the cards most likely being asked about: in review first, then blocked or misplaced.
   const inReview = cards.filter((c) => !c.archived && columnOf(c) === "in_review");
   const stuck = cards.filter((c) => !c.archived && columnOf(c) !== "in_review" && (c.blockedReason || c.misplacedReason));
-  const keys = named.length
+  const keys = unclear?.ambiguous
+    ? unclear.keys.slice(0, MAX_CLI_FALLBACK_REPORTS)
+    : named.length
     ? named
     : [...inReview, ...stuck].slice(0, MAX_CLI_FALLBACK_REPORTS).map((c) => c.key);
   if (keys.length === 0) return "";
@@ -751,7 +927,9 @@ async function cliReports(projectId: string, past: PastMessage[]): Promise<strin
   const creds = await credentialsForProject(project);
   const client = vcs(project.repoFullName, creds.repoToken);
   const reports = await Promise.all(keys.map((k) => cardReport(projectId, k, client).catch((e) => `${k}: could not read it (${e instanceof Error ? e.message : String(e)}).`)));
-  const header = named.length
+  const header = unclear
+    ? `${unclear.note} Their live state, read from the board and GitHub just now:`
+    : named.length
     ? "The live state of the cards the person asked about, read from the board and GitHub just now:"
     : "The person named no card. These are the cards in review or blocked, read from the board and GitHub just now:";
   return [header, "", ...reports.flatMap((r) => [r, ""])].join("\n");
@@ -772,7 +950,7 @@ function cliPrompt(
     "",
     "The conversation so far, oldest first. Answer the last message from the person.",
     "",
-    ...past.map((m) => `### ${m.role === "user" ? "Person" : "You"}\n${m.content}\n`),
+    ...past.map((m) => `### ${m.notice ? "Board (Formic, not the person and not you)" : m.role === "user" ? "Person" : "You"}\n${m.content}\n`),
     ...(files ? [files, ""] : []),
     "How to answer:",
     "- You may change the code. What you change in the checkout is kept on a branch of its own and offered to the person as a pull request, with the title and body you give in \"change\". Change files only when the person asked for a change or agreed to one. Install the project's dependencies if they are not there, and run its checks on your change before you finish. Changes under .github/workflows are not kept. Leave \"change\" out when you changed nothing.",
@@ -787,7 +965,39 @@ function cliPrompt(
   ].join("\n");
 }
 
-/** A CLI agent's answer arrived, or its run failed. */
+/**
+ * A PM session's turn is over: its reply, its change and its file are
+ * handled in ./session; a resumed session that failed is tried once more,
+ * fresh, from the summary.
+ */
+export async function finishSessionAnswer(
+  projectId: string,
+  messageId: string,
+  job: string,
+  outcome: TurnOutcome,
+): Promise<void> {
+  await finishSessionTurn({
+    projectId,
+    messageId,
+    job,
+    outcome,
+    finish: (update) => finish(messageId, update),
+    again: async () => {
+      const agent = await assistantAgentFor(projectId);
+      if (agent.kind !== "cli") return false;
+      return startSessionTurn({
+        projectId,
+        messageId,
+        agent: agent.agent,
+        brief: await sessionSystemPrompt(projectId, agent.agent.brief),
+        fresh: true,
+        attempt: attemptOfJob(job) + 1,
+        fail: (content) => finish(messageId, { content, status: "failed" }),
+      });
+    },
+  });
+}
+
 /** Asks a CLI agent again, with what was wrong with its proposals. */
 async function askAgain(
   projectId: string,
@@ -802,7 +1012,7 @@ async function askAgain(
   if (speaker !== "assistant" && !column) return false;
   const agent = column ? await columnChatAgentFor(projectId, column) : await assistantAgentFor(projectId);
   if (agent.kind !== "cli") return false;
-  const { messages: all } = await repository().assistantMessages(projectId);
+  const all = threadOrder((await repository().assistantMessages(projectId)).messages);
   const past = await history(all.filter((m) => m.id !== messageId));
   const system = column
     ? await guestPrompt(projectId, column, speaker, agent.agent.brief)

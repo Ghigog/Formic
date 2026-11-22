@@ -316,6 +316,10 @@ border, agent chip, elapsed time, a labelled progress bar and the sandbox id. In
 carry the PR badge, CI chips and, on failure, a two-line log excerpt on anthracite. Done groups
 merged tickets under their epic with the showcase CTA.
 
+Nothing sits between the header and the columns (the tab strip on phones): search and filtering
+live in each column's own options menu, which holds the search box, Sort by, Filter type and
+Collapse column. A choice narrows only that column and is saved in this browser.
+
 **Epic drawer.** 1200×864 modal. Left pane 680px, PRD in Newsreader; right pane the child DAG
 with file scopes and blocked-by lines on a `#F7F4EE` ground.
 
@@ -369,12 +373,6 @@ Effort, Renewal day, Notifications, Desktop app, Access tokens, MCP setup, and a
 Controls are real inputs with labels (checkbox `role="switch"`, steppers with "Fewer / More" aria
 labels). Each section saves on change and shows its own error inline (see States). Deep links such
 as `/settings#sandbox` land on a section.
-
-**Board filter bar.** Above the columns (above the tab strip on phones): a filter box (`aria-label`
-"Filter cards", `bg-cream`, `border-line`, terracotta focus border, 12-13px text, 44px tall on phones,
-32px on `md`+) that narrows every column as you type, with a × button once it has text (Escape also
-clears), and beside it the board's options menu (Sort by, Filter type, Collapse all). Changes apply to
-every column and are saved in this browser; a column's own menu can still override its column.
 
 **Ticket drawer.** Modal `role="dialog"` "Ticket detail" over a 40% black scrim; click outside or
 Escape closes. Full-screen bottom sheet on phones (92dvh); on `sm` and up a centred panel, max 1024px

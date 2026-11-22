@@ -16,6 +16,7 @@ import { publish } from "@/lib/events/bus";
 import { recordFollowUps } from "@/lib/board/follow-ups";
 import { recordRubricFixes } from "@/lib/board/rubric-fixes";
 import { runScouts, scoutReturned, scouting, ticketNoteTexts } from "./scouts";
+import { recurringLintFor } from "./recurring-lint";
 import { sharedNoteLine, sharedNotesFor } from "./shared-notes";
 import { newBranchName } from "@/lib/sandbox";
 import { announceStack, holdForMerge, releaseWaiting, restack, stackBase, ticketBelow } from "./stack";
@@ -72,11 +73,13 @@ export function taskFor(
   sharedNotes: string[] = [],
   /** The request the ticket's Epic came from: see ticketOrigin. */
   origin?: Origin,
+  recurringLint: string[] = [],
 ): CoderTask {
   return {
     ...(instruction ? { instruction } : {}),
     ...(origin ? { origin } : {}),
     ...(sharedNotes.length ? { sharedNotes } : {}),
+    ...(recurringLint.length ? { recurringLint } : {}),
     ...(ticket.followUps?.length ? { followUps: ticket.followUps.map(followUpLine) } : {}),
     ticketId: ticket.id,
     key: ticket.key,
@@ -285,6 +288,7 @@ async function codeTicket(
   // What the agents on the repository's other tickets have shared lately:
   // the start of this run's view of them, whichever path it runs on.
   const shared = (await sharedNotesFor(projectId, ticket.id).catch(() => [])).map(sharedNoteLine);
+  const lint = await recurringLintFor(projectId).catch(() => []);
   const origin = await ticketOrigin(ticket).catch(() => undefined);
 
   // A CLI agent on the person's own plan works in GitHub Actions instead of
@@ -312,6 +316,7 @@ async function codeTicket(
         options.instruction,
         shared,
         origin,
+        lint,
       ),
       run,
       stalledIn: "in_progress",
@@ -368,6 +373,7 @@ async function codeTicket(
             budget,
             notes: resumed ? [...notes, resumeBrief(resumed, ticket.plan)] : notes,
             sharedNotes: shared,
+            recurringLint: lint,
             ...(ticket.followUps?.length ? { followUps: ticket.followUps.map(followUpLine) } : {}),
             ...(options.instruction ? { instruction: options.instruction } : {}),
             ...(origin ? { origin } : {}),
@@ -411,7 +417,7 @@ async function codeTicket(
 
   try {
     const outcome = await (await agentFor(projectId, "coder")).implement(run.ctx, {
-      task: taskFor(ticket, await ticketNoteTexts(projectId, ticket), options.instruction, shared, origin),
+      task: taskFor(ticket, await ticketNoteTexts(projectId, ticket), options.instruction, shared, origin, lint),
       // The scope guides the agent rather than fencing it in: the right
       // change may need a file outside it, and the diff check below asks
       // the person before any of that goes further.
@@ -503,7 +509,7 @@ export async function openTicketPullRequest(
   projectId: string,
   ticket: TicketDetail,
   client: VcsClient,
-  input: { branch: string; change: CodeChange; usage?: Usage },
+  input: { branch: string; change: CodeChange; usage?: Usage; screenshots?: string },
 ): Promise<void> {
   // A scout's change stops at its branch: the Reviewer Agent picks among them.
   if (ticket.scoutOf) {
@@ -529,7 +535,7 @@ export async function openTicketPullRequest(
       headBranch: input.branch,
       baseBranch: stacked ?? target,
       title: pullRequestTitle(ticket, input.change),
-      body: pullRequestBody(ticket, input.change),
+      body: pullRequestBody(ticket, input.change, input.screenshots),
     }));
 
   await repo.updateTicket(ticket.id, {

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { AskBox, AskButton, type AssistantControls } from "./assistant";
+import { AskBox, AskButton, ProposalCard, type AssistantControls } from "./assistant";
 
 const controls: AssistantControls = {
   boardId: "p1",
@@ -99,15 +99,114 @@ describe("AskBox", () => {
     expect(screen.queryByText("PM", { selector: "p" })).toBeNull();
   });
 
-  it("swaps Send for Stop while pending, and stops on click", async () => {
+  it("keeps Send while an answer is pending, and stops only from the pending reply's own Stop", async () => {
     const stop = vi.fn();
-    render(<AskBox a={{ ...controls, pending: true, stop }} repoName="demo" />);
-    expect(screen.queryByLabelText("Send")).toBeNull();
-    const box = screen.getByLabelText("Ask the PM");
-    expect(box).not.toBeDisabled();
-    await userEvent.setup().click(screen.getByLabelText("Stop"));
-    expect(stop).toHaveBeenCalled();
-    expect(box).toHaveFocus();
+    const ask = vi.fn();
+    render(
+      <AskBox
+        a={{
+          ...controls,
+          pending: true,
+          stop,
+          ask,
+          messages: [
+            { id: "q", role: "user", content: "Give me the answer first", status: "done", proposals: [] },
+            { id: "r", role: "assistant", content: "", status: "pending", proposals: [] },
+          ],
+        }}
+        repoName="demo"
+      />,
+    );
+    const user = userEvent.setup();
+    // Sending twice in a row never lands on a Stop: the button stays Send.
+    await user.click(screen.getByLabelText("Send"));
+    expect(screen.getByLabelText("Send")).toBeInTheDocument();
+    expect(stop).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    expect(stop).toHaveBeenCalledWith("r");
+  });
+});
+
+describe("the chat stream", () => {
+  Element.prototype.scrollTo = vi.fn();
+  afterEach(() => vi.unstubAllGlobals());
+  const done = { status: "done" as const, proposals: [] };
+
+  it("shows a notice as a timeline line, not a PM bubble, with its detail behind More", () => {
+    render(
+      <AskBox
+        a={{
+          ...controls,
+          messages: [
+            {
+              ...done,
+              id: "n",
+              role: "assistant",
+              kind: "notice",
+              content: "T-9 · Export is done.\n\nNice to have, if you want them:\n- Polish",
+              cards: [{ id: "c9", key: "T-9", title: "Export" }],
+            },
+            { ...done, id: "p", role: "assistant", kind: "pm", content: "A real answer" },
+          ],
+        }}
+        repoName="demo"
+      />,
+    );
+    const note = screen.getByRole("note");
+    expect(note).toHaveAttribute("data-kind", "notice");
+    expect(note.textContent).toContain("T-9 · Export is done.");
+    expect(screen.getByText("More")).toBeInTheDocument();
+    expect(note.querySelector("[data-testid=pm-cards]")).not.toBeNull();
+    expect(screen.getByText("A real answer").closest("[data-kind]")).toHaveAttribute("data-kind", "pm");
+  });
+
+  it("keeps a reply directly under the question, with a notice that landed between them moved above", () => {
+    const at = (s: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, s)).toISOString();
+    const { container } = render(
+      <AskBox
+        a={{
+          ...controls,
+          messages: [
+            { ...done, id: "q", role: "user", content: "Question", createdAt: at(0) },
+            { ...done, id: "n", role: "assistant", kind: "notice", content: "EPIC-122-T3 added", createdAt: at(1) },
+            { ...done, id: "r", role: "assistant", content: "Answer", createdAt: at(2) },
+          ],
+        }}
+        repoName="demo"
+      />,
+    );
+    const order = [...container.querySelectorAll(".pm-thread [data-kind]")].map((el) => el.getAttribute("data-kind"));
+    expect(order).toEqual(["notice", "person", "pm"]);
+  });
+
+  it("copies each message's raw Markdown: the person's, the PM's, a guest's and a notice", async () => {
+    const writeText = vi.fn(async () => undefined);
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    render(
+      <AskBox
+        a={{
+          ...controls,
+          messages: [
+            { ...done, id: "q", role: "user", content: "my **ask**" },
+            { ...done, id: "r", role: "assistant", content: "the **answer**\n- one" },
+            { ...done, id: "g", role: "assistant", speaker: "reviewer", content: "from `review`" },
+            { ...done, id: "n", role: "assistant", kind: "notice", content: "Opened pull request #726" },
+          ],
+        }}
+        repoName="demo"
+      />,
+    );
+    const buttons = screen.getAllByRole("button", { name: "Copy message" });
+    expect(buttons).toHaveLength(4);
+    for (const b of buttons) await user.click(b);
+    expect(writeText.mock.calls.map((c) => (c as unknown[])[0])).toEqual([
+      "my **ask**",
+      "the **answer**\n- one",
+      "from `review`",
+      "Opened pull request #726",
+    ]);
+    expect(screen.getAllByRole("button", { name: "Copied" })).toHaveLength(4);
   });
 });
 
@@ -235,6 +334,14 @@ describe("proposal cards", () => {
     expect(screen.getByRole("button", { name: "Dismiss" })).toBeEnabled();
   });
 
+  it("shows a To Do ticket proposal's request in the same muted clamp", () => {
+    const a = withProposal("proposed");
+    a.messages[0]!.proposals[0]!.action = { type: "create_todo_item", request: "Fix night pick-up" };
+    render(<AskBox a={a} repoName="demo" />);
+    expect(screen.getByText("Fix night pick-up")).toHaveClass("text-muted", "line-clamp-3");
+    expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled();
+  });
+
   it("grays out an approved card and drops the buttons", () => {
     render(<AskBox a={withProposal("applied")} repoName="demo" />);
     expect(card()).toHaveAttribute("data-state", "applied");
@@ -264,6 +371,73 @@ describe("proposal cards", () => {
     );
     rerender(<AskBox a={withProposal("applied")} repoName="demo" />);
     expect(body()).toHaveClass("opacity-60");
+  });
+});
+
+describe("a PM session's reply", () => {
+  Element.prototype.scrollTo = vi.fn();
+  const claude = {
+    id: "c1", ownerId: null, column: null, name: "Claude Code", provider: "claude-code",
+    model: null, prompt: "", hasKey: true, keyHint: null, limitedUntil: null, limitNote: null,
+  } as unknown as AssistantControls["presets"][number];
+  afterEach(() => vi.useRealTimers());
+
+  it("says it is starting, with a running timer, before the job has said anything", () => {
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+    const asked = new Date(Date.now() - 12_000).toISOString();
+    render(
+      <AskBox
+        a={{
+          ...controls,
+          pending: true,
+          presets: [claude],
+          presetId: "c1",
+          messages: [{ id: "r", role: "assistant", content: "", status: "pending", proposals: [], createdAt: asked }],
+        }}
+        repoName="demo"
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Starting… 0:12");
+    act(() => vi.advanceTimersByTime(3_000));
+    expect(screen.getByRole("status")).toHaveTextContent("Starting… 0:15");
+  });
+
+  it("says E2B would be faster while a PM with no token kept starts in CI, and not once one is kept", () => {
+    const starting = (preset: typeof claude) => (
+      <AskBox
+        a={{
+          ...controls,
+          pending: true,
+          presets: [preset],
+          presetId: "c1",
+          messages: [{ id: "r", role: "assistant", content: "", status: "pending", proposals: [] }],
+        }}
+        repoName="demo"
+      />
+    );
+    const { rerender } = render(starting({ ...claude, hasKey: false }));
+    expect(screen.getByTestId("pm-e2b-hint")).toHaveTextContent("Replies start in seconds with E2B");
+    rerender(starting(claude));
+    expect(screen.queryByTestId("pm-e2b-hint")).toBeNull();
+  });
+
+  it("shows its words as they stream in, with Stop still there", () => {
+    render(
+      <AskBox
+        a={{
+          ...controls,
+          pending: true,
+          presets: [claude],
+          presetId: "c1",
+          messages: [{ id: "r", role: "assistant", content: "Looking at **T-4** now.\n\n› Formic: card status", status: "pending", proposals: [] }],
+        }}
+        repoName="demo"
+      />,
+    );
+    expect(screen.getByTestId("pm-streaming")).toHaveTextContent("Looking at T-4 now.");
+    expect(screen.getByTestId("pm-streaming")).toHaveTextContent("› Formic: card status");
+    expect(screen.getByRole("status")).toHaveTextContent("Working…");
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
   });
 });
 
@@ -601,5 +775,52 @@ describe("images in the composer", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(controls.setOpen).not.toHaveBeenCalledWith(false);
+  });
+});
+
+describe("selecting in the thread", () => {
+  Element.prototype.scrollTo = vi.fn();
+  const attr = () => document.documentElement.hasAttribute("data-pm-selecting");
+  const a: AssistantControls = {
+    ...controls,
+    messages: [
+      { id: "m1", role: "assistant", content: "hello there", status: "done", proposals: [], cards: [{ id: "c1", key: "T-1", title: "Linked" }] },
+    ],
+  };
+
+  it("marks the page while a drag that began in the thread lasts", () => {
+    render(<AskBox a={a} repoName="demo" />);
+    fireEvent.pointerDown(screen.getByText("hello there"), { button: 0 });
+    expect(attr()).toBe(true);
+    fireEvent.pointerUp(window);
+    expect(attr()).toBe(false);
+  });
+
+  it("does not mark it for a press on a button or link in the thread", () => {
+    render(<AskBox a={a} repoName="demo" />);
+    const control = screen.getByTestId("pm-cards").querySelector("button")!;
+    fireEvent.pointerDown(control, { button: 0 });
+    expect(attr()).toBe(false);
+  });
+
+  it("clears the mark on unmount", () => {
+    const { unmount } = render(<AskBox a={a} repoName="demo" />);
+    fireEvent.pointerDown(screen.getByText("hello there"), { button: 0 });
+    unmount();
+    expect(attr()).toBe(false);
+  });
+});
+
+describe("ProposalCard result", () => {
+  const p = { summary: "Open a pull request", action: { type: "open_pull_request" as const }, state: "applied" as const };
+
+  it("shows what approving did, under the proposal", () => {
+    render(<ProposalCard p={{ ...p, result: "Opened pull request #726" }} onDecide={vi.fn()} />);
+    expect(screen.getByText("Opened pull request #726")).toHaveClass("text-muted");
+  });
+
+  it("shows no line before it is applied", () => {
+    render(<ProposalCard p={{ ...p, state: "proposed", result: "Opened pull request #726" }} onDecide={vi.fn()} />);
+    expect(screen.queryByText("Opened pull request #726")).toBeNull();
   });
 });

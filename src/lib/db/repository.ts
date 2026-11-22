@@ -16,6 +16,7 @@ import type {
   BugSeverity,
 } from "@/lib/domain/entities";
 import type { FollowUp } from "@/lib/agents/follow-ups";
+import type { MessageKind } from "@/lib/domain/chat";
 import type { ColumnId, TicketStatus } from "@/lib/domain/status";
 import type { ProviderId } from "@/lib/llm/providers";
 
@@ -166,6 +167,8 @@ export interface AssistantMessage {
   runnerAgent: string | null;
   /** Who a reply comes from: "assistant", a column role or "sentinel:<id>" (a GuestId). */
   speaker: string;
+  /** Who wrote it: the person, the PM, a guest, or Formic itself (a notice). */
+  kind: MessageKind;
   /** The playtest a note was written in, or a reply to one. Null otherwise. */
   playtestId?: string | null;
   createdAt: Date;
@@ -226,6 +229,8 @@ export interface AssistantProposal {
   state: "proposed" | "applied" | "dismissed" | "failed";
   /** Why applying it failed, when it did. */
   error?: string;
+  /** What applying it did, in Formic's words: "Opened pull request #726". Shown under the proposal, never as a message. */
+  result?: string;
 }
 
 /** One message in a card's chat with its column's agent. */
@@ -614,13 +619,18 @@ export interface AccessTokenRecord {
   tokenHash: string;
   lastFour: string;
   readOnly: boolean;
+  /** A PM token's one board; null on a person's own token. */
+  projectId: string | null;
+  /** The PM session a board token was made for. */
+  sessionId: string | null;
   expiresAt: Date | null;
   revokedAt: Date | null;
   createdAt: Date;
   lastUsedAt: Date | null;
 }
 
-export type NewAccessToken = Pick<AccessTokenRecord, "userId" | "name" | "tokenHash" | "lastFour" | "readOnly" | "expiresAt">;
+export type NewAccessToken = Pick<AccessTokenRecord, "userId" | "name" | "tokenHash" | "lastFour" | "readOnly" | "expiresAt"> &
+  Partial<Pick<AccessTokenRecord, "projectId" | "sessionId">>;
 
 /** Which push messages a person wants. */
 export interface PushPreferences {
@@ -857,6 +867,78 @@ export interface TokenRepository {
   /** Revokes a token only when it belongs to `userId`; false when nothing changed. */
   revokeAccessToken(userId: string, id: string): Promise<boolean>;
   touchAccessToken(id: string, at: Date): Promise<void>;
+  /** Revokes a board's PM tokens, only one session's when given; how many were live. */
+  revokeBoardTokens(projectId: string, sessionId?: string): Promise<number>;
+}
+
+/** Where a board's PM session runs. */
+export type PmSessionWhere = "e2b" | "actions" | "gitlab";
+
+/** The board's PM session (docs/plans/pm-chat.md, PR 3). */
+export interface PmSessionRecord {
+  projectId: string;
+  sessionId: string;
+  where: PmSessionWhere;
+  sandboxId: string | null;
+  /** The sealed session file, or null when the next turn starts from the summary. */
+  fileCipher: string | null;
+  bytes: number;
+  summary: string;
+  turnJob: string | null;
+  handoff: string | null;
+  branch: string | null;
+  /** Whether the current turn resumed a saved session. */
+  resumed: boolean;
+  lastTurnAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** The board's PM session: one per board, the latest only. */
+export interface PmSessionRepository {
+  pmSession(projectId: string): Promise<PmSessionRecord | null>;
+  /** Creates the board's session or changes the fields given. */
+  savePmSession(
+    projectId: string,
+    update: Partial<Omit<PmSessionRecord, "projectId" | "createdAt" | "updatedAt">> & Pick<PmSessionRecord, "sessionId" | "where">,
+  ): Promise<PmSessionRecord>;
+  /** Changes an existing session; false when the board has none. */
+  updatePmSession(
+    projectId: string,
+    update: Partial<Omit<PmSessionRecord, "projectId" | "createdAt" | "updatedAt">>,
+  ): Promise<boolean>;
+  /** The session whose current turn is `job`, if any. */
+  pmSessionByJob(job: string): Promise<PmSessionRecord | null>;
+  deletePmSession(projectId: string): Promise<void>;
+  /** Records what the PM did on its own (src/lib/pm/wake-gate.ts). */
+  addPmWake(wake: NewPmWake): Promise<void>;
+  /** The board's records from `since` on, or for one card, oldest first. */
+  pmWakes(projectId: string, filter: { since?: Date; cardId?: string }): Promise<PmWakeRecord[]>;
+  /** The board's wake-up limits; null fields are the defaults. */
+  pmWakeLimits(projectId: string): Promise<PmWakeLimitSettings>;
+  setPmWakeLimits(projectId: string, limits: Partial<PmWakeLimitSettings>): Promise<void>;
+}
+
+/** What the PM did on its own: a wake-up, a commit it landed on a ticket's branch, or a limit it said. */
+export type PmWakeKind = "question" | "stall" | "landed" | "fix-cap" | "hourly" | "daily";
+
+export interface NewPmWake {
+  projectId: string;
+  cardId: string;
+  head: string;
+  kind: PmWakeKind;
+  createdAt: Date;
+}
+
+export interface PmWakeRecord extends NewPmWake {
+  id: string;
+}
+
+/** A board's PM wake-up limits as set; null is the default. */
+export interface PmWakeLimitSettings {
+  fixCap: number | null;
+  perHour: number | null;
+  perDay: number | null;
 }
 
 /** Push subscriptions and preferences. */
@@ -1281,6 +1363,8 @@ export interface ConversationRepository {
     content: string;
     status?: AssistantMessage["status"];
     speaker?: string;
+    /** Implied by role and speaker when left out; a notice must say so. */
+    kind?: MessageKind;
     cards?: AssistantMessage["cards"];
     proposals?: AssistantProposal[];
     playtestId?: string | null;
@@ -1423,6 +1507,7 @@ export interface Repository
   extends ProjectRepository,
     SharingRepository,
     TokenRepository,
+    PmSessionRepository,
     PushRepository,
     CoordinationRepository,
     UserRepository,

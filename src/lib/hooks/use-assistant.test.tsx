@@ -15,18 +15,21 @@ const message = (status: "pending" | "failed") => ({
 describe("useAssistant stop", () => {
   it("cancels the pending answer after the POST has returned", async () => {
     const calls: string[] = [];
+    const bodies: unknown[] = [];
     vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
       const method = init?.method ?? "GET";
       calls.push(method);
+      if (method === "PATCH") bodies.push(JSON.parse(String(init?.body)));
       const status = method === "POST" ? "pending" : method === "PATCH" ? "failed" : null;
       return Response.json({ presetId: null, messages: status ? [message(status)] : [] });
     });
     const { result } = renderHook(() => useAssistant(true));
     await act(() => result.current.ask("hi"));
     expect(result.current.pending).toBe(true);
-    act(() => result.current.stop());
+    act(() => result.current.stop("m"));
     await waitFor(() => expect(result.current.pending).toBe(false));
     expect(calls).toContain("PATCH");
+    expect(bodies).toEqual([{ messageId: "m" }]);
   });
 });
 
@@ -84,5 +87,54 @@ describe("useAssistant earlier messages", () => {
     await act(() => result.current.loadEarlier());
     expect(result.current.earlierError).toBeNull();
     expect(result.current.messages.map((m) => m.id)).toEqual(["m1", "m2"]);
+  });
+});
+
+describe("useAssistant events", () => {
+  const msg = (id: string) => ({ id, role: "assistant", content: id, status: "done", proposals: [] });
+  const fakeSubscribe = () => {
+    const listeners = new Set<(e: unknown, seq: number) => void>();
+    const subscribe = ((l: (e: unknown, seq: number) => void) => {
+      listeners.add(l);
+      return () => listeners.delete(l);
+    }) as unknown as Parameters<typeof useAssistant>[1];
+    const emit = (type: string) => listeners.forEach((l) => l({ type }, 1));
+    return { subscribe, emit };
+  };
+
+  it("shows a message the PM posts unasked", async () => {
+    let list = [msg("m1")];
+    vi.stubGlobal("fetch", async () => Response.json({ presetId: null, messages: list }));
+    const { subscribe, emit } = fakeSubscribe();
+    const { result } = renderHook(() => useAssistant(true, subscribe));
+    await waitFor(() => expect(result.current.messages).toHaveLength(1));
+    list = [msg("m1"), msg("m2")];
+    act(() => emit("assistant.message"));
+    await waitFor(() => expect(result.current.messages.map((m) => m.id)).toEqual(["m1", "m2"]));
+  });
+
+  it("fetches nothing on an event before the first load", () => {
+    const fetchMock = vi.fn(async () => Response.json({ presetId: null, messages: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { subscribe, emit } = fakeSubscribe();
+    renderHook(() => useAssistant(false, subscribe));
+    act(() => emit("assistant.message"));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps earlier pages through a refetch caused by an event", async () => {
+    let newest = [msg("m3")];
+    vi.stubGlobal("fetch", async (url: string) =>
+      url.includes("before=m3")
+        ? Response.json({ presetId: null, messages: [msg("m1"), msg("m2")], earlierCursor: null })
+        : Response.json({ presetId: null, messages: newest, earlierCursor: "m3" }),
+    );
+    const { subscribe, emit } = fakeSubscribe();
+    const { result } = renderHook(() => useAssistant(true, subscribe));
+    await waitFor(() => expect(result.current.hasEarlier).toBe(true));
+    await act(() => result.current.loadEarlier());
+    newest = [msg("m3"), msg("m4")];
+    act(() => emit("assistant.message"));
+    await waitFor(() => expect(result.current.messages.map((m) => m.id)).toEqual(["m1", "m2", "m3", "m4"]));
   });
 });

@@ -57,9 +57,24 @@ describe("proxy", () => {
       "/api/health",
       "/api/webhooks/github",
       "/api/runner/report",
+      "/api/runner/session",
+      "/api/mcp",
     ]) {
       expect((await proxy(request(path))).headers.get("x-middleware-next")).toBe("1");
     }
+  });
+
+  it("lets a bearer token reach the MCP server, which checks it itself, without a session cookie", async () => {
+    githubMode();
+    const call = new NextRequest("http://localhost/api/mcp", {
+      method: "POST",
+      headers: { authorization: "Bearer fmc_anything", "content-type": "application/json" },
+      body: "{}",
+    });
+    expect((await proxy(call)).headers.get("x-middleware-next")).toBe("1");
+    // Its neighbours still need a session.
+    expect((await proxy(request("/api/mcp/other"))).status).toBe(401);
+    expect((await proxy(request("/api/runner/sessions"))).status).toBe(401);
   });
 
   it("lets a signed attachment URL through without a session, and nothing else on that path", async () => {
@@ -153,6 +168,7 @@ describe("proxy, at the host allowance", () => {
       await proxy(request("/")),
       await proxy(post("/api/webhooks/github")),
       await proxy(post("/api/runner/report")),
+      await proxy(post("/api/runner/session")),
       await proxy(post("/api/projects")),
       await proxy(request("/api/attachments/att_1?expires=1&token=abc")),
     ]) {

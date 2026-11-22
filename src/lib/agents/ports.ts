@@ -216,6 +216,11 @@ export interface CoderTask {
    */
   sharedNotes?: string[];
   /**
+   * Lint rules that failed on several pull requests of the repository, one
+   * line each, with the pull requests (src/lib/coder/recurring-lint.ts).
+   */
+  recurringLint?: string[];
+  /**
    * What the ticket's agents already proposed as follow-ups, one line each:
    * title, points and what became of it. Agents must not propose them again.
    */
@@ -307,6 +312,8 @@ export interface ReviewVerdict extends CodeChange {
 export interface BlockedByFix {
   cause: string;
   check: string;
+  /** The failing line as the check's log shows it, with its file:line. */
+  assertion: string;
   bug: { title: string; story: string; scope: string[] };
 }
 

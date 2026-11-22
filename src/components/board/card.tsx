@@ -1,7 +1,7 @@
 "use client";
 
 import { ONBOARDING_TICKET_TITLE } from "@/lib/board/onboarding-ticket";
-import { createContext, memo, useContext, useEffect, useRef, useState } from "react";
+import { createContext, memo, useContext, useEffect, useId, useRef, useState } from "react";
 import { useColonySettings } from "@/components/colony/colony-settings";
 import { QueenIcon } from "@/components/colony/queen-icon";
 import { Draggable } from "@hello-pangea/dnd";
@@ -21,6 +21,7 @@ import { spRadius, spVerts } from "@/components/colony/fx";
 import { useColony } from "@/components/colony/colony";
 import { formatCountdown, useElapsed } from "@/lib/hooks/use-countdown";
 import { classifyNotice, type Notice } from "@/lib/domain/notice";
+import type { ScopeClash } from "@/lib/domain/dag";
 import { isQuestion } from "@/lib/domain/question";
 import { openWaits } from "@/lib/domain/stack";
 import { formatDuration } from "./format-duration";
@@ -64,6 +65,8 @@ export interface CardExtras {
    * a crew on it and take the crew home when the reply lands.
    */
   answering?: boolean;
+  /** Open siblings in the same Epic that share files with this ticket with no order between them. */
+  scopeClashes?: ScopeClash[];
 }
 
 export type ExtrasMap = Record<string, CardExtras | undefined>;
@@ -390,6 +393,25 @@ export function NoticeIcon({ severity, label }: { severity: Notice["severity"]; 
   );
 }
 
+/** What a clash is titled, on the card and in the drawer. */
+export function clashTitle(clashes: readonly ScopeClash[]): string {
+  return `Shares files with ${clashes.map((c) => c.key).join(", ")}`;
+}
+
+/** The card's notice line for a ticket that shares files with an open sibling. */
+function ClashLine({ clashes }: { clashes?: ScopeClash[] }) {
+  if (!clashes?.length) return null;
+  return (
+    <span
+      data-testid="card-clash"
+      className={cn("inline-flex min-w-0 items-center gap-1.5 text-[11px] font-semibold", NOTICE_INK.alert)}
+    >
+      <NoticeIcon severity="alert" />
+      <span className="truncate">{clashTitle(clashes)}</span>
+    </span>
+  );
+}
+
 /** The text colour each kind of notice is written in. */
 export const NOTICE_INK: Record<Notice["severity"], string> = {
   warning: "text-crimson",
@@ -413,61 +435,83 @@ export function ProblemNotice({
   /** Switches to the card's chat where it is not on screen; shown for a question. */
   onOpenChat?: () => void;
 }) {
+  const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const bodyId = useId();
   const problem = cardProblem(card);
   if (!problem) return null;
   const long = problem.length > CLAMP_AFTER || problem.includes("\n");
   const asking = !!onOpenChat && isQuestion(card.blockedReason);
+  const lead = card.misplacedReason ? "It can't work here" : isQuestion(card.blockedReason) ? "Question" : "This needs you";
   return (
-    <div
-      role="alert"
-      className={cn("bg-crimson/10 text-ink flex items-start gap-2 rounded-md px-2.5 py-2 text-[12px] leading-5", className)}
-    >
-      <span
-        aria-hidden
-        className="bg-crimson text-on-crimson mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] leading-none font-bold"
+    <div role="alert" className={cn("bg-crimson/10 text-ink rounded-md px-2.5 py-2 text-[12px] leading-5", className)}>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        onClick={() => setOpen((v) => !v)}
+        className="flex min-h-9 w-full cursor-pointer items-center gap-2 text-left"
       >
-        !
-      </span>
-      <div className="min-w-0">
-        {/* Opened, a long notice scrolls inside itself: it sits in the drawer's
-            fixed header, and growing past the screen would leave nothing below
-            it reachable. */}
-        <p
-          className={cn(
-            "whitespace-pre-line",
-            long && !expanded && "line-clamp-3",
-            long && expanded && "max-h-[30dvh] overflow-y-auto overscroll-contain",
-          )}
+        <span
+          aria-hidden
+          className="bg-crimson text-on-crimson inline-flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] leading-none font-bold"
         >
-          <span className="font-semibold">
-            {card.misplacedReason ? "It can't work here. " : isQuestion(card.blockedReason) ? "" : "This needs you. "}
-          </span>
-          <LinkifiedText text={problem} />
-        </p>
-        <div className="mt-1 flex gap-3">
-          {long && (
-            <button
-              type="button"
-              aria-expanded={expanded}
-              onClick={() => setExpanded((v) => !v)}
-              className="text-fg-muted hover:text-fg text-[12px] underline"
-            >
-              {expanded ? "Show less" : "Show more"}
-            </button>
-          )}
-          {asking && (
-            <button
-              type="button"
-              onClick={onOpenChat}
-              className="text-fg text-[12px] font-medium underline"
-            >
-              Answer in the chat
-            </button>
-          )}
+          !
+        </span>
+        <span className="min-w-0 flex-1 font-semibold">{lead}</span>
+        <NoticeChevron open={open} />
+      </button>
+      {open && (
+        <div id={bodyId} className="min-w-0 pl-6">
+          {/* Opened, a long notice scrolls inside itself: it sits in the drawer's
+              fixed header, and growing past the screen would leave nothing below
+              it reachable. */}
+          <p
+            className={cn(
+              "whitespace-pre-line",
+              long && !expanded && "line-clamp-3",
+              long && expanded && "max-h-[30dvh] overflow-y-auto overscroll-contain",
+            )}
+          >
+            <LinkifiedText text={problem} />
+          </p>
+          <div className="mt-1 flex gap-3">
+            {long && (
+              <button
+                type="button"
+                aria-expanded={expanded}
+                onClick={() => setExpanded((v) => !v)}
+                className="text-fg-muted hover:text-fg text-[12px] underline"
+              >
+                {expanded ? "Show less" : "Show more"}
+              </button>
+            )}
+            {asking && (
+              <button type="button" onClick={onOpenChat} className="text-fg text-[12px] font-medium underline">
+                Answer in the chat
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
+  );
+}
+
+/** The chevron at the end of a notice's header: points down, turns over when it is open. */
+export function NoticeChevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
+      fill="none"
+      aria-hidden="true"
+      data-open={open}
+      className={cn("text-muted shrink-0 motion-safe:transition-transform motion-safe:duration-150 motion-safe:ease-out", open && "rotate-180")}
+    >
+      <path d="M3 4.5 6 7.5 9 4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
@@ -989,6 +1033,7 @@ function PlainTicket({
           </span>
         )
       )}
+      <ClashLine clashes={extras.scopeClashes} />
       {extras.progress && (
         <ProgressBar
           value={extras.progress.fraction}

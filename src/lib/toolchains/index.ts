@@ -69,7 +69,7 @@ export function detectToolchains(files: Iterable<string>): Toolchain[] {
  * repository. Run from the repository root.
  */
 export function setupScript(host: Host, toolchains: readonly Toolchain[] = TOOLCHAINS): string {
-  const parts = [prelude(host)];
+  const parts = [prelude(host), displayStep(host)];
   for (const t of toolchains) {
     const script = t.setup(host);
     if (script) parts.push(gated(t, `Setting up ${t.name}`, script));
@@ -84,6 +84,53 @@ fi`);
     if (script) parts.push(gated(t, `Preparing the ${t.name} project`, script));
   }
   return `${parts.join("\n\n")}\n`;
+}
+
+/**
+ * A virtual display for GUI apps and screenshots, on Linux only: a runner has
+ * no screen. Installs what is missing when passwordless sudo allows it, starts
+ * Xvfb on the job host (a sandbox runs every command in a fresh shell, so
+ * nothing started here would outlive it), and tells the agent how to use it.
+ * Never stops setup.
+ */
+export const DISPLAY_COMMAND = 'xvfb-run -a -s "-screen 0 1920x1080x24"';
+
+function displayStep(host: Host): string {
+  const note = (text: string) => `formic_note ${shellQuote(text)}`;
+  const start =
+    host === "job"
+      ? `  if [ -z "\${DISPLAY:-}" ] && command -v Xvfb > /dev/null; then
+    nohup Xvfb :99 -screen 0 1920x1080x24 > /dev/null 2>&1 &
+    export DISPLAY=:99
+    if [ -n "\${GITHUB_ENV:-}" ]; then echo DISPLAY=:99 >> "$GITHUB_ENV"; fi
+    formic_display_on_job=1
+  fi
+`
+      : "";
+  return `if [ "$(uname -s)" = Linux ]; then
+  echo "Setting up a virtual display..."
+  formic_mesa_ok() { ! command -v dpkg > /dev/null || dpkg -s libgl1-mesa-dri > /dev/null 2>&1; }
+  if ! command -v xvfb-run > /dev/null || ! formic_mesa_ok; then
+    if sudo -n true > /dev/null 2>&1; then
+      sudo -n apt-get install -y -qq xvfb xauth libgl1-mesa-dri > /dev/null 2>&1 || echo "Installing the virtual display failed."
+    fi
+  fi
+  if command -v xvfb-run > /dev/null; then
+${start}    ${note("## Display")}
+    ${note("There is no physical screen. Wrap any GUI app or screenshot run in `" + DISPLAY_COMMAND + " <command>`.")}
+    if [ -n "\${formic_display_on_job:-}" ]; then ${note("DISPLAY=:99 is already set here, so a plain command also opens a window.")}; fi
+    ${note("Rendering is software (Mesa llvmpipe), so a screenshot run can take one to two minutes: give the command a timeout of at least 3 minutes and do not give up early. Save screenshots under /tmp and look at them (read the PNG) before you finish.")}
+  else
+    echo "No virtual display is available on this machine."
+    ${note("## Display")}
+    ${note("There is no physical screen and no virtual display could be set up (xvfb-run is missing and could not be installed), so GUI apps and screenshots are unavailable here.")}
+  fi
+  unset -f formic_mesa_ok
+fi`;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
 function gated(t: Toolchain, what: string, script: string): string {

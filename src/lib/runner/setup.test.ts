@@ -12,6 +12,9 @@ import { CHECKS_WORKFLOW_PATH } from "@/lib/toolchains/actions";
 
 let client: MockVcsClient;
 
+/** Main changed the workflow since the commit this server was deployed from. */
+const changedWorkflow = { files: [RUNNER_WORKFLOW_PATH], messages: ["newer"], headSha: "mainsha" };
+
 beforeEach(() => {
   (globalThis as { __formicMemoryStore?: unknown }).__formicMemoryStore = undefined;
   MockVcsClient.reset();
@@ -60,6 +63,40 @@ describe("runner setup", () => {
   it("asks for an update when an older workflow is there", async () => {
     const project = await repository().defaultProject();
     await client.commitFile(project.baseBranch, RUNNER_WORKFLOW_PATH, "name: Formic agent\n", "old");
+
+    expect(await runnerSetup(project)).toMatchObject({ state: "waiting", update: true });
+  });
+
+  it("opens no setup pull request when main has a newer workflow than this server", async () => {
+    // Formic's own repository: a merged workflow change, not deployed yet.
+    vi.stubEnv("FORMIC_COMMIT", "deployedsha");
+    const project = await repository().defaultProject();
+    await client.commitFile(project.baseBranch, RUNNER_WORKFLOW_PATH, "# formic-runner: newer\n", "newer");
+    const compare = vi.spyOn(client, "compare").mockResolvedValue(changedWorkflow);
+
+    expect(await runnerSetup(project, { approve: true })).toEqual({
+      state: "blocked",
+      reason: expect.stringMatching(/newer Formic agent workflow than the Formic server.*Deploy Formic/),
+    });
+    expect(compare).toHaveBeenCalledWith("deployedsha", project.baseBranch);
+    expect(MockVcsClient.runner().files.get(`${runnerSetupBranch()}:${RUNNER_WORKFLOW_PATH}`)).toBeUndefined();
+  });
+
+  it("does not point at a setup pull request already open when the server is behind", async () => {
+    const project = await repository().defaultProject();
+    await client.commitFile(project.baseBranch, RUNNER_WORKFLOW_PATH, "# formic-runner: newer\n", "newer");
+    expect(await runnerSetup(project)).toMatchObject({ state: "waiting", update: true });
+
+    vi.stubEnv("FORMIC_COMMIT", "deployedsha");
+    vi.spyOn(client, "compare").mockResolvedValue(changedWorkflow);
+    expect(await runnerSetup(project)).toMatchObject({ state: "blocked" });
+  });
+
+  it("still offers the update in a repository that does not have the server's commit", async () => {
+    vi.stubEnv("FORMIC_COMMIT", "deployedsha");
+    const project = await repository().defaultProject();
+    await client.commitFile(project.baseBranch, RUNNER_WORKFLOW_PATH, "name: Formic agent\n", "old");
+    vi.spyOn(client, "compare").mockRejectedValue(new VcsError("Not Found", 404));
 
     expect(await runnerSetup(project)).toMatchObject({ state: "waiting", update: true });
   });

@@ -158,3 +158,25 @@ describe("ColonyProvider stuck run", () => {
     expect(play.mock.calls.filter(([n]) => n === "reject")).toHaveLength(1);
   });
 });
+
+describe("ColonyProvider sentinels page", () => {
+  it("opens without the generic pickup sound and still drops on close", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date", "requestAnimationFrame", "cancelAnimationFrame"] });
+    vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+    Element.prototype.animate = vi.fn() as never;
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+    const play = vi.spyOn(SoundEngine.prototype, "play").mockImplementation(() => {});
+    let api!: ColonyApi;
+    render(
+      <ColonyProvider storageKey="colony-test-sentinels" cards={[]} extras={{}}>
+        <Board cards={[]} onApi={(a) => (api = a)} />
+      </ColonyProvider>,
+    );
+    await settle(100);
+    play.mockClear();
+    act(() => api.setSentinelsOpen(true));
+    expect(play.mock.calls.map(([n]) => n)).not.toContain("pickup");
+    act(() => api.setSentinelsOpen(false));
+    expect(play.mock.calls.map(([n]) => n)).toContain("drop");
+  });
+});

@@ -213,6 +213,29 @@ export function EpicDrawer({
     }
   }, [epicId, onChanged, onClose]);
 
+  const [stopping, setStopping] = useState(false);
+  /** Stops whichever agent is on the Epic: writing its PRD, breaking it down, its showcase. */
+  const stop = useCallback(async () => {
+    if (!epicId) return;
+    setBusy(true);
+    setStopping(true);
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/epics/${epicId}/stop`, { method: "POST" });
+      if (!res.ok && res.status !== 409) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        setActionError(body?.error ?? "Could not stop the agent. Try again in a moment.");
+      }
+      await load();
+      onChanged?.();
+    } catch {
+      setActionError("Could not stop the agent. Try again in a moment.");
+    } finally {
+      setBusy(false);
+      setStopping(false);
+    }
+  }, [epicId, load, onChanged]);
+
   const kb = keyboardStyles(useKeyboardInset());
 
   if (!epicId) return null;
@@ -290,6 +313,16 @@ export function EpicDrawer({
               )}
             </div>
             <div className="flex flex-wrap items-center justify-start gap-1.5 sm:justify-end">
+              {working && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void stop()}
+                  className="text-crimson-text dark:text-log-error hover:bg-crimson-text/10 dark:hover:bg-log-error/10 rounded border border-current px-1.5 py-0.5 text-[12px] font-medium disabled:opacity-60"
+                >
+                  {stopping ? "Stopping…" : "Stop agent"}
+                </button>
+              )}
               {detail?.canRetry && (
                 <button
                   type="button"

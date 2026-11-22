@@ -5,7 +5,8 @@ on:
     branches: [main]
   pull_request:
   # Deploys are manual: Actions → CI → Run workflow, with main selected.
-  # A merge to main runs the checks and ships nothing.
+  # A merge to main runs the checks and ships nothing, unless it changes the
+  # agent workflow (see runner-changed below).
   workflow_dispatch:
 
 # A new push to a pull request replaces the run still going on the old one.
@@ -97,18 +98,14 @@ jobs:
       # The github-actions reporter turns a failing test into an annotation,
       # which is what the Reviewer Agent reads to diagnose a red check.
       # Coverage is for the Tester sentinel, which reads main's summary.
-      - run: npm test -- --reporter=default --reporter=github-actions --coverage
+      # One run does both jobs: shuffling file and test order makes an order
+      # dependency between tests fail the build.
+      - run: npm test -- --reporter=default --reporter=github-actions --coverage --sequence.shuffle.files --sequence.shuffle.tests
         env:
           TEST_DATABASE_URL: postgresql://formic:formic@localhost:5432/formic_test
           # Fails the run, rather than skipping, if the Postgres half cannot run.
           REQUIRE_TEST_DATABASE: "1"
           # Fails the run, rather than skipping, if the loop-branch suite lacks a tool.
-          REQUIRE_LOOP_TOOLS: "1"
-      # Order dependencies between tests fail the build here.
-      - run: npx vitest run --sequence.shuffle.files --sequence.shuffle.tests
-        env:
-          TEST_DATABASE_URL: postgresql://formic:formic@localhost:5432/formic_test
-          REQUIRE_TEST_DATABASE: "1"
           REQUIRE_LOOP_TOOLS: "1"
 
       - name: Keep the coverage summary for the Sentinels
@@ -220,7 +217,37 @@ jobs:
           path: e2e/.results
           retention-days: 7
 
+  # Whether this push to main changed Formic's agent workflow. The server
+  # checks that file against its own copy before every agent run, so once a
+  # change to it merges, a server still on the old code opens a setup pull
+  # request that would put the old workflow back, and agents stop until a
+  # deploy. Deploying on such a merge closes that gap.
+  runner-changed:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          changed=false
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            if ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              changed=true
+            elif ! git diff --quiet "$BEFORE" "$GITHUB_SHA" -- .github/workflows/formic-agent.yml; then
+              changed=true
+            fi
+          fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+
   # Deploys are manual, and only from main: Actions → CI → Run workflow.
+  # The one exception: a merge that changes the agent workflow deploys itself
+  # (runner-changed above).
   # Merging to main no longer ships anything by itself, so a paused host or a
   # failing check on a branch cannot gate a merge. Every job above still has to
   # pass before this one runs. vercel.json turns off Vercel's own Git deploy,
@@ -228,8 +255,10 @@ jobs:
   # set it deploys to the server instead (deploy/server, docs/google-cloud.md,
   # docs/aws.md); without it, to Vercel.
   deploy:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
-    needs: [lint, typecheck, test, build]
+    if: >-
+      github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && needs.runner-changed.outputs.changed == 'true'))
+    needs: [lint, typecheck, test, build, runner-changed]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # One deploy at a time, in merge order; never cancel one mid-flight.
