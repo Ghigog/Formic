@@ -1,5 +1,6 @@
 "use client";
 
+import { boardScopeClashes } from "@/lib/domain/dag";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DragDropContext,
@@ -108,7 +109,7 @@ export interface BoardProps {
 export function Board({
   cards,
   setupCard,
-  extras = {},
+  extras: liveExtras = {},
   projectName,
   repoFullName,
   onOpenCard,
@@ -141,6 +142,13 @@ export function Board({
   // saving waits for `collapsedLoaded` so the empty initial state never overwrites them.
   const [collapsed, setCollapsed] = useState<CollapsedEpics>(emptyCollapsedEpics);
   const [collapsedLoaded, setCollapsedLoaded] = useState(false);
+  // Each Epic's open siblings that share files with no order between them.
+  const extras = useMemo(() => {
+    const clashes = boardScopeClashes(cards);
+    const out: ExtrasMap = { ...liveExtras };
+    for (const [id, found] of Object.entries(clashes)) out[id] = { ...out[id], scopeClashes: found };
+    return out;
+  }, [cards, liveExtras]);
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- browser storage is only readable after mount */
     setCollapsed(loadCollapsedEpics());

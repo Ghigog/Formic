@@ -218,3 +218,67 @@ export function concurrentBatch(
 
   return chosen.map((n) => n.key);
 }
+
+/** A ticket as the board knows it: dependencies are ticket ids, not keys. */
+export interface ClashTicket {
+  id: string;
+  key: string;
+  dependsOn: readonly string[];
+  fileScope: FileScope;
+}
+
+/** An open sibling a ticket shares files with, and the paths that overlap. */
+export interface ScopeClash {
+  key: string;
+  paths: string[];
+}
+
+/**
+ * The siblings each ticket shares files with while neither depends on the
+ * other, for one Epic's unmerged tickets. Uses validateDag's scope_overlap
+ * rule, so a dependency path between two tickets clears it, as in planning.
+ * Tickets without a clash are absent from the result.
+ */
+export function scopeClashes(
+  tickets: readonly ClashTicket[],
+): Record<string, ScopeClash[]> {
+  const keyById = new Map(tickets.map((t) => [t.id, t.key] as const));
+  const idOf = new Map(tickets.map((t) => [t.key, t.id] as const));
+  const nodes: DagNode[] = tickets.map((t) => ({
+    key: t.key,
+    dependsOn: t.dependsOn.map((d) => keyById.get(d)).filter((k): k is string => !!k),
+    fileScope: t.fileScope,
+  }));
+  const out: Record<string, ScopeClash[]> = {};
+  for (const p of validateDag(nodes).problems) {
+    if (p.kind !== "scope_overlap") continue;
+    const paths = [...new Set(p.paths.flat())];
+    const a = idOf.get(p.a);
+    const b = idOf.get(p.b);
+    if (!a || !b) continue;
+    (out[a] ??= []).push({ key: p.b, paths });
+    (out[b] ??= []).push({ key: p.a, paths });
+  }
+  return out;
+}
+
+/**
+ * scopeClashes for every Epic on the board: the cards' own Epic groups,
+ * leaving out merged and archived tickets, which no agent will touch again.
+ */
+export function boardScopeClashes(
+  cards: ReadonlyArray<
+    ClashTicket & { kind: string; epicId: string | null; status: string; archived?: boolean }
+  >,
+): Record<string, ScopeClash[]> {
+  const byEpic = new Map<string, ClashTicket[]>();
+  for (const c of cards) {
+    if (c.kind !== "ticket" || !c.epicId || c.archived || c.status === "merged") continue;
+    const group = byEpic.get(c.epicId);
+    if (group) group.push(c);
+    else byEpic.set(c.epicId, [c]);
+  }
+  const out: Record<string, ScopeClash[]> = {};
+  for (const group of byEpic.values()) Object.assign(out, scopeClashes(group));
+  return out;
+}

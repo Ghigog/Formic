@@ -33,8 +33,7 @@ export async function recordFollowUps(ticketId: string, more: FollowUp[]): Promi
     if (had.has(f.title.toLowerCase())) {
       merged.push(f);
     } else if (f.need === "needed") {
-      // It builds on the work it was found in, so it waits for that to merge.
-      const card = await addFollowUpTicket(ticket.projectId, ticket, f, { after: true });
+      const card = await addFollowUpTicket(ticket.projectId, ticket, f);
       merged.push({ ...f, outcome: { kind: "added", key: card.key, cardId: card.id } });
     } else {
       merged.push({ ...f, outcome: { kind: "pending" } });
@@ -59,14 +58,14 @@ export type FollowUpAnswer = { ok: true; message: string } | { ok: false; error:
 /**
  * Makes a follow-up a tech debt ticket at the end of To Do. On a real Epic it
  * joins that Epic (EPIC-n-Tm); from a standalone ticket it becomes a
- * standalone ticket of its own (T-n), as createTodoItem makes them.
+ * standalone ticket of its own (T-n), as createTodoItem makes them. It builds
+ * on the ticket it came from, so it waits for that to merge (releaseWaiting
+ * starts it); from a merged ticket it is ready at once.
  */
 export async function addFollowUpTicket(
   projectId: string,
   source: TicketDetail,
   followUp: FollowUp,
-  /** Make it depend on the ticket it came from. */
-  options: { after?: boolean } = {},
 ): Promise<BoardCard> {
   const repo = repository();
   // cardById is null for a standalone holder in the database, and the holder
@@ -92,6 +91,7 @@ export async function addFollowUpTicket(
     key = `T-${await repo.nextStandaloneTicketNumber(projectId)}`;
   }
 
+  const sourceMerged = source.status === "merged";
   const positions = await repo.columnPositions(projectId, "todo");
   const [created] = await repo.createTickets([
     {
@@ -105,16 +105,17 @@ export async function addFollowUpTicket(
       storyPoints: followUp.points,
       workType: "tech_debt",
       position: positionBetween(positions.at(-1) ?? null, null),
-      dependsOnKeys: [],
+      dependsOnKeys: sourceMerged ? [] : [source.key],
     },
   ]);
   const card = created!;
-  if (options.after) await repo.addDependencies([{ ticketId: card.id, dependsOnTicketId: source.id }]);
+  // createTickets only resolves keys inside its own batch, so the edge is added here.
+  if (!sourceMerged) await repo.addDependencies([{ ticketId: card.id, dependsOnTicketId: source.id }]);
   if (!realEpic) {
     await repo.move({
       cardId: card.id,
       kind: "ticket",
-      status: "ready",
+      status: sourceMerged ? "ready" : "waiting",
       stalledIn: null,
       position: card.position,
       detached: true,

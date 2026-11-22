@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   type DagNode,
   concurrentBatch,
+  scopeClashes,
   topologicalOrder,
   unblocked,
   validateDag,
@@ -163,5 +164,28 @@ describe("concurrentBatch", () => {
   it("excludes tickets whose dependencies are unmet", () => {
     const nodes = [node("a", [], ["src/ui"]), node("b", ["a"], ["src/api"])];
     expect(concurrentBatch(nodes, new Set())).toEqual(["a"]);
+  });
+});
+
+describe("scopeClashes", () => {
+  const t = (id: string, dependsOn: string[], fileScope: string[]) => ({
+    id,
+    key: `EPIC-1-${id.toUpperCase()}`,
+    dependsOn,
+    fileScope,
+  });
+
+  it("names each sibling and the overlapping paths, both ways round", () => {
+    const out = scopeClashes([t("a", [], ["src/x"]), t("b", [], ["src/x/y.ts"]), t("c", [], ["docs"])]);
+    expect(out.a).toEqual([{ key: "EPIC-1-B", paths: ["src/x", "src/x/y.ts"] }]);
+    expect(out.b?.[0]?.key).toBe("EPIC-1-A");
+    expect(out.c).toBeUndefined();
+  });
+
+  it("is cleared by a dependency in either direction, or through a path", () => {
+    expect(scopeClashes([t("a", [], ["src"]), t("b", ["a"], ["src"])])).toEqual({});
+    expect(
+      scopeClashes([t("a", [], ["src"]), t("m", ["a"], ["lib"]), t("b", ["m"], ["src"])]),
+    ).toEqual({});
   });
 });
