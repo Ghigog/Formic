@@ -11,6 +11,7 @@ import {
   useState,
 } from "react";
 import type { BoardCard } from "@/lib/domain/entities";
+import { waitedOn } from "@/lib/domain/notice";
 import { columnOf } from "@/lib/domain/status";
 import {
   BUG_COST,
@@ -499,7 +500,7 @@ export function ColonyProvider({
 
   /* --------------------------------------------------------- reactions */
 
-  const prev = useRef<Map<string, { status: string; col: string; working: boolean }> | null>(null);
+  const prev = useRef<Map<string, { status: string; col: string; working: boolean; waitedOn: boolean }> | null>(null);
   const prevCi = useRef<Record<string, string | undefined>>({});
   const savedRef = useRef(saved);
   useEffect(() => {
@@ -510,7 +511,7 @@ export function ColonyProvider({
     if (!loaded) return;
     const before = prev.current;
     prev.current = new Map(
-      cards.map((c) => [c.id, { status: c.status, col: columnOf(c), working: Boolean(c.workingSince) }]),
+      cards.map((c) => [c.id, { status: c.status, col: columnOf(c), working: Boolean(c.workingSince), waitedOn: waitedOn(c.blockedReason) !== null }]),
     );
     const ciBefore = prevCi.current;
     prevCi.current = Object.fromEntries(Object.entries(extras).map(([k, v]) => [k, v?.ci]));
@@ -558,6 +559,9 @@ export function ColonyProvider({
       } else if (card.kind === "epic" && card.status === "merged") {
         flying.current.add(card.id);
         later.push(() => epicMerged(card, epicTally(card, cards)));
+      } else if (was.status === "blocked" && was.waitedOn && card.status !== "blocked" && card.status !== "failed") {
+        // Updated from main: the card it waited on landed, so it moves again.
+        later.push(() => unlocked(card));
       } else if (card.status === "running") {
         later.push(() => dispatched(card));
       } else if (card.status === "queued") {
