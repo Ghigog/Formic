@@ -28,6 +28,11 @@ const OPEN = [
   /^\/api\/health$/,
   /^\/api\/webhooks\//,
   /^\/api\/runner\/report$/,
+  // These check their own credentials, never a session cookie: the MCP
+  // server a bearer access token (a person's, or the board PM's), and the
+  // PM session's handoff an address signed for its one job.
+  /^\/api\/mcp$/,
+  /^\/api\/runner\/session$/,
   // What installing the app fetches, possibly without the session cookie.
   /^\/manifest\.webmanifest$/,
   /^\/sw\.js$/,
@@ -46,6 +51,7 @@ const FINISHES_WORK = [
   /^\/api\/projects$/,
   /^\/api\/webhooks\//,
   /^\/api\/runner\/report$/,
+  /^\/api\/runner\/session$/,
   /^\/api\/runs\/stop$/,
   /^\/api\/tickets\/[^/]+\/stop$/,
   // Stopping a playtest ends a sandbox.

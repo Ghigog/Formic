@@ -99,6 +99,41 @@ export function mentionedKeys(text: string, cards: Pick<BoardCard, "key">[]): st
   return found;
 }
 
+export interface Mentions {
+  /** Cards the message names unambiguously. */
+  keys: string[];
+  /** A bare ticket suffix ("T1") that fits several cards, with the cards it could mean. */
+  ambiguous: Array<{ text: string; candidates: string[] }>;
+}
+
+const BARE_TICKET = /(?<![A-Za-z0-9-])T\s?(\d+)(?![A-Za-z0-9])/gi;
+
+/**
+ * mentionedKeys, plus the words that fit several cards: "T1" is T-1 and
+ * every Epic ticket ending in -T1 (EPIC-122-T1, EPIC-119-T1). Those are
+ * returned as ambiguous with their candidates, never guessed at.
+ */
+export function resolveMentions(text: string, cards: Pick<BoardCard, "key">[]): Mentions {
+  const bare: Array<{ text: string; n: string }> = [];
+  const rest = text.replace(BARE_TICKET, (m, n: string) => {
+    bare.push({ text: m, n });
+    return " ";
+  });
+  const keys = mentionedKeys(rest, cards);
+  const ambiguous: Mentions["ambiguous"] = [];
+  for (const { text: word, n } of bare) {
+    const ending = new RegExp(`(^|-)T-?${n}$`, "i");
+    const candidates = cards.map((c) => c.key).filter((k) => ending.test(k));
+    const [only] = candidates;
+    if (only && candidates.length === 1) {
+      if (!keys.includes(only)) keys.push(only);
+    } else if (candidates.length > 1 && !ambiguous.some((a) => a.text.toLowerCase() === word.toLowerCase())) {
+      ambiguous.push({ text: word, candidates });
+    }
+  }
+  return { keys, ambiguous };
+}
+
 /**
  * One card as it is right now, on the board and on GitHub: where it is and
  * why, whether an agent is on it, its pull request and checks, the log of a

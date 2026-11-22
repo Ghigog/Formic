@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { AskBox, AskButton, type AssistantControls } from "./assistant";
+import { AskBox, AskButton, ProposalCard, type AssistantControls } from "./assistant";
 
 const controls: AssistantControls = {
   boardId: "p1",
@@ -808,5 +808,19 @@ describe("selecting in the thread", () => {
     fireEvent.pointerDown(screen.getByText("hello there"), { button: 0 });
     unmount();
     expect(attr()).toBe(false);
+  });
+});
+
+describe("ProposalCard result", () => {
+  const p = { summary: "Open a pull request", action: { type: "open_pull_request" as const }, state: "applied" as const };
+
+  it("shows what approving did, under the proposal", () => {
+    render(<ProposalCard p={{ ...p, result: "Opened pull request #726" }} onDecide={vi.fn()} />);
+    expect(screen.getByText("Opened pull request #726")).toHaveClass("text-muted");
+  });
+
+  it("shows no line before it is applied", () => {
+    render(<ProposalCard p={{ ...p, state: "proposed", result: "Opened pull request #726" }} onDecide={vi.fn()} />);
+    expect(screen.queryByText("Opened pull request #726")).toBeNull();
   });
 });
