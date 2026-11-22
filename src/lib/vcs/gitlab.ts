@@ -842,6 +842,13 @@ export class GitLabClient implements VcsClient {
     return parent ? { sha, parent, message } : null;
   }
 
+  async saveAgentSecret(name: string, value: string): Promise<void> {
+    // Masked, so a job's log never shows it; not protected, so every branch's pipeline can read it.
+    const body = { value, masked: true, protected: false };
+    const updated = await this.api<unknown>(`/variables/${encodePath(name)}`, { method: "PUT", body, allow404: true });
+    if (updated === null) await this.api("/variables", { method: "POST", body: { key: name, ...body } });
+  }
+
   async deleteCheckpoint(card: string): Promise<void> {
     await this.api(`/repository/branches/${encodePath(`${GITLAB_CHECKPOINT_PREFIX}${card}`)}`, {
       method: "DELETE",

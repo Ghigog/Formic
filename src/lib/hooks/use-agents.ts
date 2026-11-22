@@ -17,6 +17,12 @@ async function send<T>(url: string, method: string, body?: unknown): Promise<T> 
   return (res.status === 204 ? null : await res.json()) as T;
 }
 
+/** A saved preset, and where its Claude Code token went beside it. */
+interface SavedPreset {
+  preset: AgentPreset;
+  secret?: { saved: boolean; name: string; repo: string | null; reason?: string };
+}
+
 /** What one agent has used, in tokens, over its runs and the answers it gave. */
 export interface AgentTokens {
   tokensIn: number;
@@ -89,12 +95,12 @@ export function useAgents(
       input: Omit<AgentPresetInput, "column">,
       options: { id?: string; column?: ColumnId; claimColumn?: boolean },
     ) => {
-      const { preset } = options.id
-        ? await send<{ preset: AgentPreset }>(`/api/agents/presets/${options.id}`, "PATCH", {
+      const { preset, secret } = options.id
+        ? await send<SavedPreset>(`/api/agents/presets/${options.id}`, "PATCH", {
             ...input,
             ...(options.claimColumn && options.column ? { column: options.column } : {}),
           })
-        : await send<{ preset: AgentPreset }>("/api/agents/presets", "POST", {
+        : await send<SavedPreset>("/api/agents/presets", "POST", {
             ...input,
             column: options.column ?? null,
           });
@@ -104,6 +110,12 @@ export function useAgents(
           : [...prev, preset],
       );
       if (!options.id && options.column) await assign(options.column, preset.id);
+      // The agent is saved either way; a token that did not reach the repository is said, so it can be added by hand.
+      if (secret && !secret.saved) {
+        throw new Error(
+          `Saved, but Formic could not put the token in ${secret.repo ?? "the repository"}'s ${secret.name} secret (${secret.reason}). Add it there yourself, or save again to retry.`,
+        );
+      }
       return preset;
     },
     [assign],

@@ -58,6 +58,20 @@ describe("POST /api/agents/presets", () => {
     expect(await repository().listPresets({ ownerId: (await localUser()).id, includeUnowned: true })).toEqual([]);
   });
 
+  it("tries to put a Claude Code token in the board's repository secret too, and says when it could not", async () => {
+    const res = await POST(post({ provider: "claude-code", name: "PM", model: "", prompt: "", apiKey: "sk-ant-oat01-mine" }));
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.preset).toMatchObject({ hasKey: true, keyHint: "mine" });
+    // No board with a repository here, so the secret is not written, and the answer says why.
+    expect(body.secret).toMatchObject({ saved: false, name: expect.stringMatching(/^FORMIC_CLAUDE_CODE_TOKEN/) });
+  });
+
+  it("writes no secret for an API agent's key", async () => {
+    const body = await (await POST(post({ ...valid, apiKey: "sk-ant-api" }))).json();
+    expect(body.secret).toBeUndefined();
+  });
+
   it("asks to sign in when there is no session", async () => {
     jar.clear();
     expect((await POST(post(valid))).status).toBe(401);
