@@ -1,4 +1,5 @@
 import { repository } from "@/lib/db";
+import { saveTokenToRepo } from "@/lib/agents/agent-secret";
 import { savePreset } from "@/lib/agents/presets";
 import { currentUser } from "@/lib/auth/user";
 import { VaultKeyMissingError } from "@/lib/secrets/vault";
@@ -21,7 +22,9 @@ export async function PATCH(req: Request, { params }: Params) {
   // `column` here for one made before columns were scoped (still null).
   try {
     const preset = await savePreset({ ...body.data, id });
-    return Response.json({ preset });
+    // A Claude Code token pasted here also becomes the repository secret its CI jobs sign in with.
+    const secret = typeof body.data.apiKey === "string" ? await saveTokenToRepo(user, preset, body.data.apiKey) : null;
+    return Response.json({ preset, ...(secret && { secret }) });
   } catch (error) {
     if (error instanceof VaultKeyMissingError) return Response.json({ error: error.message }, { status: 400 });
     throw error;

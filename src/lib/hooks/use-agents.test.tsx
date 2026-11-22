@@ -32,4 +32,20 @@ describe("useAgents", () => {
     await act(() => result.current.save({ name: "Reviewer" } as never, {}));
     expect(result.current.presets.map((p) => p.id)).toEqual(["a", "b"]);
   });
+
+  it("keeps the saved agent but says so when its token did not reach the repository's secret", async () => {
+    vi.stubGlobal("fetch", async () =>
+      Response.json({
+        preset: preset("a", "PM"),
+        secret: { saved: false, name: "FORMIC_CLAUDE_CODE_TOKEN", repo: "me/app", reason: "GitHub said no (403)" },
+      }),
+    );
+    const { result } = renderHook(() => useAgents([preset("a", "Old PM")], {}));
+    let error: unknown;
+    await act(async () => {
+      await result.current.save({ name: "PM" } as never, { id: "a" }).catch((e: unknown) => (error = e));
+    });
+    expect(result.current.presets.map((p) => p.name)).toEqual(["PM"]);
+    expect(String(error)).toContain("could not put the token in me/app's FORMIC_CLAUDE_CODE_TOKEN secret (GitHub said no (403))");
+  });
 });

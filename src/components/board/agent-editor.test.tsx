@@ -402,7 +402,7 @@ describe("AgentEditor CLI agent secret", () => {
     await settled();
     await userEvent.type(screen.getByLabelText("Name"), "pm");
     await userEvent.click(screen.getByRole("radio", { name: /Claude Code/ }));
-    await userEvent.type(screen.getByLabelText("Claude Code token for fast replies (optional)"), "sk-ant-oat01-mine");
+    await userEvent.type(screen.getByLabelText("Claude Code token"), "sk-ant-oat01-mine");
     await userEvent.click(screen.getByRole("button", { name: "Create agent" }));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({ secretName: "FORMIC_CLAUDE_CODE_TOKEN", apiKey: "sk-ant-oat01-mine" }),
@@ -435,7 +435,7 @@ describe("AgentEditor CLI agent secret", () => {
     render(<AgentEditor repoFullName="acme/widgets" column="todo" preset={null} onClose={vi.fn()} onSave={vi.fn()} onDelete={vi.fn()} />);
     await settled();
     await userEvent.click(screen.getByRole("radio", { name: /Claude Code/ }));
-    expect(screen.queryByLabelText("Claude Code token for fast replies (optional)")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Claude Code token")).not.toBeInTheDocument();
   });
 
   it("starts a new CLI agent on the shared secret name, and saves the one chosen", async () => {

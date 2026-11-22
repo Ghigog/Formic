@@ -1074,3 +1074,34 @@ describe("GitHubClient.countCommits", () => {
     expect(await client().countCommits("gone")).toBe(0);
   });
 });
+
+describe("GitHubClient agent secrets", () => {
+  it("seals the value to the repository's public key and saves it under its name", async () => {
+    const sodium = (await import("libsodium-wrappers")).default;
+    await sodium.ready;
+    const pair = sodium.crypto_box_keypair();
+    const publicKey = sodium.to_base64(pair.publicKey, sodium.base64_variants.ORIGINAL);
+    const calls = stubFetch((url) =>
+      url.endsWith("/actions/secrets/public-key") ? Response.json({ key_id: "k1", key: publicKey }) : new Response(null, { status: 201 }),
+    );
+
+    await client().saveAgentSecret("FORMIC_CLAUDE_CODE_TOKEN", "sk-ant-oat01-mine");
+
+    expect(calls[1]!.url).toBe("https://api.github.com/repos/acme/widgets/actions/secrets/FORMIC_CLAUDE_CODE_TOKEN");
+    expect(calls[1]!.init.method).toBe("PUT");
+    const body = JSON.parse(String(calls[1]!.init.body)) as { encrypted_value: string; key_id: string };
+    expect(body.key_id).toBe("k1");
+    expect(body.encrypted_value).not.toContain("sk-ant");
+    const opened = sodium.crypto_box_seal_open(
+      sodium.from_base64(body.encrypted_value, sodium.base64_variants.ORIGINAL),
+      pair.publicKey,
+      pair.privateKey,
+    );
+    expect(sodium.to_string(opened)).toBe("sk-ant-oat01-mine");
+  });
+
+  it("says why GitHub refused", async () => {
+    stubFetch(() => Response.json({ message: "Resource not accessible by integration" }, { status: 403 }));
+    await expect(client().saveAgentSecret("FORMIC_CLAUDE_CODE_TOKEN", "x")).rejects.toThrow(/403/);
+  });
+});

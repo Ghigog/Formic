@@ -309,8 +309,14 @@ How it landed (PR 3b, part 2: E2B):
   could the API keys already kept there). Only Claude Code keeps one
   (`keepsKey` in `src/lib/domain/providers.ts`); every other CLI agent's
   sign-in stays in the repository's secrets. A key never survives a
-  provider change. The field is in the PM agent's editor, "Claude Code token
-  for fast replies (optional)".
+  provider change. The field is in the PM agent's editor, "Claude Code token".
+- Pasted once: saving it also writes the same value into the agent's
+  repository secret (an Actions secret on GitHub, a masked CI/CD variable on
+  GitLab) in the repository of the board the person is on, with their own
+  access (`saveTokenToRepo`, `VcsClient.saveAgentSecret`). Neither host lets
+  Formic read a secret back, which is why the sandbox needs its own copy. If
+  the write fails, the agent is still saved and the editor says why, so the
+  person can add the secret by hand or save again.
 - A turn runs in E2B when the agent keeps a token and the board owner has
   their own E2B key (never the operator's shared key, whose monthly minutes a
   warm session would spend). Otherwise it runs in CI exactly as in 3a.

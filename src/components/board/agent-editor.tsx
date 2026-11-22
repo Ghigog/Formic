@@ -485,7 +485,7 @@ export function AgentEditor({
           {sandboxToken && (
             <div className="flex flex-col gap-1">
               <span className={label} id="pm-token-label">
-                Claude Code token for fast replies (optional)
+                Claude Code token
               </span>
               {savedKey ? (
                 <div className="border-line bg-cream flex h-9 items-center gap-2 rounded-md border px-2.5 text-[13px]">
@@ -511,7 +511,7 @@ export function AgentEditor({
               <span className="text-muted text-[11px] leading-[1.5]">
                 {apiKey === null
                   ? "Removed when you save. The PM goes back to answering from your repository's CI."
-                  : "With your own E2B key in Settings, the PM runs in a sandbox that stays ready between messages, so replies start in seconds instead of waiting for CI. Formic stores the token encrypted and uses it only to start that sandbox. Leave it empty to keep answering from CI."}
+                  : `Paste it once: Formic also saves it as this repository's ${secretName.trim() || info.secretName} secret for you. Kept encrypted, it lets the PM run in a sandbox that stays ready between messages (with your own E2B key in Settings), so replies start in seconds instead of waiting for CI.`}
               </span>
             </div>
           )}
