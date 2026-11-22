@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyNotice, NO_CHANGES, REVIEW_CEILING, STUCK_RUN } from "./notice";
+import { classifyNotice, waitedOn, waitingOnReason, NO_CHANGES, REVIEW_CEILING, STUCK_RUN } from "./notice";
 
 describe("classifyNotice", () => {
   it("calls a run that hit the usage limit paused, not failed", () => {
@@ -113,5 +113,24 @@ describe("classifyNotice for a run that changed nothing", () => {
       title: "Failed",
       shortDescription: "Boom",
     });
+  });
+});
+
+describe("a blocked card that waits on a fix", () => {
+  it("writes and reads the reason back", () => {
+    expect(waitingOnReason("#726")).toBe("Waiting on #726, then updates from main");
+    expect(waitedOn(waitingOnReason("#726"))).toEqual({ pull: 726, key: null });
+    expect(waitedOn(`${waitingOnReason("EPIC-122-T3")}\nmore`)).toEqual({ pull: null, key: "EPIC-122-T3" });
+    expect(waitedOn("Needs files outside its scope: a.ts")).toBeNull();
+    expect(waitedOn(null)).toBeNull();
+  });
+
+  it("titles the notice with the wait, not Waiting for you", () => {
+    const n = classifyNotice({ status: "blocked", stalledIn: "in_progress", blockedReason: `${waitingOnReason("#726")}\nThe fix is in review` });
+    expect(n).toEqual({ severity: "alert", title: "Waiting on #726, then updates from main", shortDescription: "", longDescription: "The fix is in review" });
+  });
+
+  it("leaves other blocked reasons unchanged", () => {
+    expect(classifyNotice({ status: "blocked", stalledIn: "todo", blockedReason: "Pick one" })?.title).toBe("Waiting for you");
   });
 });
