@@ -154,6 +154,8 @@ export function AgentEditor({
   const nameRef = useRef<HTMLInputElement>(null);
   const info = providerInfo(provider)!;
   const cli = info.kind === "cli";
+  /** A Claude Code PM can keep its token with Formic, so its session runs in E2B and replies in seconds. */
+  const sandboxToken = forAssistant && cli && info.cli === "claude";
   // Only flat values, and only for an axis this column's path can enforce: a CLI agent
   // reports no tokens, so a token limit would never bind.
   const overrideAxes = OVERRIDE_AXES.filter((a) => a.id !== "tokens" || !cli);
@@ -251,9 +253,11 @@ export function AgentEditor({
         prompt,
         // An empty box keeps a saved key; Remove clears it; a typed one replaces it.
         // A CLI agent has no key here: its secret lives in the repository, under this name.
-        ...(cli ? { secretName: secretName.trim() } : apiKey === null
+        // A Claude Code PM may also keep its token here, for its E2B sandbox.
+        ...(cli ? { secretName: secretName.trim() } : {}),
+        ...((!cli || sandboxToken) && apiKey === null
           ? { apiKey: null }
-          : typedKey
+          : (!cli || sandboxToken) && typedKey
             ? { apiKey: typedKey }
             : {}),
       };
@@ -476,6 +480,40 @@ export function AgentEditor({
               </a>
             </span>
           </div>
+          )}
+
+          {sandboxToken && (
+            <div className="flex flex-col gap-1">
+              <span className={label} id="pm-token-label">
+                Claude Code token for fast replies (optional)
+              </span>
+              {savedKey ? (
+                <div className="border-line bg-cream flex h-9 items-center gap-2 rounded-md border px-2.5 text-[13px]">
+                  <span className="text-ink flex-1 font-mono">••••••••{preset?.keyHint}</span>
+                  <button type="button" onClick={() => setApiKey("")} className="text-terracotta text-[12px] font-semibold">
+                    Replace
+                  </button>
+                  <button type="button" onClick={() => setApiKey(null)} className="text-muted text-[12px] font-semibold">
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <input
+                  type="password"
+                  autoComplete="off"
+                  aria-labelledby="pm-token-label"
+                  value={apiKey ?? ""}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder={info.keyPlaceholder}
+                  className={`${field} h-9 font-mono`}
+                />
+              )}
+              <span className="text-muted text-[11px] leading-[1.5]">
+                {apiKey === null
+                  ? "Removed when you save. The PM goes back to answering from your repository's CI."
+                  : "With your own E2B key in Settings, the PM runs in a sandbox that stays ready between messages, so replies start in seconds instead of waiting for CI. Formic stores the token encrypted and uses it only to start that sandbox. Leave it empty to keep answering from CI."}
+              </span>
+            </div>
           )}
 
           <label data-tour="agent-model" className="flex flex-col gap-1">

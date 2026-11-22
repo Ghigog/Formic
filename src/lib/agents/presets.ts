@@ -27,6 +27,7 @@ import {
   provider as providerInfo,
   type ProviderId,
   type ProviderInfo,
+  keepsKey,
 } from "@/lib/llm/providers";
 
 /**
@@ -54,8 +55,10 @@ export async function savePreset(
     prompt: input.prompt,
     secretName: input.secretName,
     // A CLI agent's credential is a repository Actions secret that the person
-    // adds themselves; Formic keeps only its name.
-    ...(input.apiKey === undefined || providerInfo(input.provider)?.kind === "cli"
+    // adds themselves; Formic keeps only its name. The one exception: a
+    // Claude Code agent may also keep its token here, sealed like an API key,
+    // so the board's PM can run in an E2B sandbox (docs/plans/pm-chat.md).
+    ...(input.apiKey === undefined || !keepsKey(input.provider)
       ? {}
       : input.apiKey === null
         ? { apiKeyCipher: null, apiKeyHint: null }
@@ -407,6 +410,12 @@ export interface CliAgent {
   brief: string | null;
   /** The Actions secret its sign-in is in, or null for the name it had before names could be chosen. */
   secretName: string | null;
+  /**
+   * The Claude Code token kept with Formic, for the board's PM only: what
+   * lets its session run in an E2B sandbox instead of the repository's CI.
+   * Null when none is kept (and always for a column's agent).
+   */
+  sessionToken?: string | null;
 }
 
 /** The CLI agent a column runs, or null when it runs anything else. */
@@ -495,6 +504,7 @@ export async function assistantAgentFor(projectId: string): Promise<AssistantAge
         model,
         brief,
         secretName: found.preset.secretName ?? null,
+        sessionToken: info.cli === "claude" && found.apiKeyCipher ? apiKey : null,
       },
     };
   }

@@ -80,6 +80,9 @@ What bounds a Claude Code PM's resumable session (docs/plans/pm-chat.md).
 | PM's branch lock (`PM_LOCK_MS`) | minutes | 2 | one branch | Hard rail (the lease lapses) | No |
 | A ticket run's branch lock | minutes | 65 (`RUNNER_JOB_MINUTES` + headroom) | one branch | Hard rail (the lease lapses) | No |
 | A run's wait for the PM (`RUN_WAIT_MS`) | seconds | 60 | one dispatch | Gate, then the run starts anyway | No |
+| PM sandbox turn (`PM_TURN_MS`) | minutes | 60 (`RUNNER_JOB_MINUTES`) | one turn in the PM's E2B sandbox | Hard rail (the command and the sandbox's timeout) | No |
+| PM sandbox idle | minutes | 5 | the sandbox after a turn, if Formic's own pause never lands | Hard rail (E2B pauses or ends it) | No |
+| PM sandbox key | | the board owner's own E2B key only | one board | Gate: without one, or without a Claude Code token on the PM agent, the turn runs in CI | Yes (Settings, and the PM agent) |
 
 ## The PM's wake-ups
 

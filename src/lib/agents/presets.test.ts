@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { agentConfigFor, agentFor, columnIsPlain, columnLimit, tokensUsedInWindow, runTargetFor, savePreset, sentinelAgent } from "./presets";
+import { agentConfigFor, agentFor, assistantAgentFor, columnIsPlain, columnLimit, tokensUsedInWindow, runTargetFor, savePreset, sentinelAgent } from "./presets";
 import { SHOWCASE_BRIEF } from "./prompts";
 import { LoopCoderAgent, LoopReviewerAgent } from "./coder";
 import { MockCoderAgent } from "./mock";
@@ -239,6 +239,18 @@ describe("the sentinels' agent", () => {
     await assistantOn({ name: "claude-code", provider: "claude-code", model: "", prompt: "chat brief", apiKey: "token" });
     const agent = await sentinelAgent(PROJECT);
     expect(agent).toMatchObject({ kind: "cli", agent: { info: { cli: "claude" } } });
+  });
+
+  it("keeps a Claude Code PM's token, sealed, for its sandbox, and no other CLI agent's", async () => {
+    const pm = await assistantOn({ name: "pm", provider: "claude-code", model: "", prompt: "", apiKey: "sk-ant-oat01-mine" });
+    expect(pm).toMatchObject({ hasKey: true, keyHint: "mine" });
+    expect(await assistantAgentFor(PROJECT)).toMatchObject({ kind: "cli", agent: { sessionToken: "sk-ant-oat01-mine" } });
+
+    await savePreset({ id: pm.id, name: "pm", provider: "claude-code", model: "", prompt: "", apiKey: null });
+    expect(await assistantAgentFor(PROJECT)).toMatchObject({ kind: "cli", agent: { sessionToken: null } });
+
+    const codex = await savePreset({ name: "cx", provider: "codex", model: "", prompt: "", apiKey: "sk-codex" });
+    expect(codex).toMatchObject({ hasKey: false });
   });
 
   it("runs the mock in local mode when the assistant has no agent", async () => {

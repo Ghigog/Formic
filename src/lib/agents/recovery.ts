@@ -247,6 +247,9 @@ const ASSISTANT_REASON = "The assistant stopped before it could answer. Ask it a
  */
 export async function recoverStaleAssistantAnswers(projectId: string, now = new Date()): Promise<number> {
   const repo = repository();
+  // A PM turn in its E2B sandbox lives in this process; a restart loses it.
+  const { recoverLostSandboxTurn } = await import("@/lib/assistant/session/recover");
+  await recoverLostSandboxTurn(projectId).catch((e) => console.error("[formic] PM sandbox recovery failed:", e));
   const stale = await repo.orphanedAssistantAnswers(projectId, new Date(now.getTime() - CHAT_ORPHAN_AFTER_MS));
   for (const message of stale) {
     await repo.updateAssistantMessage(message.id, { content: ASSISTANT_REASON, status: "failed" });

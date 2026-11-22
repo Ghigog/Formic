@@ -652,12 +652,15 @@ function Starting({ since }: { since?: string }) {
 function Message({
   m,
   cli,
+  fastHint = false,
   onDecide,
   onOpenCard,
   onStop,
 }: {
   m: AssistantMessageView;
   cli: boolean;
+  /** Whether to say, while it starts, that E2B would make replies faster. */
+  fastHint?: boolean;
   onDecide: (index: number, decision: "apply" | "dismiss") => Promise<void>;
   onOpenCard: (cardId: string) => void;
   onStop: () => void;
@@ -723,9 +726,20 @@ function Message({
         </button>
       </div>
     );
+    const hint =
+      !m.content && cli && fastHint ? (
+        <p data-testid="pm-e2b-hint" className="text-muted mt-1 text-[11px] leading-[1.5]">
+          Replies start in seconds with E2B: add your Claude Code token to this agent and your own E2B key in Settings.
+        </p>
+      ) : null;
     // A PM session's words stream in as it writes them.
     return tagged(
-      m.content ? (
+      hint ? (
+        <div>
+          {status}
+          {hint}
+        </div>
+      ) : m.content ? (
         <div className="max-w-[92%]">
           <div data-testid="pm-streaming" className="text-ink text-[13px] leading-[1.55]">
             <MarkdownLite text={m.content} keepLineBreaks />
@@ -853,6 +867,8 @@ function Shade({
   const cli = selected
     ? providerInfo(selected.provider)?.kind === "cli"
     : false;
+  // A Claude Code PM with no token kept answers from CI, a minute at a time.
+  const fastHint = !!selected && providerInfo(selected.provider)?.cli === "claude" && !selected.hasKey;
 
   // A reply always sits directly under the message it answers.
   const thread = useMemo(() => threadOrder(a.messages), [a.messages]);
@@ -982,6 +998,7 @@ function Shade({
                 <Message
                   m={m}
                   cli={cli}
+                  fastHint={fastHint}
                   onStop={() => a.stop(m.id)}
                   onDecide={(i, d) => a.decide(m.id, i, d)}
                   onOpenCard={(id) => {

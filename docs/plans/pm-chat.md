@@ -231,12 +231,12 @@ Files: `src/lib/assistant/turn.ts` (CLI path), new `src/lib/assistant/session/`,
 `docs/limits.md`.
 
 - [x] `PmSession` store, encrypted, size-capped, summary kept per turn.
-- [ ] E2B: create, pause, resume, recreate from file.
+- [x] E2B: create, pause, resume, recreate from file.
 - [x] Actions and GitLab: restore session file, resume, upload at end (additive workflow inputs).
-- [ ] Streaming into the chat; "Starting…" timer; E2B hint when absent. (Streaming and the timer landed in 3a; the hint comes with E2B in 3b.)
+- [x] Streaming into the chat; "Starting…" timer; E2B hint when absent.
 - [x] Wake-ups from stuck tickets; fix cap; per-board rate limit; daily PM allowance.
 - [x] Branch lock shared with ticket runs.
-- [ ] Fallback ladder; old chats seeded from a summary; Clear starts fresh. (3a: steps 3 and 4, seeding and Clear; the E2B steps come in 3b.)
+- [x] Fallback ladder; old chats seeded from a summary; Clear starts fresh.
 - [x] API-key PMs unchanged.
 - [ ] Scratch-repo end-to-end check of the new workflow before merge.
 
@@ -300,9 +300,42 @@ How it landed (PR 3b, part 1: wake-up limits):
 - A Claude Code PM is told to fix a stuck ticket on its branch, rerun its
   checks and say what it did in one line; an API PM still explains and
   proposes.
-- Still to come in 3b: E2B (create, pause, resume, recreate from file), with
-  the person's Claude Code token stored encrypted on the PM agent (agreed
-  with the board owner, 2026-11-21), and the E2B hint.
+
+How it landed (PR 3b, part 2: E2B):
+
+- The person's Claude Code token is kept on the PM's agent, sealed like an
+  API key (decided with the board owner, 2026-11-21: it is only used to start
+  the PM's sandbox; anyone who breaks into the server could use it, as they
+  could the API keys already kept there). Only Claude Code keeps one
+  (`keepsKey` in `src/lib/domain/providers.ts`); every other CLI agent's
+  sign-in stays in the repository's secrets. A key never survives a
+  provider change. The field is in the PM agent's editor, "Claude Code token
+  for fast replies (optional)".
+- A turn runs in E2B when the agent keeps a token and the board owner has
+  their own E2B key (never the operator's shared key, whose monthly minutes a
+  warm session would spend). Otherwise it runs in CI exactly as in 3a.
+- `src/lib/assistant/session/sandbox.ts` is the narrow port over the SDK
+  (create, connect, run, start, read, write, pause, kill), with a fake in
+  tests. `e2b-turn.ts` runs a turn: resume the paused sandbox (ladder step 1),
+  or make one again, install Claude Code, clone, and write the saved session
+  file in (step 2); a sandbox that cannot be had sends the turn to CI
+  (step 3); a resumed session that fails starts fresh from the summary
+  (step 4, unchanged). The database file stays the truth.
+- Formic drives the sandbox itself, so nothing is collected over the
+  internet. The repository token is only on the command line of the fetch
+  before the turn and the push after it, never in the checkout's config or
+  the agent's environment; the PM still cannot push. Its commits go to the
+  turn's staging branch and `landPmChange` moves them, as in CI.
+- Streaming: Claude Code's stream-json is read as it prints and written into
+  the pending reply. Stop kills the command; the session keeps its previous
+  file. Clear kills the sandbox. After each turn the sandbox is paused.
+- A turn lives in the Formic process that started it. One a restart lost is
+  failed by the idle sweep (`recoverLostSandboxTurn`), its token revoked, with
+  "Formic restarted while the PM was answering".
+- Hint: while a Claude Code PM with no token kept starts in CI, the chat says
+  replies start in seconds with E2B and what to add.
+- Not done: killing the sandbox when a board is deleted (E2B's own retention
+  reclaims a paused one).
 
 ### PR 4: Guests with memory
 

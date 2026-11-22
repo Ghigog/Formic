@@ -872,18 +872,27 @@ function contract(name: string, make: () => Repository) {
         expect(await repo.columnAgents(p.id)).toEqual({});
       });
 
-      it("keeps no credential for a CLI agent, only for an API provider", async () => {
+      it("keeps no credential for a CLI agent but Claude Code's PM token, and drops a key on a provider change", async () => {
         const base = { ownerId: null, model: "", prompt: "p", apiKeyCipher: "sealed", apiKeyHint: "…1234" };
-        const cli = await repo.savePreset({ ...base, provider: "claude-code", name: `contract-${randomUUID()}` });
+        const cli = await repo.savePreset({ ...base, provider: "codex", name: `contract-${randomUUID()}` });
         expect(cli).toMatchObject({ hasKey: false, keyHint: null });
         expect((await repo.presetForRun(cli.id))?.apiKeyCipher).toBeNull();
 
-        // Switching an API agent to a CLI provider drops the key it held.
+        // Claude Code keeps its token (for the board's PM sandbox), and keeps it on an edit that leaves it alone.
+        const claude = await repo.savePreset({ ...base, provider: "claude-code", name: `contract-${randomUUID()}` });
+        expect(claude).toMatchObject({ hasKey: true, keyHint: "…1234" });
+        const edited = await repo.savePreset({ ownerId: null, model: "", prompt: "q", id: claude.id, provider: "claude-code", name: claude.name });
+        expect(edited.hasKey).toBe(true);
+        expect((await repo.presetForRun(claude.id))?.apiKeyCipher).toBe("sealed");
+
+        // Switching provider drops the key it held: an API key is never taken for a Claude Code token.
         const api = await repo.savePreset({ ...base, provider: "anthropic", model: "m", name: `contract-${randomUUID()}` });
         expect(api.hasKey).toBe(true);
-        const switched = await repo.savePreset({ ...base, id: api.id, provider: "codex", name: api.name });
+        const switched = await repo.savePreset({ ownerId: null, model: "", prompt: "p", id: api.id, provider: "claude-code", name: api.name });
         expect(switched.hasKey).toBe(false);
         expect((await repo.presetForRun(api.id))?.apiKeyCipher).toBeNull();
+        const toCodex = await repo.savePreset({ ...base, id: claude.id, provider: "codex", name: claude.name });
+        expect(toCodex.hasKey).toBe(false);
       });
 
       it("keeps auto-escalation off until switched on, per project", async () => {

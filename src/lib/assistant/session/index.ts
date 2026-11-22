@@ -8,20 +8,24 @@ import { signingSecret } from "@/lib/auth/session";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { projectFor } from "@/lib/board/project";
 import { repository } from "@/lib/db";
-import type { AssistantMessage } from "@/lib/db/repository";
+import type { AssistantMessage, PmSessionWhere } from "@/lib/db/repository";
 import { publish } from "@/lib/events/bus";
 import { postPmMessage } from "@/lib/assistant/pm-messages";
 import { guestLabel, isGuestId } from "@/lib/assistant/guest-ids";
 import { attachmentsPrompt, cancelJob, dispatchPmTurn, formicOrigin, runnerTakesSession } from "@/lib/runner/runner";
 import type { StreamItem } from "@/lib/runner/stream";
-import { jobId } from "@/lib/runner/workflow";
+import { ASSISTANT_CHANGE_SUFFIX, jobId } from "@/lib/runner/workflow";
+import { STAGING_PREFIX } from "@/lib/vcs/types";
 import { open, seal } from "@/lib/secrets/vault";
 import { vcs } from "@/lib/vcs";
 import { landPmChange } from "./land";
-import { ciWhere, openFile, sealFile, type PackedFile } from "./store";
+import { killE2bTurn, killPmSandbox, runE2bTurn, SandboxUnavailable } from "./e2b-turn";
+import { liveE2bTurns } from "./sandbox";
+import { ciWhere, endPmSession as endStoredSession, openFile, sealFile, type PackedFile } from "./store";
 import { before, newSince, runningSummary, turnMessage } from "./transcript";
 
-export { endPmSession } from "./store";
+export { setPmSandboxes } from "./sandbox";
+export { recoverLostSandboxTurn } from "./recover";
 
 /**
  * The board's PM as a resumable Claude Code session (docs/plans/pm-chat.md,
@@ -102,12 +106,17 @@ export async function startSessionTurn(input: {
 }): Promise<boolean> {
   const { projectId, messageId, agent } = input;
   if (agent.info.cli !== "claude") return false;
-  if (!(await sessionReady(projectId))) return false;
+  const origin = formicOrigin();
+  if (!origin) return false;
 
   const repo = repository();
   const project = await projectFor(projectId);
   // The PM acts as the board's owner, on this board only.
-  if (!project.ownerId) return false;
+  if (!project.ownerId || !project.repoFullName) return false;
+  const creds = await credentialsForProject(project);
+  const sandbox = creds.repoToken ? e2bFor(agent, creds) : null;
+  if (!sandbox && !(await sessionReady(projectId))) return false;
+
   const existing = await repo.pmSession(projectId);
   const saved = existing && !input.fresh ? openFile(existing) : null;
   const resumed = !!saved;
@@ -130,29 +139,164 @@ export async function startSessionTurn(input: {
   });
 
   const job = jobId(messageId, randomUUID().slice(0, 8), input.attempt ?? 1);
-  const url = sessionUrl(job);
-  const origin = formicOrigin();
-  if (!url || !origin) return false;
-
   const token = await createPmToken(project.ownerId, { projectId, sessionId });
   const handoff: Handoff = { token: token.secret, url: `${origin}/api/mcp` };
+
+  // Fast: the session's own sandbox, kept warm between turns.
+  if (sandbox && creds.repoToken) {
+    // Live from here, so the idle sweep never takes it for one a restart lost.
+    liveE2bTurns().add(job);
+    await repo.savePmSession(projectId, {
+      sessionId,
+      where: "e2b",
+      turnJob: job,
+      handoff: null,
+      resumed,
+      branch: null,
+      ...(resumed ? {} : { fileCipher: null, bytes: 0 }),
+    });
+    await repo.updateAssistantMessage(messageId, { runnerJob: job, runnerAgent: agent.presetId });
+    const toCi = async (why: string) => {
+      // Ladder step 3: no sandbox to be had, so the repository's CI runs it.
+      console.warn(`[formic] PM sandbox unavailable, using CI: ${why}`);
+      await repo.updatePmSession(projectId, { sandboxId: null });
+      if (!(await sessionReady(projectId))) {
+        await revokePmTokens(projectId, sessionId);
+        await repo.updatePmSession(projectId, { turnJob: null });
+        await input.fail(`The PM's sandbox could not start: ${why}`);
+        return;
+      }
+      await dispatchToCi({ projectId, messageId, agent, job, prompt, sessionId, resumed, handoff, ciWhere: ciWhere(project.repoFullName), fail: input.fail });
+    };
+    void runInSandbox({
+      projectId,
+      messageId,
+      job,
+      prompt,
+      sessionId,
+      file: saved,
+      sandboxId: existing?.sandboxId ?? null,
+      e2bKey: sandbox.e2bKey,
+      claudeToken: sandbox.claudeToken,
+      model: agent.model,
+      mcp: handoff,
+      repoFullName: project.repoFullName,
+      repoToken: creds.repoToken,
+      baseBranch: project.baseBranch,
+      toCi,
+    }).catch((e: unknown) => console.error("[formic] PM sandbox turn failed:", e));
+    return true;
+  }
+
+  await dispatchToCi({ projectId, messageId, agent, job, prompt, sessionId, resumed, handoff, ciWhere: ciWhere(project.repoFullName), fail: input.fail });
+  return true;
+}
+
+/**
+ * The E2B key and Claude Code token that let the PM run in its own sandbox:
+ * the board owner's own E2B key (never the operator's shared one, whose
+ * minutes a warm session would spend) and the token kept on the PM agent.
+ */
+export function e2bFor(
+  agent: CliAgent,
+  creds: { e2bKey: string | null; e2bFallbackUserId: string | null },
+): { e2bKey: string; claudeToken: string } | null {
+  if (agent.info.cli !== "claude" || !agent.sessionToken) return null;
+  if (!creds.e2bKey || creds.e2bFallbackUserId !== null) return null;
+  return { e2bKey: creds.e2bKey, claudeToken: agent.sessionToken };
+}
+
+/** The turn as a job in the repository's CI, which collects its handoff once. */
+async function dispatchToCi(input: {
+  projectId: string;
+  messageId: string;
+  agent: CliAgent;
+  job: string;
+  prompt: string;
+  sessionId: string;
+  resumed: boolean;
+  handoff: Handoff;
+  ciWhere: PmSessionWhere;
+  fail: (content: string) => Promise<void>;
+}): Promise<void> {
+  const { projectId, messageId, agent, job, sessionId, resumed } = input;
+  const repo = repository();
+  const url = sessionUrl(job);
+  if (!url) {
+    await revokePmTokens(projectId, sessionId);
+    await input.fail("Formic's address is not set, so the PM's job could not reach it.");
+    return;
+  }
   await repo.savePmSession(projectId, {
     sessionId,
-    where: ciWhere(project.repoFullName),
+    where: input.ciWhere,
     turnJob: job,
-    handoff: seal(JSON.stringify(handoff)),
+    handoff: seal(JSON.stringify(input.handoff)),
     resumed,
     branch: null,
     ...(resumed ? {} : { fileCipher: null, bytes: 0 }),
   });
 
-  const started = await dispatchPmTurn({ projectId, messageId, agent, job, prompt, session: url });
+  const started = await dispatchPmTurn({ projectId, messageId, agent, job, prompt: input.prompt, session: url });
   if (!started.ok) {
     await revokePmTokens(projectId, sessionId);
     await repo.updatePmSession(projectId, { turnJob: null, handoff: null });
     await input.fail(started.reason);
   }
-  return true;
+}
+
+/** A turn in the session's sandbox, start to finish: its words streamed, its file kept, its reply posted. */
+async function runInSandbox(input: Omit<Parameters<typeof runE2bTurn>[0], "onItems"> & { toCi: (why: string) => Promise<void> }): Promise<void> {
+  const { projectId, messageId, job } = input;
+  const repo = repository();
+  liveE2bTurns().add(job);
+  let result;
+  try {
+    result = await runE2bTurn({ ...input, onItems: (items) => streamSessionReply(projectId, messageId, items) });
+  } catch (e) {
+    if (e instanceof SandboxUnavailable) {
+      await input.toCi(e.message);
+      return;
+    }
+    throw e;
+  } finally {
+    liveE2bTurns().delete(job);
+  }
+  // Stopped meanwhile: the reply already says so, and the token is gone.
+  if ((await repo.pmSession(projectId))?.turnJob !== job) {
+    await repo.updatePmSession(projectId, { sandboxId: result.sandboxId });
+    return;
+  }
+  await repo.updatePmSession(projectId, { sandboxId: result.sandboxId });
+  await receiveSessionFile(job, { sessionId: result.sessionId, branch: result.branch, file: result.file });
+  const { finishSessionAnswer } = await import("@/lib/assistant/turn");
+  await finishSessionAnswer(projectId, messageId, job, {
+    reply: result.reply,
+    failure: result.failure,
+    changeSha: result.changeSha,
+  });
+  if (result.changeSha) {
+    const project = await projectFor(projectId);
+    const creds = await credentialsForProject(project);
+    await vcs(project.repoFullName, creds.repoToken)
+      .deleteStagingBranch(`${STAGING_PREFIX}${job}${ASSISTANT_CHANGE_SUFFIX}`)
+      .catch(() => undefined);
+  }
+}
+
+/**
+ * Ends the board's session: its tokens revoked, its sandbox killed, and its
+ * row, file and summary gone. Clear calls this, so the next message starts
+ * a fresh session.
+ */
+export async function endPmSession(projectId: string): Promise<void> {
+  const session = await repository().pmSession(projectId);
+  if (session?.sandboxId) {
+    const project = await projectFor(projectId).catch(() => null);
+    const creds = project ? await credentialsForProject(project).catch(() => null) : null;
+    if (creds?.e2bKey) await killPmSandbox(session.sandboxId, creds.e2bKey).catch(() => undefined);
+  }
+  await endStoredSession(projectId);
 }
 
 /**
@@ -210,6 +354,10 @@ export async function stopSessionTurn(projectId: string, job: string): Promise<v
   if (!session || session.projectId !== projectId) return;
   await revokePmTokens(projectId, session.sessionId);
   await repo.updatePmSession(projectId, { turnJob: null, handoff: null });
+  if (session.where === "e2b") {
+    await killE2bTurn(job);
+    return;
+  }
   await cancelJob(projectId, job);
 }
 

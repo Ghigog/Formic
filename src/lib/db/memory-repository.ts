@@ -81,7 +81,7 @@ import { severityFor } from "@/lib/domain/entities";
 import { DEFAULT_ALLOWANCE_WINDOW_DAYS } from "@/lib/domain/limit-settings";
 import { type ColumnId, columnOf } from "@/lib/domain/status";
 import { byPosition, needsRebalance, rebalance } from "@/lib/ordering";
-import { provider as providerInfo } from "@/lib/llm/providers";
+import { keepsKey, provider as providerInfo } from "@/lib/llm/providers";
 import { normalizeScope } from "@/lib/domain/scope";
 import { HEAT_WINDOW_MS, mergeScore } from "@/lib/colony/game";
 import { kindOf, type MessageKind } from "@/lib/domain/chat";
@@ -2324,7 +2324,10 @@ export class MemoryRepository implements Repository {
     const s = store();
     const existing = record.id ? s.presets.get(record.id) : undefined;
     const cli = providerInfo(record.provider)?.kind === "cli";
-    const keep = record.apiKeyCipher === undefined && !cli;
+    // Claude Code keeps its PM's sandbox token; any other CLI agent keeps none.
+    const noKey = !keepsKey(record.provider);
+    // A key belongs to the provider it was saved for.
+    const keep = record.apiKeyCipher === undefined && !noKey && (!existing || existing.provider === record.provider);
     const row = {
       id: existing?.id ?? id("preset"),
       ownerId: existing ? existing.ownerId : (record.ownerId ?? null),
@@ -2336,8 +2339,8 @@ export class MemoryRepository implements Repository {
       provider: record.provider,
       model: record.model,
       prompt: record.prompt,
-      apiKeyCipher: cli ? null : keep ? (existing?.apiKeyCipher ?? null) : record.apiKeyCipher!,
-      keyHint: cli ? null : keep ? (existing?.keyHint ?? null) : (record.apiKeyHint ?? null),
+      apiKeyCipher: noKey ? null : keep ? (existing?.apiKeyCipher ?? null) : (record.apiKeyCipher ?? null),
+      keyHint: noKey ? null : keep ? (existing?.keyHint ?? null) : (record.apiKeyHint ?? null),
       secretName: cli
         ? record.secretName === undefined
           ? (existing?.secretName ?? null)
@@ -2345,8 +2348,9 @@ export class MemoryRepository implements Repository {
         : null,
       hasKey: false,
       // A new key is likely a new account, with its own usage.
-      limitedUntil: keep ? (existing?.limitedUntil ?? null) : null,
-      limitNote: keep ? (existing?.limitNote ?? null) : null,
+      // Saving a CLI agent is the person saying its sign-in is good: its usage mark goes.
+      limitedUntil: keep && !cli ? (existing?.limitedUntil ?? null) : null,
+      limitNote: keep && !cli ? (existing?.limitNote ?? null) : null,
       tokenAllowance: existing?.tokenAllowance ?? null,
       tokenAllowanceWindowDays: existing?.tokenAllowanceWindowDays ?? DEFAULT_ALLOWANCE_WINDOW_DAYS,
     };

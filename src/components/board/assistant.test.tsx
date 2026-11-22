@@ -402,6 +402,25 @@ describe("a PM session's reply", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Starting… 0:15");
   });
 
+  it("says E2B would be faster while a PM with no token kept starts in CI, and not once one is kept", () => {
+    const starting = (preset: typeof claude) => (
+      <AskBox
+        a={{
+          ...controls,
+          pending: true,
+          presets: [preset],
+          presetId: "c1",
+          messages: [{ id: "r", role: "assistant", content: "", status: "pending", proposals: [] }],
+        }}
+        repoName="demo"
+      />
+    );
+    const { rerender } = render(starting({ ...claude, hasKey: false }));
+    expect(screen.getByTestId("pm-e2b-hint")).toHaveTextContent("Replies start in seconds with E2B");
+    rerender(starting(claude));
+    expect(screen.queryByTestId("pm-e2b-hint")).toBeNull();
+  });
+
   it("shows its words as they stream in, with Stop still there", () => {
     render(
       <AskBox
