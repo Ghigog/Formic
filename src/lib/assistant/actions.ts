@@ -16,7 +16,9 @@ import { COLUMN_LABELS, COLUMNS, columnOf, hasActiveRun } from "@/lib/domain/sta
 import { publish } from "@/lib/events/bus";
 import { positionForIndex } from "@/lib/ordering";
 import { addFollowUpTicket } from "@/lib/board/follow-ups";
-import { mergeByPerson, rerunRedActions } from "@/lib/review/pipeline";
+import { mergeByPerson, rerunRedActions, updateFromMain } from "@/lib/review/pipeline";
+import { waitedOn } from "@/lib/domain/notice";
+import { postPmMessage } from "./pm-messages";
 import { ask as askCardChat } from "@/lib/agents/card-chat";
 import { isQuestion, PM_ANSWER_PREFIX } from "@/lib/domain/question";
 import { SENTINELS, sentinel as findSentinel } from "@/lib/sentinels/roster";
@@ -100,6 +102,10 @@ export const assistantActionSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("rerun_ci"),
+    key: z.string().trim().min(1).describe("The ticket's key, as the board shows it."),
+  }),
+  z.object({
+    type: z.literal("update_branch"),
     key: z.string().trim().min(1).describe("The ticket's key, as the board shows it."),
   }),
   z.object({
@@ -226,6 +232,7 @@ export async function applyAction(projectId: string, action: AssistantAction, ap
   if (action.type === "merge_pull_request") return mergePullRequest(projectId, action.key);
   if (action.type === "add_tickets_to_epic") return addTicketsToEpic(projectId, action.epic, action.tickets);
   if (action.type === "rerun_ci") return rerunCi(projectId, action.key);
+  if (action.type === "update_branch") return updateBranch(projectId, action.key);
   if (action.type === "open_pull_request") return openPullRequest(projectId, action);
 
   const repo = repository();
@@ -540,6 +547,37 @@ async function reopenEpic(projectId: string, epicId: string): Promise<void> {
   });
 }
 
+/**
+ * Whether a red check's failure is the code's: the ticket is blocked on a fix
+ * it waits for, or a failing check's annotations name a file in the
+ * repository. A lost runner or a network error names no file.
+ */
+async function failureIsInTheCode(
+  client: ReturnType<typeof vcs>,
+  branch: string,
+  checks: Awaited<ReturnType<ReturnType<typeof vcs>["checksFor"]>>,
+  blockedReason: string | null | undefined,
+): Promise<boolean> {
+  if (waitedOn(blockedReason)) return true;
+  const red = checks.filter((c) => c.status === "completed" && c.conclusion === "failure");
+  for (const check of red) {
+    const log = await client.checkLog(check.id).catch(() => null);
+    for (const { path } of log?.annotations ?? []) {
+      if ((await client.readFile(path, branch).catch(() => null)) !== null) return true;
+    }
+  }
+  return false;
+}
+
+/** Brings main into a blocked ticket's branch, so it can turn green. */
+export async function updateBranch(projectId: string, key: string): Promise<string> {
+  const card = await cardByKey(projectId, key);
+  if (card.kind !== "ticket" || !card.prNumber) throw new Error(`${key} has no pull request to bring up to date.`);
+  const ticket = await repository().ticketDetail(card.id);
+  if (!ticket) throw new Error(`${key} is not on the board.`);
+  return updateFromMain(projectId, ticket);
+}
+
 /** A ticket's red checks, run again: for a failure that is not the code's. */
 export async function rerunCi(projectId: string, key: string): Promise<string> {
   const card = await cardByKey(projectId, key);
@@ -548,7 +586,17 @@ export async function rerunCi(projectId: string, key: string): Promise<string> {
   const creds = await credentialsForProject(project);
   const client = vcs(project.repoFullName, creds.repoToken);
   const pull = await client.pullRequest(card.prNumber);
-  const started = await rerunRedActions(client, pull.headBranch, await client.checksFor(pull.headSha));
+  const checks = await client.checksFor(pull.headSha);
+  if (await failureIsInTheCode(client, pull.headBranch, checks, card.status === "blocked" ? card.blockedReason : null)) {
+    const reason = `The head of ${key}'s pull request has not changed, and a re-run tests the same commit, so it would fail the same way. Bringing main into the branch is the step that can turn it green.`;
+    await postPmMessage(projectId, {
+      content: `${key}: ${reason}`,
+      cards: [{ id: card.id, key: card.key, title: card.title }],
+      proposals: [{ summary: `Update ${key} from main`, action: { type: "update_branch", key }, state: "proposed" }],
+    });
+    throw new Error(reason);
+  }
+  const started = await rerunRedActions(client, pull.headBranch, checks);
   if (started === 0) {
     throw new Error(
       `${key} has no failed Actions check that can run again: it is green, still running, or already re-ran once and failed again.`,

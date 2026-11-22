@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { approve, BATCH_CI_LIMIT_MS, closeAlreadyDone, markMergedExternally, resetPullRequestSweep, reviewPullRequest } from "./pipeline";
+import { approve, BATCH_CI_LIMIT_MS, closeAlreadyDone, markMergedExternally, resetPullRequestSweep, reviewPullRequest, updateFromMain } from "./pipeline";
 import { resetMergeLanes } from "./lane";
 import { repository } from "@/lib/db";
 import { subscribe } from "@/lib/events/bus";
@@ -950,5 +950,84 @@ describe("red CI the ticket's change did not cause", () => {
 
     await markMergedExternally(PROJECT, bugPull.number);
     await vi.waitFor(async () => expect((await repo.ticketDetail(ticketId))!.status).not.toBe("blocked"));
+  });
+});
+
+describe("updating a blocked card from main", () => {
+  const NO_USAGE = { model: "stub", tokensIn: 0, tokensOut: 0, costCents: 0 };
+
+  async function seedBlocked() {
+    const repo = repository();
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "E", rawRequest: "r", position: 1 });
+    const [ticket] = await repo.createTickets([
+      { epicId: epic.id, key: "T-1", title: "First", description: "d", acceptanceCriteria: ["c"], fileScope: ["src"], storyPoints: 3, position: 1, dependsOnKeys: [] },
+    ]);
+    const pull = await vcs.openPullRequest({ headBranch: "t-1", baseBranch: "main", title: "T-1", body: "" });
+    MockVcsClient.setChecks(pull.number, "failure");
+    await repo.updateTicket(ticket!.id, {
+      status: "blocked",
+      stalledIn: "in_review",
+      stage: 6,
+      prNumber: pull.number,
+      branchName: "t-1",
+      blockedReason: "Waiting on #726, then updates from main",
+      reviewedHead: pull.headSha,
+    });
+    return { ticketId: ticket!.id, prNumber: pull.number, headSha: pull.headSha };
+  }
+
+  afterEach(() => {
+    setCheckoutFactory(null);
+    resetAgents();
+  });
+
+  it("brings main in and puts the card back in review on the new head", async () => {
+    const { ticketId, prNumber, headSha } = await seedBlocked();
+    MockVcsClient.behindBase(prNumber);
+    const events = collectEvents();
+
+    const said = await updateFromMain(PROJECT, (await repository().ticketDetail(ticketId))!);
+
+    expect(said).toContain("In Review");
+    expect((await vcs.pullRequest(prNumber)).headSha).not.toBe(headSha);
+    const after = (await repository().ticketDetail(ticketId))!;
+    expect([after.status, after.stalledIn, after.blockedReason, after.reviewedHead]).toEqual(["review", null, null, null]);
+    expect(events.some((e) => e.type === "card.status" && e.cardId === ticketId && e.status === "review")).toBe(true);
+  });
+
+  it("says so when the branch is already up to date, and leaves the card alone", async () => {
+    const { ticketId } = await seedBlocked();
+
+    const said = await updateFromMain(PROJECT, (await repository().ticketDetail(ticketId))!);
+
+    expect(said).toContain("already has everything");
+    expect((await repository().ticketDetail(ticketId))!.status).toBe("blocked");
+  });
+
+  it("hands a conflict to the Reviewer Agent instead of leaving the card blocked", async () => {
+    const { ticketId, prNumber } = await seedBlocked();
+    await repository().updateTicket(ticketId, { status: "review", stalledIn: null, blockedReason: null });
+    MockVcsClient.setPull(prNumber, { mergeable: false });
+    MockVcsClient.refuseBaseUpdate(prNumber, "Merge conflict");
+    setCheckoutFactory(async (request) => {
+      const memory = new MemoryWorkspace();
+      const raw: Workspace = Object.create(memory, {
+        exec: {
+          value: async (cmd: string) => ({
+            exitCode: cmd.includes("grep -qE") ? 1 : 0,
+            stdout: cmd.includes("git diff --name-only --diff-filter=U") ? "a.ts\n" : "",
+            stderr: "",
+          }),
+        },
+      });
+      return { workspace: scopedWorkspace(raw, request.ticket.fileScope), raw, sandboxId: "sbx", async dispose() {} };
+    });
+    const asked = vi.fn();
+    setAgents({ reviewer: { review: async () => (asked(), { ok: true, value: { summary: "ok", detail: "", verifiedWith: null, sendBack: null, handoff: [] }, usage: NO_USAGE }) } } as never);
+
+    const said = await updateFromMain(PROJECT, (await repository().ticketDetail(ticketId))!);
+
+    expect(said).toContain("Reviewer Agent is resolving");
+    await vi.waitFor(() => expect(asked).toHaveBeenCalled());
   });
 });

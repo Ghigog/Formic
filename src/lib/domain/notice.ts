@@ -25,6 +25,20 @@ export const STUCK_RUN = "Run stuck: no new commits for 30 minutes";
 /** What a blocked card's reason starts with when the review ceiling stopped it (ceilingReason in review/pipeline.ts); the lines after it say what failed and what the person can do. */
 export const REVIEW_CEILING = "Out of reviews";
 
+const WAITING_ON = /^Waiting on (?:#(\d+)|([A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+)), then updates from main$/;
+
+/** The reason for a blocked card that waits on a fix to land on main, then updates its branch; target is a pull request ("#726") or a ticket key ("EPIC-122-T3"). */
+export function waitingOnReason(target: string): string {
+  return `Waiting on ${target}, then updates from main`;
+}
+
+/** What a blocked reason's first line waits on, or null when it is not a waitingOnReason. */
+export function waitedOn(reason: string | null | undefined): { pull: number | null; key: string | null } | null {
+  const m = WAITING_ON.exec((reason ?? "").split("\n", 1)[0]!.trim());
+  if (!m) return null;
+  return { pull: m[1] ? Number(m[1]) : null, key: m[2] ?? null };
+}
+
 export function classifyNotice(card: {
   status: TicketStatus;
   stalledIn?: ColumnId | null;
@@ -39,6 +53,9 @@ export function classifyNotice(card: {
   const shortDescription = first.trim();
   const longDescription = rest.join("\n").trim();
 
+  if (card.status === "blocked" && waitedOn(shortDescription)) {
+    return { severity: "alert", title: shortDescription, shortDescription: "", longDescription };
+  }
   if (isQuestion(card.blockedReason)) {
     return { severity: "question", title: "Question for you", shortDescription: shortDescription.replace(/^Question: /, ""), longDescription };
   }
