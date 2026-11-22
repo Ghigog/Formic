@@ -414,7 +414,11 @@ export class MockVcsClient implements VcsClient {
     repo().dispatches.push({ file, ref, inputs });
   }
 
-  async compare(_base: string, head: string): Promise<Comparison> {
+  async compare(base: string, head: string): Promise<Comparison> {
+    // Compared from a pull request's head to the base: what the base has that it lacks, as for a branch behind.
+    for (const [number, pull] of pulls()) {
+      if (pull.headSha === base && repo().behind.has(number)) return { files: [], messages: ["Commits on the base"], headSha: head };
+    }
     const sha = repo().branches.get(head) ?? head;
     const commit = repo().commits.get(sha);
     return { files: commit?.files ?? [], messages: commit ? [commit.message] : [], headSha: sha };

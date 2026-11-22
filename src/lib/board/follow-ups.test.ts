@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { waitingOnReason } from "@/lib/domain/notice";
 import { addFollowUpTicket, answerFollowUp, nextTicketKey, recordFollowUps, requestFix, waitingOnFixReason } from "./follow-ups";
 import { repository } from "@/lib/db";
 import type { FollowUp } from "@/lib/agents/follow-ups";
@@ -219,7 +220,8 @@ describe("a fix raised from red CI", () => {
     const bug = (await repository().ticketDetail(card.id))!;
     expect(bug.description).toContain("Failing assertion: expect(handle.deadlineNudge).toBe(true) (OverlayServiceTest.kt:88)");
     const reason = waitingOnFixReason(fix, card.key);
-    expect(reason.split("\n")[0]).toContain(fix.cause);
-    expect(reason.split("\n")[1]).toBe(`Failing assertion: ${fix.assertion}`);
+    expect(reason.split("\n")[0]).toBe(waitingOnReason(card.key));
+    expect(reason.split("\n")[1]).toContain(fix.cause);
+    expect(reason.split("\n")[2]).toBe(`Failing assertion: ${fix.assertion}`);
   });
 });
