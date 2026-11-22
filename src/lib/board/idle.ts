@@ -109,6 +109,14 @@ export async function restartIdleCards(projectId: string, now = Date.now()): Pro
       const epic = await repo.epicDetail(card.id);
       if (!epic || epic.runnerJob || prdSchema.safeParse(epic.prd).success) continue;
       if (!(await repo.claimDelivery(`idle:${card.id}:${card.updatedAt}`))) continue;
+      // Already broken down (the PM made it with its tickets): its plan is
+      // read off them and it is ready, with no agent to start.
+      const tickets = await repo.ticketsForEpic(card.id);
+      if (tickets.length > 0) {
+        const { placePlannedEpic } = await import("@/lib/assistant/actions");
+        await placePlannedEpic(projectId, card.id, { summary: epic.rawRequest || card.title, tickets });
+        continue;
+      }
       launch(
         () => runProductAgent(projectId, card.id, epic.rawRequest || card.title),
         `product agent for ${card.key}, restarted`,

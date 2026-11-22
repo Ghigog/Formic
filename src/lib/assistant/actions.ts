@@ -12,6 +12,7 @@ import { boardPorts } from "@/lib/board/ports";
 import { repository } from "@/lib/db";
 import { validateDag } from "@/lib/domain/dag";
 import { describeProblems } from "@/lib/domain/problems";
+import { prdFromTickets } from "@/lib/domain/planned-epic";
 import { COLUMN_LABELS, COLUMNS, columnOf, hasActiveRun } from "@/lib/domain/status";
 import { publish } from "@/lib/events/bus";
 import { positionForIndex } from "@/lib/ordering";
@@ -251,24 +252,27 @@ export async function applyAction(projectId: string, action: AssistantAction, ap
     rawRequest: action.summary,
     position: 0,
   });
-  await repo.setEpicPrd(
-    epic.id,
-    {
-      summary: action.summary,
-      problem: action.summary,
-      scope: tickets.map((t) => `${t.key}: ${t.title}`),
-      outOfScope: [],
-      technicalContext: [],
-      userStories: tickets.map((t) => t.description.split("\n")[0]!.replace(/^\*\*User story:\*\* /, "")),
-      successCriteria: tickets.flatMap((t) => t.acceptanceCriteria),
-    },
-    false,
-  );
+  await placePlannedEpic(projectId, epic.id, { summary: action.summary, tickets });
+  await applyTickets(projectId, epic.id, tickets);
+  return `Added ${epic.key} to To Do with ${tickets.length} ticket${tickets.length === 1 ? "" : "s"}.`;
+}
 
-  // Planned already, so it skips Backlog and lands in To Do with its tickets.
+/**
+ * An Epic that arrives already broken down (the PM's create_epic, or its
+ * approved create_epic_with_tickets): it gets a plan from its tickets and
+ * skips Backlog, landing in To Do beside them, ready to run. Without this it
+ * would sit in Backlog waiting for a Product Agent that never needs to run.
+ */
+export async function placePlannedEpic(
+  projectId: string,
+  epicId: string,
+  plan: { summary: string; tickets: ReadonlyArray<{ key: string; title: string; description: string; acceptanceCriteria: string[] }> },
+): Promise<void> {
+  const repo = repository();
+  await repo.setEpicPrd(epicId, prdFromTickets(plan.summary, plan.tickets), false);
   const positions = await repo.columnPositions(projectId, "todo");
   await repo.move({
-    cardId: epic.id,
+    cardId: epicId,
     kind: "epic",
     status: "ready",
     stalledIn: null,
@@ -276,15 +280,13 @@ export async function applyAction(projectId: string, action: AssistantAction, ap
   });
   await publish(projectId, {
     type: "card.status",
-    cardId: epic.id,
+    cardId: epicId,
     kind: "epic",
     status: "ready",
     stalledIn: null,
     stage: 3,
     blockedReason: null,
   });
-  await applyTickets(projectId, epic.id, tickets);
-  return `Added ${epic.key} to To Do with ${tickets.length} ticket${tickets.length === 1 ? "" : "s"}.`;
 }
 
 /** The source ticket and the index of the follow-up an add_follow_up names. */
