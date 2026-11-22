@@ -389,15 +389,33 @@ async function stopWork(projectId: string, card: BoardCard): Promise<string> {
 }
 
 async function stopEpicWork(projectId: string, card: BoardCard): Promise<string> {
+  return (await stopEpicAgent(projectId, card.id))
+    ? `Stopped the agent working on ${card.key}.`
+    : `Nothing is working on ${card.key} right now.`;
+}
+
+/**
+ * Stops the agent working an Epic (writing its PRD, breaking it down, its
+ * showcase), wherever it runs. An Epic that already has its tickets then
+ * takes its plan from them and is ready: nothing more needs writing. False
+ * when nothing was working on it.
+ */
+export async function stopEpicAgent(projectId: string, epicId: string): Promise<boolean> {
   const repo = repository();
+  const card = await repo.cardById(epicId);
+  if (!card || card.kind !== "epic" || !(await working(card))) return false;
   const detail = await repo.epicDetail(card.id);
-  if (!(await working(card))) return `Nothing is working on ${card.key} right now.`;
   if (detail?.runnerJob) {
     await repo.setEpicRunnerJob(card.id, null);
     await cancelJob(projectId, detail.runnerJob);
   }
   await stopEpic(card.id, "Stopped by you.");
-  return `Stopped the agent working on ${card.key}.`;
+  const tickets = await repo.ticketsForEpic(card.id);
+  if (tickets.length > 0 && !prdSchema.safeParse(detail?.prd).success && columnOf(card) === "todo") {
+    const { placePlannedEpic } = await import("@/lib/assistant/actions");
+    await placePlannedEpic(projectId, card.id, { summary: detail?.rawRequest || card.title, tickets });
+  }
+  return true;
 }
 
 async function edit(
