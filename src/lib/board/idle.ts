@@ -3,6 +3,8 @@ import "server-only";
 import { hasDatabase, repository } from "@/lib/db";
 import { launch, runProductAgent } from "@/lib/agents/pipeline";
 import { recoverStaleAssistantAnswers, recoverStaleCardChats } from "@/lib/agents/recovery";
+import { isUsageLimitStop } from "@/lib/domain/notice";
+import { columnLimit } from "@/lib/agents/presets";
 import { prdSchema } from "@/lib/domain/entities";
 import { startQueued } from "./queue";
 import { sweepInterval } from "@/lib/usage/governor";
@@ -125,6 +127,19 @@ export async function restartIdleCards(projectId: string, now = Date.now()): Pro
     }
 
     if (card.kind !== "ticket") continue;
+
+    // A To Do request added (or stopped mid-draft) while the agent was out of
+    // usage waits on the gray clock. Once the limit is gone, draft it, once.
+    if (card.stalledIn === "todo" && isUsageLimitStop(card)) {
+      const waiting = await repo.ticketDetail(card.id);
+      if (!waiting || waiting.runnerJob || waiting.acceptanceCriteria.length > 0) continue;
+      if ((await columnLimit(projectId, "todo")) !== null) continue;
+      if (!(await repo.claimDelivery(`limit-draft:${card.id}:${card.updatedAt}`))) continue;
+      const { redraftTicket } = await import("./service");
+      await redraftTicket(projectId, card.id);
+      continue;
+    }
+
     if (card.status !== "running" && !(card.status === "review" && card.prNumber)) continue;
     const ticket = await repo.ticketDetail(card.id);
     if (!ticket || ticket.runnerJob || ticket.status !== card.status) continue;

@@ -39,6 +39,7 @@ import { credentialsForProject } from "@/lib/auth/credentials";
 import { carryActor } from "@/lib/auth/actor";
 import { fileLayout } from "@/lib/vcs/repositories";
 import { holdFunction } from "@/lib/usage/governor";
+import { isUsageLimitStop } from "@/lib/domain/notice";
 
 /**
  * Wires agents to column transitions.
@@ -870,7 +871,8 @@ export async function stallDraftingTicket(
   reason: string,
   blocked: boolean,
 ): Promise<void> {
-  const status = blocked ? "blocked" : "failed";
+  // A usage limit is a wait, not a failure, whatever the caller passed.
+  const status = blocked || isUsageLimitStop({ status: "failed", blockedReason: reason }) ? "blocked" : "failed";
   await repository().updateTicket(ticketId, { status, stalledIn: "todo", blockedReason: reason });
   await publish(projectId, {
     type: "card.status",
