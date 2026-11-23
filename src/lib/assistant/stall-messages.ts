@@ -1,7 +1,7 @@
 import "server-only";
 
 import { repository } from "@/lib/db";
-import { classifyNotice, isUsageLimitStop } from "@/lib/domain/notice";
+import { classifyNotice, isStoppedByPerson, isUsageLimitStop } from "@/lib/domain/notice";
 import type { FormicEvent } from "@/lib/domain/events";
 import type { ColumnId, TicketStatus } from "@/lib/domain/status";
 import { postPmMessage } from "./pm-messages";
@@ -29,8 +29,8 @@ function stallOf(event: Pick<CardStatus, "status" | "blockedReason">): string | 
 /**
  * Tells the person in the board chat when a ticket stops on something only
  * they can resolve: an agent's question, a step that needs a human, or a
- * stall the agents gave up on. A usage-limit stop clears on its own, and a
- * repeat of the same stop says nothing new. Never throws.
+ * stall the agents gave up on. A usage-limit stop clears on its own, a stop
+ * the person made themselves needs no telling, and a repeat of the same stop says nothing new. Never throws.
  */
 export async function reportStall(projectId: string, event: FormicEvent, seq?: number): Promise<void> {
   try {
@@ -47,6 +47,8 @@ export async function reportStall(projectId: string, event: FormicEvent, seq?: n
     }
     reported().set(event.cardId, now);
     if (now === null || was === now) return;
+    // The person stopped it (a stop, a redo, the bell restarting it): they know, and the PM has nothing to look into.
+    if (isStoppedByPerson(event.blockedReason)) return;
 
     const card = await repository().cardById(event.cardId);
     if (!card) return;

@@ -114,4 +114,13 @@ describe("reportStall", () => {
     expect(wake).not.toHaveBeenCalled();
     expect(await messages()).toHaveLength(0);
   });
+
+  it("neither wakes the PM nor posts when the person stopped the card", async () => {
+    agent.kind = "api";
+    const t = await seed();
+    await reportStall(PROJECT, stall(t.id, "blocked", "Stopped by you. Leave a note on what to do differently, then move it back to run it again."));
+    await reportStall(PROJECT, stall(t.id, "blocked", "Stopped by you."));
+    expect(wake).not.toHaveBeenCalled();
+    expect(await messages()).toHaveLength(0);
+  });
 });

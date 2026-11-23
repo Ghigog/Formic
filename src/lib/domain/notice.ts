@@ -80,6 +80,14 @@ export function classifyNotice(card: {
   return { severity: "alert", title, shortDescription, longDescription };
 }
 
+/** What a card's reason starts with when the person stopped its agent (stopTicket in runner/runner.ts, stopEpicAgent in agents/card-actions.ts). */
+export const STOPPED_BY_YOU = "Stopped by you.";
+
+/** Whether the person stopped this card themselves: nothing to tell them or look into. */
+export function isStoppedByPerson(reason: string | null | undefined): boolean {
+  return (reason ?? "").startsWith(STOPPED_BY_YOU);
+}
+
 /** The title runner.ts gives a card whose agent ended without changing a file. */
 export const NO_CHANGES = "No changes made";
 
