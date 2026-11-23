@@ -782,7 +782,10 @@ export async function createTodoItem(
     position,
     detached: true,
   });
-  await repo.updateTicket(ticket.id, { blockedReason: "Drafting the ticket…" });
+  // Out of usage: the card waits on the gray usage-limit clock with everything
+  // the person wrote, and the idle sweep drafts it once the agent is back.
+  const limited = await columnLimit(projectId, "todo");
+  await repo.updateTicket(ticket.id, { blockedReason: limited ?? "Drafting the ticket…" });
 
   if (input.requestId) await repo.claimAttachments(input.requestId, { ticketId: ticket.id });
 
@@ -792,6 +795,19 @@ export async function createTodoItem(
     kind: "ticket",
     epicId: epic.id,
   });
+
+  if (limited) {
+    await publish(projectId, {
+      type: "card.status",
+      cardId: ticket.id,
+      kind: "ticket",
+      status: "blocked",
+      stalledIn: "todo",
+      stage: 3,
+      blockedReason: limited,
+    });
+    return (await repo.cardById(ticket.id))!;
+  }
 
   launch(async () => {
     const tree = await repoTree(projectId);
@@ -816,7 +832,9 @@ export async function redraftTicket(projectId: string, ticketId: string): Promis
   const epic = await repo.epicDetail(ticket.epicId);
   if (!epic) return false;
 
-  await repo.updateTicket(ticketId, { status: "blocked", stalledIn: "todo", blockedReason: "Drafting the ticket…" });
+  const limited = await columnLimit(projectId, "todo");
+  const blockedReason = limited ?? "Drafting the ticket…";
+  await repo.updateTicket(ticketId, { status: "blocked", stalledIn: "todo", blockedReason });
   await publish(projectId, {
     type: "card.status",
     cardId: ticketId,
@@ -824,8 +842,9 @@ export async function redraftTicket(projectId: string, ticketId: string): Promis
     status: "blocked",
     stalledIn: "todo",
     stage: 3,
-    blockedReason: "Drafting the ticket…",
+    blockedReason,
   });
+  if (limited) return true;
 
   launch(async () => {
     const tree = await repoTree(projectId);

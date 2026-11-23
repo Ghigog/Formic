@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import { makeCard } from "@/test/cards";
+import { makeCard, makeEpicWithChildren } from "@/test/cards";
 
 /** Every start the sweep made, in order, with the work it was handed. */
 const launches = vi.hoisted(() => [] as Array<{ label: string; work: () => Promise<void> }>);
@@ -276,6 +276,43 @@ describe("the golden bell", () => {
     await stoppedByLimit();
 
     await restartIdleCards(PROJECT, reset + 61_000);
+
+    expect(started()).toEqual([]);
+  });
+});
+
+describe("a To Do request waiting on the usage limit", () => {
+  async function waiting(until: number) {
+    const preset = await savePreset({ name: "architect", provider: "anthropic", model: "m", prompt: "p" });
+    await repository().setColumnAgent(PROJECT, "todo", preset.id);
+    await repository().setPresetLimit(preset.id, { until: new Date(until), note: "limit" });
+    const [epic, card] = makeEpicWithChildren({ status: "ready" }, [
+      {
+        kind: "ticket",
+        status: "blocked",
+        stalledIn: "todo",
+        blockedReason: "Architect is out of usage until 3pm. It starts again then.",
+        updatedAt: idle,
+      },
+    ]);
+    seedMemory([epic!, card!]);
+    return card!;
+  }
+
+  it("is drafted once after the limit passes, with no bell armed", async () => {
+    const card = await waiting(Date.now() - 1_000);
+
+    await restartIdleCards(PROJECT, NOW);
+    resetIdleSweep();
+    await restartIdleCards(PROJECT, NOW + 1_000);
+
+    expect(started()).toEqual([`architect agent for ${card.key}`]);
+  });
+
+  it("is left alone while the limit is still in force", async () => {
+    await waiting(Date.now() + 3_600_000);
+
+    await restartIdleCards(PROJECT, NOW);
 
     expect(started()).toEqual([]);
   });

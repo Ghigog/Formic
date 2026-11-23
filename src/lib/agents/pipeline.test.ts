@@ -35,6 +35,7 @@ const {
   launch,
   runArchitectDraftTicket,
   runProductAgent,
+  stallDraftingTicket,
 } = await import("./pipeline");
 const { repository } = await import("@/lib/db");
 const { seedMemory } = await import("@/lib/db/memory-repository");
@@ -720,5 +721,27 @@ describe("decomposeEpic, asked to break an Epic down again", () => {
 
     expect(seen.instructions).toEqual([]);
     expect(seen.existing).toBeUndefined();
+  });
+});
+
+describe("stallDraftingTicket", () => {
+  it("stores a usage limit as blocked, not failed, even when the caller says failed", async () => {
+    const card = makeCard({ kind: "ticket", status: "blocked", stalledIn: "todo" });
+    seedMemory([card]);
+
+    await stallDraftingTicket("project_default", card.id, "Usage limit reached\nResets at 2:30", false);
+
+    const stored = (await repository().cardById(card.id))!;
+    expect(stored.status).toBe("blocked");
+    expect(classifyNotice(stored)?.severity).toBe("paused");
+  });
+
+  it("keeps any other reason failed", async () => {
+    const card = makeCard({ kind: "ticket", status: "blocked", stalledIn: "todo" });
+    seedMemory([card]);
+
+    await stallDraftingTicket("project_default", card.id, "The agent finished without an answer.", false);
+
+    expect((await repository().cardById(card.id))!.status).toBe("failed");
   });
 });

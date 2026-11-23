@@ -20,7 +20,7 @@ vi.mock("@/lib/coder/pipeline", () => ({ runCoderAgent: vi.fn(), stallTicket: vi
 vi.mock("@/lib/events/bus", () => ({ publish: vi.fn() }));
 vi.mock("@/lib/fixtures/board", () => ({ FIXTURE_CARDS: [], FIXTURE_TICKET_DETAILS: {} }));
 
-const { advanceQueens, applyTransition, canRetryEpic, createBacklogItem, archiveEpic, createTodoItem, deleteEpic, restoreEpic, generateShowcase, retryEpic } = await import(
+const { advanceQueens, applyTransition, canRetryEpic, createBacklogItem, archiveEpic, createTodoItem, deleteEpic, restoreEpic, generateShowcase, redraftTicket, retryEpic } = await import(
   "./service"
 );
 const { repository } = await import("@/lib/db");
@@ -757,6 +757,34 @@ describe("createTodoItem", () => {
     expect(cards).toEqual([expect.objectContaining({ id: card.id, kind: "ticket" })]);
 
     expect(launched).toEqual([`architect agent for ${card.key}`]);
+  });
+
+  async function limitTodo() {
+    const preset = await repository().savePreset({ name: "Architect", provider: "claude-code", model: "", prompt: "", apiKeyCipher: null });
+    await repository().setColumnAgent(PROJECT, "todo", preset.id);
+    await repository().setPresetLimit(preset.id, { until: new Date(Date.now() + 3_600_000), note: "limit" });
+  }
+
+  it("holds the request on the usage-limit clock, keeping all of it, when the To Do agent is out of usage", async () => {
+    await limitTodo();
+
+    const card = await createTodoItem(PROJECT, "Fix the footer link. It points at the old docs.", { requestId: "req-1" });
+
+    expect(launched).toEqual([]);
+    expect(card).toMatchObject({ status: "blocked", stalledIn: "todo", title: "Fix the footer link" });
+    expect(card.blockedReason).toContain(" is out of usage until ");
+    expect((await repository().ticketDetail(card.id))!.description).toBe("Fix the footer link. It points at the old docs.");
+  });
+
+  it("redraftTicket while limited keeps the card waiting and starts nothing", async () => {
+    const card = await createTodoItem(PROJECT, "Fix the footer link.");
+    launched.length = 0;
+    await limitTodo();
+
+    expect(await redraftTicket(PROJECT, card.id)).toBe(true);
+
+    expect(launched).toEqual([]);
+    expect((await repository().cardById(card.id))!.blockedReason).toContain(" is out of usage until ");
   });
 
   it("places the ticket after whatever else is already in To Do", async () => {
