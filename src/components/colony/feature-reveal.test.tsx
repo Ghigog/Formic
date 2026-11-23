@@ -101,4 +101,41 @@ describe("FeatureReveal", () => {
     act(() => void vi.advanceTimersByTime(700));
     expect(play).not.toHaveBeenCalled();
   });
+
+  it("ignores a new sound object mid-reveal: no restart, no second cue", () => {
+    const { sound, play } = setup();
+    const wrap = (s: SoundEngine) => ({
+      whenAudible: (f: () => void) => s.whenAudible(f),
+      play: (...a: Parameters<SoundEngine["play"]>) => s.play(...a),
+    }) as unknown as SoundEngine;
+    const ui = () => (
+      <FeatureReveal reveal sound={wrap(sound)}>
+        <button>Timeline</button>
+      </FeatureReveal>
+    );
+    const { rerender } = render(ui());
+    act(() => void vi.advanceTimersByTime(300));
+    expect(phase()).toBe("rise");
+    for (let i = 0; i < 5; i++) {
+      act(() => void vi.advanceTimersByTime(50));
+      rerender(ui());
+    }
+    expect(phase()).toBe("rise");
+    act(() => void vi.advanceTimersByTime(2000));
+    expect(phase()).toBe("done");
+    expect(play).toHaveBeenCalledTimes(1);
+  });
+
+  it("is never left hidden when reveal turns off mid-run", () => {
+    const { sound } = setup();
+    const ui = (reveal: boolean) => (
+      <FeatureReveal reveal={reveal} sound={sound}>
+        <button>Timeline</button>
+      </FeatureReveal>
+    );
+    const { rerender } = render(ui(true));
+    expect(phase()).toBe("space");
+    rerender(ui(false));
+    expect(phase()).toBe("done");
+  });
 });

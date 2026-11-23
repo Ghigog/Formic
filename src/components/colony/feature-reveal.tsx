@@ -32,15 +32,22 @@ export function FeatureReveal({
   useEffect(() => {
     settled.current = onSettled;
   });
-  const started = useRef(false);
-
+  // Read through a ref so an unstable `sound` prop can't restart a reveal.
+  const soundRef = useRef(sound);
   useEffect(() => {
-    if (!reveal || started.current) return;
-    started.current = true;
+    soundRef.current = sound;
+  });
+
+  /* eslint-disable react-hooks/set-state-in-effect -- the reveal is driven by timers started here */
+  useEffect(() => {
+    if (!reveal) {
+      // Stopped before it finished: never leave the child hidden mid-run.
+      setPhase((p) => (p === "idle" || p === "done" ? p : "done"));
+      return;
+    }
     const reduced =
       typeof window.matchMedia === "function" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    /* eslint-disable react-hooks/set-state-in-effect -- the reveal is driven by timers started here */
     const timers: ReturnType<typeof setTimeout>[] = [];
     const finish = (after: number) =>
       timers.push(
@@ -49,7 +56,8 @@ export function FeatureReveal({
           settled.current?.();
         }, after),
       );
-    const cue = () => sound.whenAudible(() => sound.play("celebrate"));
+    const cue = () =>
+      soundRef.current.whenAudible(() => soundRef.current.play("celebrate"));
     if (reduced) {
       setPhase("fade");
       cue();
@@ -64,13 +72,12 @@ export function FeatureReveal({
       );
       finish(REVEAL_SPACE_MS + REVEAL_RISE_MS);
     }
-    /* eslint-enable react-hooks/set-state-in-effect */
     return () => {
+      // Strict mode remounts effects: the run starts over from here.
       timers.forEach(clearTimeout);
-      // Strict mode remounts effects: allow the run to start over.
-      started.current = false;
     };
-  }, [reveal, sound]);
+  }, [reveal]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   if (phase === "idle" && !reveal) return <>{children}</>;
   return (
