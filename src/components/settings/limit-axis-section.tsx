@@ -226,7 +226,7 @@ export function LimitAxisSection({
           <button
             type="button"
             onClick={() => onChange({ ...draft, rows: [...draft.rows, { points: "", value: "" }] })}
-            className="text-terracotta self-start text-[12px] font-semibold"
+            className="text-cta dark:text-epic-chip-text self-start text-[12px] font-semibold"
           >
             Add row
           </button>

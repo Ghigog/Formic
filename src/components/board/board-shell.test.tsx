@@ -107,7 +107,7 @@ describe("BoardShell", () => {
 
   it("shows an agent menu on every working column", () => {
     renderShell([makeCard({ status: "ready" })]);
-    expect(screen.getAllByRole("button", { name: /^Agent for / }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: /\. Agent for .*\. Change$/ }).length).toBeGreaterThan(0);
   });
 
   it("shows an empty state in each column when the board has no cards", () => {

@@ -142,7 +142,7 @@ function AccountSection({
               </p>
               <div className="flex flex-wrap items-center gap-3">
                 {installUrl && (
-                  <a href={installUrl} className="text-terracotta text-[13px] font-semibold">
+                  <a href={installUrl} className="text-cta dark:text-epic-chip-text text-[13px] font-semibold">
                     Choose which repositories Formic can access →
                   </a>
                 )}
@@ -190,7 +190,7 @@ function AccountSection({
       {account.gitlab && <GitlabSection gitlab={account.gitlab} initialError={gitlabError ?? null} />}
 
       {!github && installUrl && (
-        <a href={installUrl} className="text-terracotta text-[13px] font-semibold">
+        <a href={installUrl} className="text-cta dark:text-epic-chip-text text-[13px] font-semibold">
           Choose which repositories Formic can access →
         </a>
       )}
@@ -838,7 +838,7 @@ function KeyField({
           <button
             type="button"
             onClick={() => setEditing(true)}
-            className="text-terracotta text-[12px] font-semibold"
+            className="text-cta dark:text-epic-chip-text text-[12px] font-semibold"
           >
             Replace
           </button>

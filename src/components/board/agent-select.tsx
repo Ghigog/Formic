@@ -85,6 +85,14 @@ export function AgentSelect({
   const item =
     "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] hover:bg-cream outline-none focus-visible:bg-cream";
 
+  // What the closed button shows: the agent and its model (or its plan), or none.
+  const shown = selected ? selected.name : "No agent";
+  const detail = selected
+    ? selected.model
+      ? modelName(selected.model)
+      : (providerInfo(selected.provider)?.label ?? selected.provider).split(" (")[0]
+    : role;
+
   return (
     <div ref={root} data-tour={isAssistant ? undefined : "column-head"} className="relative">
       <button
@@ -93,10 +101,11 @@ export function AgentSelect({
         aria-haspopup="menu"
         aria-expanded={open}
         title={backAt && selected ? (selected.limitNote ?? undefined) : undefined}
+        // Starts from what the button shows, so a screen reader and a voice command name it alike.
         aria-label={
-          backAt && selected
-            ? `${name}: ${selected.name}, out of usage until ${backAt}. Change`
-            : `${name}: ${selected?.name ?? `built-in ${role}`}. Change`
+          backAt && selected && left !== null
+            ? `${selected.name} is out of usage · back at ${backAt} ${formatCountdown(left)}. ${name}. Change`
+            : `${shown} ${detail}. ${name}. Change`
         }
         className={cn(
           "bg-card flex h-11 w-full items-center gap-1.5 rounded-md border px-2 md:h-8 text-left text-[11px] transition-colors",
@@ -108,7 +117,7 @@ export function AgentSelect({
             <span aria-hidden className="bg-idle size-1.5 shrink-0 rounded-full" />
             <span role="status" className="text-muted min-w-0 flex-1 truncate">
               {selected.name} is out of usage · back at {backAt}
-            </span>
+            </span>{" "}
             <span
               aria-label={`Available in ${formatCountdown(left)}`}
               className="text-ink shrink-0 font-mono font-semibold tabular-nums"
@@ -119,16 +128,8 @@ export function AgentSelect({
         ) : (
           <>
             {selected ? <ProviderLogo provider={selected.provider} size={14} /> : <AgentIcon />}
-            <span className="text-ink min-w-0 flex-1 truncate font-medium">
-              {selected ? selected.name : "No agent"}
-            </span>
-            <span className="text-muted shrink-0 font-mono text-[10px]">
-              {selected
-                ? selected.model
-                  ? modelName(selected.model)
-                  : (providerInfo(selected.provider)?.label ?? selected.provider).split(" (")[0]
-                : role}
-            </span>
+            <span className="text-ink min-w-0 flex-1 truncate font-medium">{shown}</span>{" "}
+            <span className="text-muted shrink-0 font-mono text-[10px]">{detail}</span>
           </>
         )}
         <Chevron />

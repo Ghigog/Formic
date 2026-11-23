@@ -86,7 +86,7 @@ describe("AgentSelect", () => {
     await user.click(screen.getByRole("menuitemradio", { name: /Bob/ }));
     expect(onAssign).toHaveBeenCalledWith("bob-1");
     rerender(<AgentSelect slot="todo" presets={[bob]} selected={bob} onAssign={onAssign} onEdit={vi.fn()} />);
-    expect(screen.getByRole("button", { name: /Agent for To Do: Bob/ })).toHaveTextContent("Bob");
+    expect(screen.getByRole("button", { name: /^Bob .*\. Agent for To Do\. Change$/ })).toHaveTextContent("Bob");
   });
 
   it("the PM's slot lists only PM agents plus the selected one, labelled for the PM", async () => {
@@ -96,7 +96,7 @@ describe("AgentSelect", () => {
     render(
       <AgentSelect slot="assistant" presets={[pm, col]} selected={pm} onAssign={vi.fn()} onEdit={vi.fn()} />,
     );
-    const trigger = screen.getByRole("button", { name: /The PM's agent: Planner/ });
+    const trigger = screen.getByRole("button", { name: /^Planner .*\. The PM's agent\. Change$/ });
     expect(trigger.closest("[data-tour]")).toBeNull();
     await user.click(trigger);
     expect(screen.getByRole("menu", { name: "Agents for the PM" })).toBeInTheDocument();
@@ -125,7 +125,7 @@ describe("AgentSelect", () => {
       render(
         <AgentSelect slot="todo" presets={[mine, other]} selected={mine} onAssign={onAssign} onEdit={vi.fn()} />,
       );
-      const trigger = screen.getByRole("button", { name: /Agent for To Do: Claude \(work\), out of usage until .*\. Change/ });
+      const trigger = screen.getByRole("button", { name: /^Claude \(work\) is out of usage · back at .*\. Agent for To Do\. Change$/ });
       expect(trigger).toHaveAttribute("title", "Hit its usage limit.");
       expect(screen.getByRole("status")).toHaveTextContent("Claude (work) is out of usage · back at");
       expect(screen.getByLabelText(/^Available in 2:0[45]:\d\d$/)).toBeInTheDocument();

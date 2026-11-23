@@ -47,7 +47,7 @@ const SHOTS: Shot[] = [
     open: async (page) => {
       await gotoBoard(page);
       await closeSetup(page);
-      await page.getByRole("button", { name: /Audit grade/ }).click();
+      await page.getByRole("button", { name: /audit grade/i }).click();
       await expect(page.getByRole("region", { name: "Sentinels" })).toBeVisible();
     },
   },
@@ -132,7 +132,7 @@ const SHOTS: Shot[] = [
       await gotoBoard(page);
       await closeSetup(page);
       const inProgress = column(page, "In Progress");
-      await inProgress.getByRole("button", { name: /Agent for In Progress:/ }).click();
+      await inProgress.getByRole("button", { name: /Agent for In Progress\. Change/ }).click();
       await inProgress.getByRole("menuitem", { name: /New agent/ }).click();
       await expect(page.getByRole("dialog", { name: "New agent" })).toBeVisible();
       await settleDialog(page);

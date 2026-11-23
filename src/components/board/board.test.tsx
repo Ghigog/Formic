@@ -163,7 +163,7 @@ describe("Board, on a wide screen", () => {
 
   it("shows every column's agent drop-down set to No agent, with no red outline", () => {
     renderBoard([], { agents: { presets: [], columns: {}, onAssign: vi.fn(), onEdit: vi.fn() } });
-    const selects = screen.getAllByRole("button", { name: /^Agent for / });
+    const selects = screen.getAllByRole("button", { name: /\. Agent for .*\. Change$/ });
     expect(selects.length).toBeGreaterThan(0);
     for (const select of selects) {
       expect(select).toHaveTextContent("No agent");
@@ -678,7 +678,7 @@ describe("Board archived filter", () => {
   it("lands a card dragged to Done when agents are off", async () => {
     const card = makeCard({ key: "PROT-10", status: "review" });
     const { onTransition } = renderBoard([card]);
-    expect(screen.queryByRole("button", { name: /^Agent for / })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /\. Agent for .*\. Change$/ })).not.toBeInTheDocument();
 
     act(() =>
       dnd.onDragEnd!(
