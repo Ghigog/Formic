@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/components/ui/cn";
 import {
   HEAT_MAX,
@@ -178,7 +178,7 @@ function cueOnlyWhen(sound: SoundEngine, iconOnly: boolean): SoundEngine {
   } as unknown as SoundEngine;
 }
 
-function TimelineButton({
+export function TimelineButton({
   c,
   iconOnly = false,
 }: {
@@ -186,9 +186,11 @@ function TimelineButton({
   iconOnly?: boolean;
 }) {
   const open = c.timelineOpen;
+  // Stable across the colony's per-second renders, or the reveal restarts.
+  const sound = useMemo(() => cueOnlyWhen(c.sound, iconOnly), [c.sound, iconOnly]);
   if (!c.featureUnlocked("timeline")) return null;
   return (
-    <FeatureReveal reveal={c.revealing === "timeline"} sound={cueOnlyWhen(c.sound, iconOnly)} onSettled={c.settleReveal}>
+    <FeatureReveal reveal={c.revealing === "timeline"} sound={sound} onSettled={c.settleReveal}>
     <button
       data-colony="timeline"
       data-tour="timeline"

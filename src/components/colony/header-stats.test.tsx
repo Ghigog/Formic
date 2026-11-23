@@ -2,11 +2,13 @@ import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ColonyProvider } from "./colony";
+import { ColonyProvider, type ColonyApi } from "./colony";
+import { SoundEngine } from "./sound";
 import {
   ColonyHeaderStats,
   ColonyMobileStats,
   LevelBadge,
+  TimelineButton,
 } from "./header-stats";
 import { SentinelsProvider } from "@/components/sentinels/store";
 import { makeCard } from "@/test/cards";
@@ -288,5 +290,41 @@ describe("Points panel and heat indicator", () => {
     expect(panel().querySelector('[data-colony="heat"]')).toHaveTextContent(
       "×1.5",
     );
+  });
+});
+
+describe("TimelineButton reveal", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("cues once and ends visible while the header re-renders every second", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("matchMedia", (q: string) => ({ matches: q.includes("min-width") }));
+    const sound = new SoundEngine();
+    const play = vi.spyOn(sound, "play").mockImplementation(() => {});
+    vi.spyOn(sound, "whenAudible").mockImplementation((f) => f());
+    const api = (revealing: "timeline" | null) =>
+      ({
+        sound,
+        revealing,
+        settleReveal: () => {},
+        featureUnlocked: () => true,
+        timelineOpen: false,
+        cards: [],
+        setTimelineOpen: () => {},
+      }) as unknown as ColonyApi;
+    const { rerender } = render(<TimelineButton c={api("timeline")} />);
+    const phase = () =>
+      document.querySelector('[data-colony="timeline"]')!.closest(".feature-reveal")?.getAttribute("data-phase");
+    for (let i = 0; i < 30; i++) {
+      act(() => void vi.advanceTimersByTime(1000));
+      rerender(<TimelineButton c={api("timeline")} />);
+    }
+    expect(play.mock.calls.filter((a) => a[0] === "celebrate")).toHaveLength(1);
+    expect(phase()).toBe("done");
+    rerender(<TimelineButton c={api(null)} />);
+    expect(phase()).toBe("done");
   });
 });
