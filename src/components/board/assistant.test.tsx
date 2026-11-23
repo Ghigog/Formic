@@ -453,7 +453,7 @@ describe("agent selector", () => {
     expect(screen.queryByText("Runs on")).toBeNull();
     expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
     expect(screen.queryByRole("button", { name: "New agent" })).toBeNull();
-    expect(screen.getByRole("button", { name: /The PM's agent: Planner/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Planner .*\. The PM's agent\. Change$/ })).toBeInTheDocument();
   });
 
   it("picks, edits and creates through the selector", async () => {

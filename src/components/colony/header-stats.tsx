@@ -367,7 +367,7 @@ export function LevelBadge({
         flashing && reduced && "opacity-0",
       )}
     >
-      <span className={cn(label, "text-drawer-muted")}>LV</span>
+      <span className={cn(label, "text-drawer-muted")}>LV</span>{" "}
       <span className={num}>{level}</span>
     </span>
   );
@@ -396,14 +396,19 @@ export function LevelBadge({
       data-colony="level"
       onClick={() => c.setSentinelsOpen(!c.sentinelsOpen)}
       aria-expanded={c.sentinelsOpen}
-      aria-label={`Audit grade ${g.grade}, Level ${level}, ${g.avg.toFixed(1)} of 5 from ${g.done} of ${g.total} sentinels. ${c.sentinelsOpen ? "Back to board" : "Open sentinels"}`}
       title={`Sentinels · grade ${g.grade} · ${g.avg.toFixed(2)} avg · Level ${level}`}
       className={cn(
         box,
         "group transition-transform active:scale-[0.94] focus-visible:outline-2",
       )}
     >
-      {lv}
+      {/* The faces (LV, AUDIT) are for the eye; a screen reader hears the sentence below. */}
+      <span aria-hidden className="contents">
+        {lv}
+      </span>
+      <span className="sr-only">
+        {`Level ${level}, audit grade ${g.grade}, ${g.avg.toFixed(1)} of 5 from ${g.done} of ${g.total} sentinels. ${c.sentinelsOpen ? "Back to board" : "Open sentinels"}`}
+      </span>
       {audit(
         "invisible opacity-0 transition-[opacity,visibility] duration-150 group-hover:visible group-hover:opacity-100 group-focus-visible:visible group-focus-visible:opacity-100",
       )}

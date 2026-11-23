@@ -139,7 +139,7 @@ test("the sentinel Re-audit label stays on one line at 390px", async ({
   // leaves too little of the default 30s for the check itself.
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 390, height: 800 });
-  await page.getByRole("button", { name: /Audit grade/ }).click();
+  await page.getByRole("button", { name: /audit grade/i }).click();
   const card = page
     .getByRole("region", { name: "Sentinels" })
     .getByRole("listitem", { name: /Professor O'Chumley/ });

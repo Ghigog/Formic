@@ -6,7 +6,7 @@ test.use({ hasTouch: true });
 test("the project switcher opens above the Sentinels page at 390px", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await gotoBoard(page);
-  await page.getByRole("button", { name: /Audit grade/ }).click();
+  await page.getByRole("button", { name: /audit grade/i }).click();
   await expect(page.getByRole("region", { name: "Sentinels" })).toBeVisible();
 
   await page.getByRole("button", { name: /Choose another project/ }).tap();

@@ -53,7 +53,7 @@ describe("ColonyHeaderStats", () => {
       screen.queryByRole("button", { name: "Open sentinels" }),
     ).not.toBeInTheDocument();
 
-    const badge = screen.getByRole("button", { name: /Audit grade .*Level \d+/ });
+    const badge = screen.getByRole("button", { name: /^Level \d+, audit grade / });
     expect(badge).toHaveAttribute("data-colony", "level");
     // The hover face is always in the DOM, with the grade letter.
     const face = badge.querySelector('[data-audit-face="hover"]')!;
@@ -131,7 +131,7 @@ describe("Hidden features", () => {
 
   it("gates by this board's level: Sentinels at Lv 2, Timeline at Lv 10", () => {
     const { unmount } = renderHeader(<ColonyHeaderStats />, boardAtLevel(2));
-    expect(screen.getByRole("button", { name: /Audit grade/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /audit grade/i })).toBeInTheDocument();
     expect(document.querySelector('[data-colony="timeline"]')).toBeNull();
     unmount();
     renderHeader(<ColonyHeaderStats />, boardAtLevel(10));
@@ -140,7 +140,7 @@ describe("Hidden features", () => {
 
   it("shows Sentinels and Timeline at once on a Lv 1 board with Unlock everything on", () => {
     renderHeader(<ColonyHeaderStats />, lv1(), true);
-    expect(screen.getByRole("button", { name: /Audit grade/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /audit grade/i })).toBeInTheDocument();
     expect(document.querySelector('[data-colony="timeline"]')).toBeInTheDocument();
   });
 });

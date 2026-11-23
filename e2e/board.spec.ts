@@ -243,7 +243,7 @@ test("picking another repository switches the board to it", async ({ page }) => 
 
 test("a column runs a saved agent: create, pick, edit, remove", async ({ page }) => {
   const inProgress = column(page, "In Progress");
-  const selector = inProgress.getByRole("button", { name: /Agent for In Progress:/ });
+  const selector = inProgress.getByRole("button", { name: /Agent for In Progress\. Change/ });
   await expect(selector).toContainText("Coder Agent");
 
   // New agent from the column's menu.
@@ -267,7 +267,7 @@ test("a column runs a saved agent: create, pick, edit, remove", async ({ page })
   await page.screenshot({ path: "e2e/.results/agent-select.png" });
 
   // Scoped to the column it was made from — not offered in In Review's picker.
-  await column(page, "In Review").getByRole("button", { name: /Agent for In Review:/ }).click();
+  await column(page, "In Review").getByRole("button", { name: /Agent for In Review\. Change/ }).click();
   await expect(
     column(page, "In Review").getByRole("menuitemradio", { name: /claude-worker.*Anthropic/ }),
   ).not.toBeVisible();
@@ -491,7 +491,7 @@ test("a ticket opens its own view, not its Epic's", async ({ page }) => {
 
 test("a sentinel calibrates, then audits against its rubric, and its stars count toward the grade", async ({ page }) => {
   await gotoBoard(page);
-  await page.getByRole("button", { name: /Audit grade/ }).click();
+  await page.getByRole("button", { name: /audit grade/i }).click();
   const sentinels = page.getByRole("region", { name: "Sentinels" });
   await expect(sentinels.getByRole("heading", { name: "Sentinels" })).toBeAttached();
 
