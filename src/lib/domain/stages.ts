@@ -17,7 +17,7 @@ export const LIFECYCLE_STAGES = [
 export type StageKey = (typeof LIFECYCLE_STAGES)[number]["key"];
 export type StageNumber = (typeof LIFECYCLE_STAGES)[number]["n"];
 
-export type StageState = "pending" | "active" | "complete" | "failed";
+export type StageState = "pending" | "active" | "complete" | "failed" | "asked";
 
 export function stageByKey(key: StageKey) {
   const stage = LIFECYCLE_STAGES.find((s) => s.key === key);

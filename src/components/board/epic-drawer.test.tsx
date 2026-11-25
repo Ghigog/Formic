@@ -418,16 +418,26 @@ describe("EpicDrawer on-screen keyboard", () => {
       expect(screen.queryByTestId("chat")).not.toBeInTheDocument();
     });
 
-    it("shows a question's notice without the question, and no notice without one", async () => {
+    it("shows a question's plum banner with the question, its detail, the chip and the stepper", async () => {
       open(
         detail({
           epic: { ...epic, status: "blocked", stalledIn: "backlog", blockedReason: questionReason("The Product Agent", [{ question: "Which format?", why: "It sets the export." }]) },
         }),
       );
-      fireEvent.click(await screen.findByRole("button", { name: /Question/ }));
-      await screen.findByRole("button", { name: "Answer in the chat" });
-      expect(screen.getByRole("alert")).toHaveTextContent("Question for you from The Product Agent");
-      expect(screen.queryByText(/Which format/)).not.toBeInTheDocument();
+      const banner = await screen.findByRole("alert");
+      expect(banner.dataset.severity).toBe("question");
+      expect(banner.className).toContain("bg-plum/10");
+      expect(banner).toHaveTextContent("Question");
+      expect(banner).toHaveTextContent("Which format?");
+      expect(banner.innerHTML).not.toContain("crimson");
+      fireEvent.click(screen.getByRole("button", { name: /Question/ }));
+      expect(banner).toHaveTextContent("The Product Agent is waiting for your answer");
+      expect(banner).toHaveTextContent("Why: It sets the export.");
+      expect(screen.getByRole("button", { name: "Answer in the chat" })).toBeInTheDocument();
+      const dialog = screen.getByRole("dialog");
+      expect(dialog).toHaveTextContent("Question");
+      expect(dialog).not.toHaveTextContent("failed");
+      expect(dialog).toHaveTextContent("?");
     });
 
     it("opens from a question's notice", async () => {

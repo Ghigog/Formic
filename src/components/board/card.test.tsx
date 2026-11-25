@@ -241,6 +241,25 @@ describe("a notice on a card", () => {
     expect(screen.queryByText(/long detail/)).toBeNull();
   });
 
+  it("shows a plum speech bubble and the question, labelled Question, for a ticket with a question", () => {
+    renderTodo(
+      makeCard({
+        status: "blocked",
+        stalledIn: "todo",
+        blockedReason: "Question: Which format?\nThe Coder is waiting for your answer.",
+      }),
+    );
+    const notice = screen.getByTestId("card-notice");
+    expect(notice.dataset.severity).toBe("question");
+    expect(notice.className).toContain("text-plum");
+    expect(notice.textContent).toContain("Which format?");
+    const badge = screen.getAllByRole("img", { name: "Question: Which format?" });
+    expect(badge.length).toBeGreaterThan(0);
+    expect(badge[0]!.className).toContain("text-plum");
+    expect(screen.queryByText("!")).toBeNull();
+    expect(screen.queryByRole("img", { name: /Needs you/ })).toBeNull();
+  });
+
   it("shows neither for a ticket waiting on a dependency", () => {
     renderTodo(makeCard({ status: "waiting", blockedReason: "Waiting on PROT-1" }));
     expect(screen.queryByTestId("card-notice")).toBeNull();

@@ -57,7 +57,8 @@ export function classifyNotice(card: {
     return { severity: "alert", title: shortDescription, shortDescription: "", longDescription };
   }
   if (isQuestion(card.blockedReason)) {
-    return { severity: "question", title: "Question for you", shortDescription: shortDescription.replace(/^Question: /, ""), longDescription };
+    // The first question is the title; the waiting line and the numbered questions are the description.
+    return { severity: "question", title: shortDescription.replace(/^Question: /, ""), shortDescription: "", longDescription };
   }
   if (isUsageLimitReason(shortDescription)) {
     return { severity: "paused", title: "Paused for usage limit", shortDescription, longDescription };

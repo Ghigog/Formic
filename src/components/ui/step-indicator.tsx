@@ -9,6 +9,7 @@ import { LIFECYCLE_STAGES, type StageState } from "@/lib/domain/stages";
 export function StepIndicator({
   current,
   failedAt,
+  askedAt,
   working = false,
   stages = LIFECYCLE_STAGES,
   label = "Epic lifecycle",
@@ -21,6 +22,8 @@ export function StepIndicator({
   current: number;
   /** When set, this stage renders failed and nothing after it is active. */
   failedAt?: number | null;
+  /** When set, this stage renders as asked: the agent waits on the person's answer. Plum, "?", not failed. */
+  askedAt?: number | null;
   /**
    * An agent is on it right now. A trail of ants marches out of the active
    * stage toward the next, left to right.
@@ -29,6 +32,7 @@ export function StepIndicator({
   className?: string;
 }) {
   function stateOf(n: number): StageState {
+    if (askedAt != null && n === askedAt) return "asked";
     if (failedAt != null && n === failedAt) return "failed";
     if (n < current) return "complete";
     if (n === current) return "active";
@@ -48,6 +52,7 @@ export function StepIndicator({
         const marching =
           working &&
           failedAt == null &&
+          askedAt == null &&
           (stage.n === current ||
             (current === lastN && stage.n === current - 1));
         return (
@@ -60,10 +65,11 @@ export function StepIndicator({
                   state === "complete" && "bg-jade text-on-jade",
                   state === "active" && "bg-ochre text-on-ochre",
                   state === "failed" && "bg-crimson text-on-crimson",
+                  state === "asked" && "bg-plum text-card",
                   state === "pending" && "bg-sunken text-fg-subtle",
                 )}
               >
-                {i + 1}
+                {state === "asked" ? "?" : i + 1}
               </span>
               {!isLast && (
                 <span
@@ -83,6 +89,7 @@ export function StepIndicator({
                 state === "pending" ? "text-fg-subtle" : "text-fg-muted",
                 state === "active" && "text-ochre-text font-medium",
                 state === "failed" && "text-crimson-text font-medium",
+                state === "asked" && "text-plum font-medium",
               )}
               title={stage.label}
             >
