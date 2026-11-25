@@ -30,6 +30,9 @@ the design.
 --jade            #2E7D32   merged, tests passing, done
 --rust            #E65100   rebasing, conflict resolving, retry
 --crimson         #C62828   CI failure, agent blocked
+--plum            #6A2C55   an agent is waiting on your answer (the Question chip)
+--plum-chip       #F6E9F1   the Question chip ground
+--plum-chip-text  #4A1A3B   on --plum-chip
 --ant-crimson     #B3261E   the guide ant and the colony's crimson ant only; never a status colour
 ```
 
@@ -73,6 +76,9 @@ Contrast is WCAG 2.x. `text-muted` and every `*-chip-text` must stay at 4.5:1 or
 --jade-line          #34603A
 --crimson-chip       #3A1713
 --crimson-chip-text  #F59A90  on --crimson-chip 7.6:1
+--plum               #E29CC8  an agent is waiting on your answer; on card 8.4:1
+--plum-chip          #3A1830
+--plum-chip-text     #E29CC8  on --plum-chip 7.3:1
 --clay-chip          #36230E
 --clay-chip-text     #E8B04A  on --clay-chip 7.7:1
 --done-card          #2A1C15

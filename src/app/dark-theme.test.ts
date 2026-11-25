@@ -53,6 +53,10 @@ describe("dark theme", () => {
     },
   );
 
+  it.each(["--card", "--plum-chip"])("the plum label ink reads at 4.5:1 on %s", (surface) => {
+    expect(contrast(get("--plum"), get(surface))).toBeGreaterThanOrEqual(4.5);
+  });
+
   it("is listed in DESIGN.md with matching values", () => {
     expect(Object.fromEntries(documented)).toEqual(Object.fromEntries(dark));
   });

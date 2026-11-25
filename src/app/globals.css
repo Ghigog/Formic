@@ -48,6 +48,7 @@
   --jade: #2e7d32; /* merged, tests passing, done */
   --rust: #e65100; /* rebasing, conflict resolving, retry */
   --crimson: #c62828; /* CI failure, agent blocked */
+  --plum: #6a2c55; /* an agent is waiting on your answer; the colony's Plum */
   --ant-crimson: #b3261e; /* the colony's crimson ant; COLOR_UNLOCKS in lib/colony/game.ts must match */
 
   /* Epic chips: a tinted fill inside a 1px status-coloured octagon. */
@@ -59,6 +60,8 @@
   --jade-line: #a5c8a7; /* a review card whose checks passed */
   --crimson-chip: #fbeaea; /* bug badges, penalties, a hot multiplier */
   --crimson-chip-text: #7f1d1d;
+  --plum-chip: #f6e9f1; /* a Question chip */
+  --plum-chip-text: #4a1a3b;
   --clay-chip: #fbf0da; /* a warm multiplier, an S grade */
   --clay-chip-text: #6b4200;
   --terracotta-lit: #ee9a62; /* the bright stripe on an in-review bar */
@@ -114,6 +117,9 @@
   --jade-line: #34603a;
   --crimson-chip: #3a1713;
   --crimson-chip-text: #f59a90;
+  --plum: #e29cc8; /* lifted so the dot and ink clear 4.5:1 on the dark card */
+  --plum-chip: #3a1830;
+  --plum-chip-text: #e29cc8;
   --clay-chip: #36230e;
   --clay-chip-text: #e8b04a;
   --done-card: #2a1c15;
@@ -149,6 +155,7 @@
   --color-jade: var(--jade);
   --color-rust: var(--rust);
   --color-crimson: var(--crimson);
+  --color-plum: var(--plum);
   --color-ant-crimson: var(--ant-crimson);
 
   --color-epic-chip: var(--epic-chip);
@@ -159,6 +166,8 @@
   --color-jade-line: var(--jade-line);
   --color-crimson-chip: var(--crimson-chip);
   --color-crimson-chip-text: var(--crimson-chip-text);
+  --color-plum-chip: var(--plum-chip);
+  --color-plum-chip-text: var(--plum-chip-text);
   --color-clay-chip: var(--clay-chip);
   --color-clay-chip-text: var(--clay-chip-text);
   --color-terracotta-lit: var(--terracotta-lit);
