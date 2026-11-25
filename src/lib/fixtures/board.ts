@@ -1,6 +1,7 @@
 import type { PlanStep, BoardCard } from "@/lib/domain/entities";
 import type { CardExtras } from "@/components/board/card";
 import type { AmbientStats } from "@/components/ui/ambient-drawer";
+import { questionReason } from "@/lib/domain/question";
 
 /**
  * The demo board.
@@ -132,6 +133,80 @@ export const FIXTURE_CARDS: BoardCard[] = [
     fileScope: ["agents/pm/**"],
     dependsOn: ["prot-7"],
     blockedReason: "blocked by PROT-07",
+  }),
+
+  /* ---- To Do, stalled: one of each kind of notice ----------------------- */
+  // After everything above, so no card or position other tests count moves.
+  card({
+    id: "epic-5",
+    createdAt: daysAgo(2),
+    updatedAt: daysAgo(0.5),
+    kind: "epic",
+    key: "EPIC-05",
+    title: "Weekly digest email",
+    status: "blocked",
+    stalledIn: "todo",
+    stage: 2,
+    position: 5000,
+    size: null,
+    agentRole: "product",
+    model: "claude-opus-5",
+    blockedReason: questionReason("The Product Agent", [
+      {
+        question: "Should the digest go out weekly or daily?",
+        why: "It sets how often the job runs and how much each email holds.",
+      },
+      {
+        question: "Who receives it: every member or only owners?",
+        why: "Members need an unsubscribe link; owners do not.",
+      },
+    ]),
+  }),
+  card({
+    id: "prot-9",
+    createdAt: daysAgo(2),
+    updatedAt: daysAgo(0.5),
+    key: "PROT-09",
+    title: "Choose the export format",
+    status: "blocked",
+    stalledIn: "todo",
+    stage: 3,
+    position: 5100,
+    size: "S",
+    storyPoints: 2,
+    agentRole: "architect",
+    model: "claude-opus-5",
+    blockedReason: questionReason("The Architect Agent", [
+      { question: "Should exports be CSV or JSON?", why: "It decides which serializer the ticket builds." },
+    ]),
+  }),
+  card({
+    id: "prot-10",
+    createdAt: daysAgo(2),
+    updatedAt: daysAgo(0.5),
+    key: "PROT-10",
+    title: "Cache the colony stats",
+    status: "blocked",
+    stalledIn: "todo",
+    stage: 3,
+    position: 5200,
+    size: "S",
+    storyPoints: 2,
+    blockedReason: "Needs files outside its scope: src/lib/cache/**\nThe change reaches a module no ticket owns.",
+  }),
+  card({
+    id: "prot-11",
+    createdAt: daysAgo(2),
+    updatedAt: daysAgo(0.5),
+    key: "PROT-11",
+    title: "Retry failed webhooks",
+    status: "failed",
+    stalledIn: "todo",
+    stage: 3,
+    position: 5300,
+    size: "S",
+    storyPoints: 2,
+    blockedReason: "The checks failed\nvitest: 2 tests failed in src/lib/webhooks",
   }),
 
   /* ---- In Progress ----------------------------------------------------- */
