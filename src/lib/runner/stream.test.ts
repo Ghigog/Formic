@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { checklistPlan, readStream, readStreamLine, toolLabel } from "./stream";
+import { checklistPlan, claudeUsage, readStream, readStreamLine, toolLabel } from "./stream";
 
 const line = (event: unknown) => JSON.stringify(event);
 
@@ -221,5 +221,19 @@ describe("the loop entry's shared notes", () => {
     expect(readStreamLine(rated)).toEqual([{ kind: "rate", noteSeq: 12, verdict: "helped" }]);
     const bad = JSON.stringify({ type: "repo.note.rated", ticketId: "t", noteSeq: 0, verdict: "meh" });
     expect(readStreamLine(bad)).toEqual([]);
+  });
+});
+
+describe("claudeUsage", () => {
+  it("adds cache reads and writes to the input from Claude Code's result line", () => {
+    const lines = [
+      JSON.stringify({ type: "assistant", message: { content: [] } }),
+      JSON.stringify({ type: "result", usage: { input_tokens: 10, cache_creation_input_tokens: 200, cache_read_input_tokens: 3000, output_tokens: 40 } }),
+    ];
+    expect(claudeUsage(lines)).toEqual({ tokensIn: 3210, tokensOut: 40 });
+  });
+
+  it("is null when no result line says", () => {
+    expect(claudeUsage(["plain text", JSON.stringify({ type: "assistant" })])).toBeNull();
   });
 });

@@ -486,6 +486,8 @@ export async function assistantAgentFor(projectId: string): Promise<AssistantAge
 
   const info = providerInfo(found.preset.provider);
   if (!info) return { kind: "none" };
+  // The PM's chat turns count toward its agent's token allowance like any run.
+  found.preset = await gateAllowance(found.preset);
   const limited = limitReason(found.preset, "the assistant");
   if (limited) return { kind: "limited", reason: limited };
   const apiKey =

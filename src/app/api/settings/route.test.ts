@@ -103,9 +103,9 @@ describe("/api/settings autoMerge", () => {
 
   it("is off for a new project and saved on update for the owner", async () => {
     const p = await project(userId);
-    expect(await (await GET(get(`?projectId=${p.id}`))).json()).toEqual({ autoMerge: false, autoEscalate: false, shareKeys: false, scoutPresetId: null, pmWakeLimits: { fixCap: 2, perHour: 6, perDay: 20 } });
+    expect(await (await GET(get(`?projectId=${p.id}`))).json()).toEqual({ autoMerge: false, autoEscalate: false, shareKeys: false, scoutPresetId: null, pmWakeLimits: { fixCap: 2, perHour: 3, perDay: 10 } });
     expect((await PUT(put({ projectId: p.id, autoMerge: true }))).status).toBe(200);
-    expect(await (await GET(get(`?projectId=${p.id}`))).json()).toEqual({ autoMerge: true, autoEscalate: false, shareKeys: false, scoutPresetId: null, pmWakeLimits: { fixCap: 2, perHour: 6, perDay: 20 } });
+    expect(await (await GET(get(`?projectId=${p.id}`))).json()).toEqual({ autoMerge: true, autoEscalate: false, shareKeys: false, scoutPresetId: null, pmWakeLimits: { fixCap: 2, perHour: 3, perDay: 10 } });
   });
 
   it("refuses someone who does not own the project and leaves the flag", async () => {
@@ -144,9 +144,9 @@ describe("/api/settings pmWakeLimits", () => {
     const p = await repository().ensureProject({ ownerId: userId, repoFullName: "a/wake", baseBranch: "main" });
     const res = await PUT(put({ projectId: p.id, pmWakeLimits: { perDay: 50 } }));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ pmWakeLimits: { fixCap: 2, perHour: 6, perDay: 50 } });
+    expect(await res.json()).toEqual({ pmWakeLimits: { fixCap: 2, perHour: 3, perDay: 50 } });
     await PUT(put({ projectId: p.id, pmWakeLimits: { fixCap: 0, perDay: null } }));
-    expect((await (await GET(get(`?projectId=${p.id}`))).json()).pmWakeLimits).toEqual({ fixCap: 0, perHour: 6, perDay: 20 });
+    expect((await (await GET(get(`?projectId=${p.id}`))).json()).pmWakeLimits).toEqual({ fixCap: 0, perHour: 3, perDay: 10 });
   });
 
   it("refuses a limit out of range, and someone who does not own the board", async () => {

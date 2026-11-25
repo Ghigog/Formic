@@ -2192,13 +2192,19 @@ export class PrismaRepository implements Repository {
     // Two grouped sums, because the two halves live in different tables: the
     // runs each agent drove, and the chat answers it gave, which are not runs
     // at all.
-    const [runs, answers] = await Promise.all([
+    const [runs, answers, pm] = await Promise.all([
       db.agentRun.groupBy({
         by: ["presetId"],
         where: { presetId: { not: null }, ...started },
         _sum: { tokensIn: true, tokensOut: true },
       }),
       db.cardChatMessage.groupBy({
+        by: ["agentPresetId"],
+        where: { agentPresetId: { not: null }, ...started },
+        _sum: { tokensIn: true, tokensOut: true },
+      }),
+      // The PM's chat turns, counted on their replies.
+      db.assistantMessage.groupBy({
         by: ["agentPresetId"],
         where: { agentPresetId: { not: null }, ...started },
         _sum: { tokensIn: true, tokensOut: true },
@@ -2214,6 +2220,7 @@ export class PrismaRepository implements Repository {
     };
     for (const row of runs) add(row.presetId, row._sum?.tokensIn ?? 0, row._sum?.tokensOut ?? 0);
     for (const row of answers) add(row.agentPresetId, row._sum?.tokensIn ?? 0, row._sum?.tokensOut ?? 0);
+    for (const row of pm) add(row.agentPresetId, row._sum?.tokensIn ?? 0, row._sum?.tokensOut ?? 0);
     return used;
   }
 
@@ -2576,6 +2583,17 @@ export class PrismaRepository implements Repository {
     await prisma().assistantMessage.update({
       where: { id },
       data: { ...rest, ...(proposals !== undefined ? { proposals: proposals as never } : {}) },
+    });
+  }
+
+  async addAssistantTokens(id: string, usage: { presetId: string; tokensIn: number; tokensOut: number }): Promise<void> {
+    await prisma().assistantMessage.updateMany({
+      where: { id },
+      data: {
+        agentPresetId: usage.presetId,
+        tokensIn: { increment: Math.round(usage.tokensIn) },
+        tokensOut: { increment: Math.round(usage.tokensOut) },
+      },
     });
   }
 

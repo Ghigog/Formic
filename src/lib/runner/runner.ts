@@ -1510,6 +1510,8 @@ export async function dispatchPmTurn(input: {
   job: string;
   prompt: string;
   session: string;
+  /** The turn's time limit; the job's timeout follows it. */
+  minutes: number;
 }): Promise<{ ok: true } | { ok: false; reason: string }> {
   const project = await projectFor(input.projectId);
   const creds = await credentialsForProject(project);
@@ -1523,6 +1525,7 @@ export async function dispatchPmTurn(input: {
     from: project.baseBranch,
     prompt: input.prompt,
     session: input.session,
+    budgetMinutes: input.minutes,
     record: (job) =>
       repository().updateAssistantMessage(input.messageId, { runnerJob: job, runnerAgent: input.agent.presetId }),
   });
@@ -2285,8 +2288,9 @@ export async function receiveReport(input: {
     if (message && message.runnerJob === input.job && message.status === "pending") {
       // The PM session's reply streams into its own message as it is written.
       if ("speaker" in message && message.speaker === "assistant" && (await repo.pmSessionByJob(input.job))) {
-        const { streamSessionReply } = await import("@/lib/assistant/session");
+        const { recordSessionUsage, streamSessionReply } = await import("@/lib/assistant/session");
         await streamSessionReply(message.projectId, message.id, readStream(input.lines));
+        await recordSessionUsage(message.id, input.lines);
       }
       for (const item of readStream(input.lines).slice(-MAX_REPORT_ITEMS)) {
         if (item.kind !== "log") continue;

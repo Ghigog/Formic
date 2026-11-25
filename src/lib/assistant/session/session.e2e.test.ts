@@ -247,6 +247,26 @@ describe("the PM session, end to end", () => {
     expect((await repository().pmSession(board))?.fileCipher).toBeTruthy();
   });
 
+  it("does not start a turn that ran out of time again", async () => {
+    const first = await ask("Hello");
+    const turn = dispatched[0]!;
+    const { sessionId } = await (await get(turn.session)).json();
+    await post(turn.session, { sessionId, branch: "main", file: gzipSync("{}\n").toString("base64") });
+    reply = "Hi there.";
+    await completeCliRun(board, { job: turn.job, mode: "ask", conclusion: "success", url: null });
+    expect((await repository().assistantMessage(first))?.status).toBe("done");
+    await Promise.all(running);
+
+    const second = await ask("Do a big job");
+    const slow = dispatched[1]!;
+    await get(slow.session);
+    const { finishSessionAnswer } = await import("@/lib/assistant/turn");
+    await finishSessionAnswer(board, second, slow.job, { reply: null, failure: "The run timed out after 20 minutes", changeSha: null });
+
+    expect(dispatched).toHaveLength(2);
+    expect((await repository().assistantMessage(second))?.status).toBe("failed");
+  });
+
   it("leaves a repository whose workflow predates sessions on the old way of answering", async () => {
     takesSession.value = false;
     const replyId = await ask("Hello");

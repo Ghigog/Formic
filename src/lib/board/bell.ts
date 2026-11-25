@@ -6,11 +6,27 @@ import { limitStoppedCards, ringBell } from "@/lib/colony/bell";
 /**
  * The golden bell: armed, it rings the silver bell's ring for the person, one
  * minute after the agent's limit resets, so a person away from the board
- * comes back to work done. One bell is spent per ring.
+ * comes back to work done. It restarts BELL_BATCH cards every BELL_GAP_MS,
+ * and one bell is spent when the last of them is out.
  */
 
 /** The wait after a reset, so the provider's window has surely reopened. */
 export const BELL_DELAY_MS = 60_000;
+
+/**
+ * The golden bell restarts a few cards at a time, this far apart: every
+ * stopped card starting the minute a limit resets spent the fresh window at
+ * once, on every board sharing the account.
+ */
+export const BELL_BATCH = 2;
+export const BELL_GAP_MS = 10 * 60_000;
+
+declare global {
+  var __formicBellRungAt: Map<string, number> | undefined;
+}
+function rungAt(): Map<string, number> {
+  return (globalThis.__formicBellRungAt ??= new Map());
+}
 
 /** How often the server looks for a golden bell that is due. */
 const TICK_MS = 60_000;
@@ -37,9 +53,16 @@ export async function ringBellIfDue(projectId: string, now = Date.now()): Promis
   if (!(await repo.goldenBell(projectId)).armed) return false;
   if (!(await ringTimes(projectId)).some((t) => t <= now)) return false;
   if ((await limitStoppedCards(projectId)).length === 0) return false;
-  if (!(await repo.useGoldenBell(projectId))) return false;
-  const { sent, skipped } = await ringBell(projectId);
-  console.info(`[formic] golden bell rang on ${projectId}: ${sent} resumed, ${skipped} still limited`);
+  const last = rungAt().get(projectId);
+  if (last !== undefined && now - last < BELL_GAP_MS) return false;
+  const { sent, skipped, left } = await ringBell(projectId, BELL_BATCH);
+  rungAt().set(projectId, now);
+  // The bell is spent once its last batch is out.
+  if (left === 0) {
+    await repo.useGoldenBell(projectId);
+    rungAt().delete(projectId);
+  }
+  console.info(`[formic] golden bell rang on ${projectId}: ${sent} resumed, ${skipped} still limited, ${left} for later`);
   return true;
 }
 

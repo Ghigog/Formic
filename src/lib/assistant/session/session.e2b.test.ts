@@ -112,7 +112,9 @@ class FakeSandbox implements PmSandbox {
         this.head = "pm-sha";
         this.branch = "formic/t-1";
       }
-      options.onStdout?.(`${JSON.stringify({ type: "result", result: script.words, is_error: !!script.isError, session_id: id })}\n`);
+      options.onStdout?.(
+        `${JSON.stringify({ type: "result", result: script.words, is_error: !!script.isError, session_id: id, usage: { input_tokens: 100, cache_read_input_tokens: 1000, output_tokens: 20 } })}\n`,
+      );
       release({ exitCode: script.isError ? 1 : 0, stdout: "", stderr: "" });
     };
     if (!script.hangs) queueMicrotask(finish);
@@ -237,6 +239,26 @@ describe("the PM in its E2B sandbox", () => {
     expect(session).toMatchObject({ where: "e2b", sandboxId: "sbx-1", turnJob: null });
     expect(session.fileCipher).toBeTruthy();
     expect(box!.paused).toBe(1);
+  });
+
+  it("bounds a person's turn by steps and time, and counts what it used against the PM's agent", async () => {
+    world.next = [{ words: "Hi." }];
+    await settled(await ask("Hello"));
+    const run = claudeRuns(world.made[0]!)[0]!;
+    expect(run).toContain("--max-turns 80");
+    expect(run).not.toContain("--model");
+    expect((await repository().agentTokensByPreset())["preset-1"]).toEqual({ tokensIn: 1100, tokensOut: 20 });
+  });
+
+  it("runs a wake-up on Sonnet with a shorter step limit", async () => {
+    world.next = [{ words: "Answered E1-T1's question." }];
+    const repo = repository();
+    const pending = await repo.addAssistantMessage({ projectId: board, role: "assistant", content: "", status: "pending", speaker: "assistant" });
+    await answer(board, pending.id, "[From Formic, not the person] E1-T1 asked a question.");
+    await settled(pending.id);
+    const run = claudeRuns(world.made[0]!)[0]!;
+    expect(run).toContain("--model 'sonnet'");
+    expect(run).toContain("--max-turns 30");
   });
 
   it("resumes the paused sandbox for the next message, with the saved file and only what is new", async () => {

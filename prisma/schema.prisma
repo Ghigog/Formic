@@ -787,10 +787,16 @@ model AssistantMessage {
   kind        String   @default("pm")
   /// The playtest a note was written in, and its replies. See docs/plans/playtest.md.
   playtestId  String?
+  /// The agent whose plan paid for a PM turn, and what the turn used
+  /// (input counts cache reads and writes), counted toward its allowance.
+  agentPresetId String?
+  tokensIn    Int      @default(0)
+  tokensOut   Int      @default(0)
   createdAt   DateTime @default(now())
 
   @@index([projectId, createdAt])
   @@index([playtestId])
+  @@index([agentPresetId, createdAt])
   @@map("assistant_message")
 }
 

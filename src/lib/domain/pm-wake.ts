@@ -1,5 +1,10 @@
 /** The PM's wake-up limits (docs/limits.md); enforced in src/lib/pm/wake-gate.ts. */
-export const PM_WAKE_DEFAULTS = { fixCap: 2, perHour: 6, perDay: 20 } as const;
+export const PM_WAKE_DEFAULTS = { fixCap: 2, perHour: 3, perDay: 10 } as const;
+/**
+ * Wake-ups across every board one person owns: their boards share one Claude
+ * account, so per-board limits alone multiply with the number of boards.
+ */
+export const PM_ACCOUNT_WAKES = { perHour: 6, perDay: 20 } as const;
 /** What a person may set each limit to. */
 export const PM_WAKE_RANGE = { fixCap: [0, 10], perHour: [0, 60], perDay: [0, 500] } as const;
 

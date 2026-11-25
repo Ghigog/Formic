@@ -363,3 +363,31 @@ export function checklistPlan(text: string): PlanStep[] | null {
   });
   return steps.length ? steps : null;
 }
+
+/**
+ * What Claude Code says a session used, from its closing `result` line:
+ * input counts cache reads and writes too, since a resumed session re-reads
+ * its whole history and that is what spends a plan. Null when no line says.
+ */
+export function claudeUsage(lines: string[]): { tokensIn: number; tokensOut: number } | null {
+  let seen = false;
+  let tokensIn = 0;
+  let tokensOut = 0;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    let event: unknown;
+    try {
+      event = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (!isObject(event) || event.type !== "result" || !isObject(event.usage)) continue;
+    const u = event.usage;
+    const n = (k: string) => (typeof u[k] === "number" ? (u[k] as number) : 0);
+    seen = true;
+    tokensIn += n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens");
+    tokensOut += n("output_tokens");
+  }
+  return seen ? { tokensIn, tokensOut } : null;
+}

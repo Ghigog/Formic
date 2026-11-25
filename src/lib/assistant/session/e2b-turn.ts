@@ -54,12 +54,17 @@ export interface E2bTurnInput {
   e2bKey: string;
   claudeToken: string;
   model: string | null;
+  /** The turn's limits: Claude Code's steps, and how long it may run. */
+  maxTurns: number;
+  timeoutMs: number;
   mcp: { url: string; token: string };
   repoFullName: string;
   repoToken: string;
   baseBranch: string;
   /** The session's words as Claude Code prints them. */
   onItems: (items: StreamItem[]) => Promise<void>;
+  /** The raw lines, for what the turn used. */
+  onLines?: (lines: string[]) => Promise<void>;
 }
 
 export interface E2bTurnResult {
@@ -220,6 +225,7 @@ export async function runE2bTurn(input: E2bTurnInput): Promise<E2bTurnResult> {
       input.file ? `--resume ${shellQuote(input.sessionId)}` : `--session-id ${shellQuote(input.sessionId)}`,
       `--mcp-config ${MCP_PATH}`,
       input.model ? `--model ${shellQuote(input.model)}` : "",
+      `--max-turns ${input.maxTurns}`,
     ].filter(Boolean);
 
     let stream = "";
@@ -231,10 +237,11 @@ export async function runE2bTurn(input: E2bTurnInput): Promise<E2bTurnResult> {
       partial = lines.pop() ?? "";
       const items = lines.flatMap(readStreamLine).filter((i) => i.kind !== "log");
       if (items.length) pending = pending.then(() => input.onItems(items)).catch(() => undefined);
+      if (input.onLines && lines.length) pending = pending.then(() => input.onLines!(lines)).catch(() => undefined);
     };
     const command = await sandbox.start(`cd ${PM_REPO_DIR} && claude ${args.join(" ")}`, {
       envs: { CLAUDE_CODE_OAUTH_TOKEN: input.claudeToken },
-      timeoutMs: PM_TURN_MS,
+      timeoutMs: Math.min(input.timeoutMs, PM_TURN_MS),
       onStdout,
     });
     running().set(input.job, command);

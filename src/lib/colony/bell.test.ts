@@ -68,12 +68,17 @@ beforeEach(() => {
 
 describe("ringBell", () => {
   it("starts the work again on every card stopped by a usage limit", async () => {
-    expect(await ringBell(project)).toEqual({ sent: 3, skipped: 0 });
+    expect(await ringBell(project)).toEqual({ sent: 3, skipped: 0, left: 0 });
     expect(applyCardAction.mock.calls.map((c) => [c[2], c[3]]).sort()).toEqual([
       ["a", { type: "redo", instruction: MESSAGE }],
       ["b", { type: "redo", instruction: MESSAGE }],
       ["gate", { type: "redo", instruction: MESSAGE }],
     ]);
+  });
+
+  it("starts at most `max` cards and says how many are left", async () => {
+    expect(await ringBell(project, 2)).toEqual({ sent: 2, skipped: 0, left: 1 });
+    expect(applyCardAction).toHaveBeenCalledTimes(2);
   });
 
   it("leaves the resume message on each card it starts", async () => {
@@ -87,7 +92,7 @@ describe("ringBell", () => {
 
   it("skips a card whose agent is still limited and starts the rest", async () => {
     columnChatAgentFor.mockResolvedValueOnce({ kind: "limited", reason: "out" });
-    expect(await ringBell(project)).toEqual({ sent: 2, skipped: 1 });
+    expect(await ringBell(project)).toEqual({ sent: 2, skipped: 1, left: 0 });
     expect(applyCardAction).toHaveBeenCalledTimes(2);
   });
 
