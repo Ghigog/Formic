@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { questionReason } from "./question";
 import { classifyNotice, waitedOn, waitingOnReason, NO_CHANGES, REVIEW_CEILING, STUCK_RUN } from "./notice";
 
 describe("classifyNotice", () => {
@@ -132,5 +133,21 @@ describe("a blocked card that waits on a fix", () => {
 
   it("leaves other blocked reasons unchanged", () => {
     expect(classifyNotice({ status: "blocked", stalledIn: "todo", blockedReason: "Pick one" })?.title).toBe("Waiting for you");
+  });
+});
+
+describe("classifyNotice for a question", () => {
+  it("titles it with the first question and describes it with the waiting line and the questions", () => {
+    const blockedReason = questionReason("The Product Agent", [
+      { question: "Which format?", why: "It sets the export." },
+      { question: "Who reads it?", why: "" },
+    ]);
+    const n = classifyNotice({ status: "blocked", stalledIn: "backlog", blockedReason });
+    expect(n?.severity).toBe("question");
+    expect(n?.title).toBe("Which format?");
+    expect(n?.shortDescription).toBe("");
+    expect(n?.longDescription).toContain("The Product Agent is waiting for your answer");
+    expect(n?.longDescription).toContain("1. Which format?\n   Why: It sets the export.");
+    expect(n?.longDescription).toContain("2. Who reads it?");
   });
 });
