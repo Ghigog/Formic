@@ -52,6 +52,22 @@ describe("EpicTimeline", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows a ticket with a question as a still plum \"Question\" bar", () => {
+    render(
+      <EpicTimeline
+        tickets={[
+          t("t1", "blocked", { blockedReason: "Question: Which database?" }),
+          t("t2", "blocked", { blockedReason: "Needs a token" }),
+        ]}
+      />,
+    );
+    const bar = screen.getByRole("button", { name: "T1 Title t1: Question" }).firstElementChild;
+    expect(bar).toHaveAttribute("data-tone", "plum");
+    expect(bar).toHaveClass("bg-plum");
+    expect(bar).not.toHaveClass("pulse-dot");
+    expect(screen.getByRole("button", { name: "T2 Title t2: Blocked" }).firstElementChild).toHaveClass("bg-crimson");
+  });
+
   it("opens the ticket when its segment is tapped", () => {
     const onOpen = vi.fn();
     render(<EpicTimeline tickets={[t("t1", "merged")]} onOpenTicket={onOpen} />);

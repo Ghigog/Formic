@@ -172,7 +172,7 @@ export function DagPane({
             </h4>
 
             <div className="mt-1 flex flex-wrap items-center gap-2">
-              <StatusPill status={card.status} />
+              <StatusPill status={card.status} blockedReason={card.blockedReason} />
               {card.dependsOn.length > 0 && (
                 <span className="text-ochre-text text-[11px]">
                   blocked by{" "}
