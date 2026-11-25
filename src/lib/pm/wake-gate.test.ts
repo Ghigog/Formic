@@ -98,3 +98,36 @@ describe("admitWake", () => {
     expect(wakes).toHaveLength(1);
   });
 });
+
+describe("the question cap", () => {
+  it("wakes the PM for a ticket's questions four times per head, then leaves the next to the person, said once", async () => {
+    await repository().setPmWakeLimits(PROJECT, { perHour: 60, perDay: 500 });
+    for (const minute of [0, 2, 4, 6]) expect(await admit({ kind: "question", now: at(10, minute) })).toEqual({ ok: true });
+    const held = await admit({ kind: "question", now: at(10, 10) });
+    expect(held).toMatchObject({ ok: false, held: "question-cap" });
+    expect((held as { say: string }).say).toContain("E1-T1");
+    expect(await admit({ kind: "question", now: at(10, 15) })).toEqual({ ok: false, held: "question-cap", say: null });
+    // A new head (the agent pushed work) starts the count again.
+    expect(await admit({ kind: "question", head: "h2", now: at(10, 20) })).toEqual({ ok: true });
+  });
+});
+
+describe("account-wide wake-ups", () => {
+  it("holds a wake-up once the owner's boards together reach the account's hourly limit", async () => {
+    const repo = repository();
+    const me = await repo.upsertUser({ githubId: 4242, login: "acct", name: null, avatarUrl: null });
+    const boards = await Promise.all(
+      [1, 2, 3, 4].map(async (n) => (await repo.ensureProject({ ownerId: me.id, repoFullName: `me/app${n}`, name: `App ${n}`, baseBranch: "main" })).id),
+    );
+    // Four wake-ups on each of three boards: each board is within its own limit of 6 an hour.
+    let minute = 0;
+    for (const board of boards.slice(0, 3)) {
+      for (const card of ["a", "b", "c", "d"]) {
+        expect(await admitWake({ projectId: board, cardId: card, cardKey: "K", head: "h", kind: "question", now: at(10, minute++) })).toEqual({ ok: true });
+      }
+    }
+    const held = await admitWake({ projectId: boards[3]!, cardId: "a", cardKey: "K", head: "h", kind: "question", now: at(10, 30) });
+    expect(held).toMatchObject({ ok: false, held: "account" });
+    expect((held as { say: string }).say).toContain("across all your boards");
+  });
+});

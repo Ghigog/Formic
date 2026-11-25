@@ -3,7 +3,8 @@ import "server-only";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
 import { createPmToken, revokePmTokens } from "@/lib/access-tokens";
-import type { CliAgent } from "@/lib/agents/presets";
+import { assistantAgentFor, type CliAgent } from "@/lib/agents/presets";
+import { diagnose, formatReset } from "@/lib/agents/limits";
 import { signingSecret } from "@/lib/auth/session";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { projectFor } from "@/lib/board/project";
@@ -13,7 +14,7 @@ import { publish } from "@/lib/events/bus";
 import { postPmMessage } from "@/lib/assistant/pm-messages";
 import { guestLabel, isGuestId } from "@/lib/assistant/guest-ids";
 import { attachmentsPrompt, cancelJob, dispatchPmTurn, formicOrigin, runnerTakesSession } from "@/lib/runner/runner";
-import type { StreamItem } from "@/lib/runner/stream";
+import { claudeContext, claudeUsage, type StreamItem } from "@/lib/runner/stream";
 import { ASSISTANT_CHANGE_SUFFIX, jobId } from "@/lib/runner/workflow";
 import { STAGING_PREFIX } from "@/lib/vcs/types";
 import { open, seal } from "@/lib/secrets/vault";
@@ -86,6 +87,22 @@ interface Handoff {
 }
 
 /**
+ * What one PM turn may spend, on the agent's own model. A wake-up (a turn
+ * nobody typed) is short; a person's message gets more room. Without these
+ * a turn ran up to the job's hour, with no step limit.
+ */
+export const PM_TURN_LIMITS = {
+  wake: { minutes: 10, maxTurns: 30 },
+  person: { minutes: 20, maxTurns: 80 },
+} as const;
+
+/** The limits for a turn: a wake-up's, or a person's. */
+export function turnLimits(wake: boolean, agentModel: string | null): { minutes: number; maxTurns: number; model: string | null } {
+  const limits = wake ? PM_TURN_LIMITS.wake : PM_TURN_LIMITS.person;
+  return { minutes: limits.minutes, maxTurns: limits.maxTurns, model: agentModel };
+}
+
+/**
  * Starts the PM session's turn for the pending reply `messageId`. False
  * when the board cannot run one (its runner predates sessions, or nothing
  * can reach Formic): the PM then answers the old way. True when the turn
@@ -139,7 +156,8 @@ export async function startSessionTurn(input: {
   });
 
   const job = jobId(messageId, randomUUID().slice(0, 8), input.attempt ?? 1);
-  const token = await createPmToken(project.ownerId, { projectId, sessionId });
+  const limits = turnLimits(!!input.wake, agent.model);
+  const token = await createPmToken(project.ownerId, { projectId, sessionId, wake: !!input.wake });
   const handoff: Handoff = { token: token.secret, url: `${origin}/api/mcp` };
 
   // Fast: the session's own sandbox, kept warm between turns.
@@ -153,7 +171,7 @@ export async function startSessionTurn(input: {
       handoff: null,
       resumed,
       branch: null,
-      ...(resumed ? {} : { fileCipher: null, bytes: 0 }),
+      ...(resumed ? {} : { fileCipher: null, bytes: 0, contextTokens: 0 }),
     });
     await repo.updateAssistantMessage(messageId, { runnerJob: job, runnerAgent: agent.presetId });
     const toCi = async (why: string) => {
@@ -166,7 +184,7 @@ export async function startSessionTurn(input: {
         await input.fail(`The PM's sandbox could not start: ${why}`);
         return;
       }
-      await dispatchToCi({ projectId, messageId, agent, job, prompt, sessionId, resumed, handoff, ciWhere: ciWhere(project.repoFullName), fail: input.fail });
+      await dispatchToCi({ projectId, messageId, agent, job, prompt, sessionId, resumed, handoff, limits, ciWhere: ciWhere(project.repoFullName), fail: input.fail });
     };
     void runInSandbox({
       projectId,
@@ -178,7 +196,9 @@ export async function startSessionTurn(input: {
       sandboxId: existing?.sandboxId ?? null,
       e2bKey: sandbox.e2bKey,
       claudeToken: sandbox.claudeToken,
-      model: agent.model,
+      model: limits.model,
+      maxTurns: limits.maxTurns,
+      timeoutMs: limits.minutes * 60_000,
       mcp: handoff,
       repoFullName: project.repoFullName,
       repoToken: creds.repoToken,
@@ -188,7 +208,7 @@ export async function startSessionTurn(input: {
     return true;
   }
 
-  await dispatchToCi({ projectId, messageId, agent, job, prompt, sessionId, resumed, handoff, ciWhere: ciWhere(project.repoFullName), fail: input.fail });
+  await dispatchToCi({ projectId, messageId, agent, job, prompt, sessionId, resumed, handoff, limits, ciWhere: ciWhere(project.repoFullName), fail: input.fail });
   return true;
 }
 
@@ -216,6 +236,7 @@ async function dispatchToCi(input: {
   sessionId: string;
   resumed: boolean;
   handoff: Handoff;
+  limits: { minutes: number; model: string | null };
   ciWhere: PmSessionWhere;
   fail: (content: string) => Promise<void>;
 }): Promise<void> {
@@ -237,7 +258,17 @@ async function dispatchToCi(input: {
     ...(resumed ? {} : { fileCipher: null, bytes: 0 }),
   });
 
-  const started = await dispatchPmTurn({ projectId, messageId, agent, job, prompt: input.prompt, session: url });
+  // CI bounds the turn by its job's timeout; its steps are bounded in the sandbox only,
+  // since a step limit there would need a change to every repository's workflow.
+  const started = await dispatchPmTurn({
+    projectId,
+    messageId,
+    agent: { ...agent, model: input.limits.model },
+    job,
+    prompt: input.prompt,
+    session: url,
+    minutes: input.limits.minutes,
+  });
   if (!started.ok) {
     await revokePmTokens(projectId, sessionId);
     await repo.updatePmSession(projectId, { turnJob: null, handoff: null });
@@ -252,7 +283,11 @@ async function runInSandbox(input: Omit<Parameters<typeof runE2bTurn>[0], "onIte
   liveE2bTurns().add(job);
   let result;
   try {
-    result = await runE2bTurn({ ...input, onItems: (items) => streamSessionReply(projectId, messageId, items) });
+    result = await runE2bTurn({
+      ...input,
+      onItems: (items) => streamSessionReply(projectId, messageId, items),
+      onLines: (lines) => recordSessionUsage(messageId, lines),
+    });
   } catch (e) {
     if (e instanceof SandboxUnavailable) {
       await input.toCi(e.message);
@@ -361,6 +396,28 @@ export async function stopSessionTurn(projectId: string, job: string): Promise<v
   await cancelJob(projectId, job);
 }
 
+/**
+ * What a turn used, from Claude Code's closing line in `lines`, added to its
+ * reply and counted against the agent that ran it.
+ */
+export async function recordSessionUsage(messageId: string, lines: string[]): Promise<void> {
+  const usage = claudeUsage(lines);
+  const context = claudeContext(lines);
+  if (!usage && context === null) return;
+  const repo = repository();
+  const message = await repo.assistantMessage(messageId);
+  if (!message) return;
+  if (usage && message.runnerAgent) await repo.addAssistantTokens(messageId, { presetId: message.runnerAgent, ...usage });
+  if (context !== null) await repo.updatePmSession(message.projectId, { contextTokens: context });
+}
+
+/**
+ * Past this much context a resumed session starts fresh from the summary:
+ * turns are minutes apart, so the prompt cache has gone and every turn pays
+ * to re-read the whole history.
+ */
+export const PM_CONTEXT_FRESH_AT = 150_000;
+
 /** The most of a streamed reply kept while it is written; the latest part wins. */
 const MAX_STREAMED = 12_000;
 
@@ -413,8 +470,18 @@ export async function finishSessionTurn(input: {
   await repo.updatePmSession(projectId, { turnJob: null, handoff: null, lastTurnAt: new Date() });
 
   const reply = outcome.reply?.trim() ?? "";
+  const limit = outcome.failure ? diagnose(outcome.failure, "The PM") : null;
+  if (limit?.kind === "limit") {
+    // Out of usage is not a broken session: keep it, retry nothing, and keep
+    // the PM asleep until the window resets so wake-ups stop spending.
+    const at = await markPmLimited(projectId, limit.until);
+    await input.finish({ content: `The PM is out of Claude usage until ${formatReset(at)}, so it is resting until then. Nothing was retried.`, status: "failed" });
+    return;
+  }
   if (outcome.failure || !reply) {
-    if (session.resumed) {
+    // A turn that ran out of time or steps did its spending: starting it again fresh would double it.
+    const spent = !!outcome.failure && /timed out|timeout|max[ _-]?turns/i.test(outcome.failure);
+    if (session.resumed && !spent) {
       // The saved session would not come back: carry on from the summary.
       await repo.updatePmSession(projectId, { fileCipher: null, bytes: 0 });
       await repo.updateAssistantMessage(messageId, { content: "" });
@@ -442,6 +509,25 @@ export async function finishSessionTurn(input: {
   }
   await input.finish({ content: reply, status: "done" });
   await keepSummary(projectId);
+  // A session this long costs a whole history per message: the next one starts fresh from the summary.
+  const after = await repo.pmSession(projectId);
+  if (after && after.contextTokens > PM_CONTEXT_FRESH_AT && after.fileCipher) {
+    await repo.updatePmSession(projectId, { fileCipher: null, bytes: 0, contextTokens: 0 });
+    await postPmMessage(projectId, {
+      content: "The PM's session got long, so its next message starts a fresh one from a summary of this chat. Each message costs much less that way.",
+    });
+  }
+}
+
+/** The PM's agent is out of usage until `until` (an hour when the CLI did not say). */
+async function markPmLimited(projectId: string, until: Date | null): Promise<Date> {
+  const at = until ?? new Date(Date.now() + 60 * 60 * 1000);
+  const agent = await assistantAgentFor(projectId);
+  if (agent.kind !== "cli" || !agent.agent.presetId) return at;
+  const note = `The PM hit its usage limit. It can work again at ${formatReset(at)}.`;
+  await repository().setPresetLimit(agent.agent.presetId, { until: at, note });
+  await publish(projectId, { type: "agent.limited", presetId: agent.agent.presetId, until: at.toISOString(), note });
+  return at;
 }
 
 /** The running summary, after a turn. */

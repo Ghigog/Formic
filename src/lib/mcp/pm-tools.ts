@@ -7,7 +7,7 @@ import { credentialsForProject } from "@/lib/auth/credentials";
 import { canSeeBoard } from "@/lib/board/sharing";
 import { repository } from "@/lib/db";
 import type { ProjectSummary, UserRecord } from "@/lib/db/repository";
-import { COLUMN_LABELS } from "@/lib/domain/status";
+import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { vcs } from "@/lib/vcs";
 import {
   addDependency,
@@ -66,10 +66,15 @@ export async function onPmBoard<T>(
   });
 }
 
+/** A card, from its id or its key in any case. */
+async function cardOf(projectId: string, ref: string): Promise<{ id: string; key: string } | null> {
+  const wanted = ref.trim().toLowerCase();
+  return (await repository().boardCards(projectId)).find((c) => c.id === ref || c.key.toLowerCase() === wanted) ?? null;
+}
+
 /** A card's key, from its id or its key in any case. */
 async function keyOf(projectId: string, ref: string): Promise<string> {
-  const wanted = ref.trim().toLowerCase();
-  const card = (await repository().boardCards(projectId)).find((c) => c.id === ref || c.key.toLowerCase() === wanted);
+  const card = await cardOf(projectId, ref);
   if (!card) throw new Error(`${ref} is not on the board.`);
   return card.key;
 }
@@ -86,6 +91,45 @@ export async function propose(projectId: string, summary: string, action: Assist
 }
 
 const done = (text: string): ToolResult<{ done: string }> => ({ ok: true, value: { done: text } });
+
+/* What a wake-up may start. */
+
+/** What a wake-up hears once it has already started agent work. */
+export const ONE_START = "This turn was a wake-up and it has already started new agent work once, which spends the person's Claude usage. Do not start more: tell the person in one line what you would do next and let them decide. Answering questions agents are waiting on is still fine.";
+
+/**
+ * Whether this turn may start new agent work (move a card into a working
+ * column, add an Epic ready to run). A turn the person started may, always.
+ * A wake-up may once: every start spends the person's Claude usage, and new
+ * work is the PM acting unasked. Answering a waiting agent's question is not
+ * new work and is never limited here. The start
+ * is counted when it is allowed.
+ */
+export async function mayStartWork(caller: PmCaller, projectId: string, cardId: string): Promise<boolean> {
+  const { scope } = caller;
+  if (!scope.wake || !scope.tokenId) return true;
+  const repo = repository();
+  const since = new Date(Date.now() - 24 * 3_600_000);
+  const started = (await repo.pmWakes(projectId, { since })).some((r) => r.kind === "started" && r.head === scope.tokenId);
+  if (started) return false;
+  await repo.addPmWake({ projectId, cardId, head: scope.tokenId, kind: "started", createdAt: new Date() });
+  return true;
+}
+
+/** A move that starts an agent: to a column past the Backlog, short of Done (which is a proposal already). */
+export const startsWork = (to: string) => to !== "backlog" && to !== "done";
+
+/** A wake-up's second start of a move becomes a proposal; null when the move may go ahead. */
+export async function gateMove(caller: PmCaller, input: { board: string; card: string; to: ColumnId }): Promise<ToolResult<Proposed> | null> {
+  if (!startsWork(input.to)) return null;
+  if (input.board !== caller.scope.projectId) return { ok: false, error: WRONG_BOARD };
+  const card = await cardOf(input.board, input.card);
+  if (!card) return { ok: false, error: `${input.card} is not on the board.` };
+  if (await mayStartWork(caller, input.board, card.id)) return null;
+  return withActor(caller.user.id, () =>
+    propose(input.board, `Move ${card.key} to ${COLUMN_LABELS[input.to]}?`, { type: "move_card", key: card.key, to: input.to }),
+  );
+}
 
 /* Reads and direct actions. */
 
@@ -115,9 +159,11 @@ export function openPullRequest(
 }
 
 export function answerQuestion(caller: PmCaller, input: { board: string; card: string; answer: string; own: boolean }) {
-  return onPmBoard(caller, input.board, async (project) =>
-    done(await answerCardQuestion(project.id, await keyOf(project.id, input.card), input.answer, input.own)),
-  );
+  return onPmBoard(caller, input.board, async (project) => {
+    // Never limited: answering what an agent waits on is what the PM is for, and holding
+    // an answer the person would plainly approve only makes them the bottleneck.
+    return done(await answerCardQuestion(project.id, await keyOf(project.id, input.card), input.answer, input.own));
+  });
 }
 
 export function addCardDependency(caller: PmCaller, input: { board: string; card: string; dependsOn: string }) {

@@ -75,7 +75,7 @@ describe("PM tokens", () => {
     expect(await verifyToken(secret)).toEqual({
       user: expect.objectContaining({ id: user.id }),
       readOnly: false,
-      scope: { projectId, sessionId: "s1" },
+      scope: { projectId, sessionId: "s1", tokenId: expect.any(String), wake: false },
     });
     // Hours, not a standing key.
     expect(expiresAt.getTime() - Date.now()).toBeLessThanOrEqual(4 * 3_600_000);

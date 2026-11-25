@@ -212,6 +212,28 @@ describe("follow-ups and \"is done\"", () => {
   });
 });
 
+describe("an approval of a commit whose CI is red", () => {
+  const verdict = { summary: "Approved", detail: "Looks right." };
+
+  it("reviews once more the first time, then stops for the person when the same commit is approved again", async () => {
+    const { ticketId, prNumber } = await seedApproved(true);
+    const headSha = MockVcsClient.setChecks(prNumber, "failure");
+    await repository().updateTicket(ticketId, { reviewedSha: null });
+
+    await approve(PROJECT, (await repository().ticketDetail(ticketId))!, prNumber, headSha, verdict);
+    expect((await repository().ticketDetail(ticketId))!.status).not.toBe("blocked");
+
+    // The second review approved the same commit, changing nothing.
+    await settleLaunched();
+    await repository().updateTicket(ticketId, { status: "review", blockedReason: null, reviewedSha: headSha });
+    await approve(PROJECT, (await repository().ticketDetail(ticketId))!, prNumber, headSha, verdict);
+    const ticket = (await repository().ticketDetail(ticketId))!;
+    expect(ticket.status).toBe("blocked");
+    expect(ticket.blockedReason).toContain("fails on the approved commit");
+    expect((await vcs.pullRequest(prNumber)).merged).toBe(false);
+  });
+});
+
 describe("a merge that fails", () => {
   it("rolls the ticket back with the reason, awarding nothing and releasing nothing", async () => {
     const { ticketId, dependentId, prNumber, headSha } = await seedApproved(true);

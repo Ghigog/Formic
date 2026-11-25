@@ -22,10 +22,18 @@ export async function limitStoppedCards(projectId: string): Promise<BoardCard[]>
  * later. The resume message goes on the card as a note, so the agent reads it
  * and the person can see the bell reached the card.
  */
-export async function ringBell(projectId: string): Promise<{ sent: number; skipped: number }> {
+export async function ringBell(
+  projectId: string,
+  /** At most this many restarted; the rest are left for a later ring. */
+  max = Infinity,
+): Promise<{ sent: number; skipped: number; left: number }> {
   let sent = 0;
   let skipped = 0;
-  for (const card of await limitStoppedCards(projectId)) {
+  const cards = await limitStoppedCards(projectId);
+  let seen = 0;
+  for (const card of cards) {
+    if (sent >= max) break;
+    seen++;
     const agent = await columnChatAgentFor(projectId, card.stalledIn!);
     if (agent.kind === "limited" || agent.kind === "none") {
       skipped++;
@@ -36,5 +44,5 @@ export async function ringBell(projectId: string): Promise<{ sent: number; skipp
     await applyCardAction(projectId, card.kind, card.id, { type: "redo", instruction: RESUME_MESSAGE });
     sent++;
   }
-  return { sent, skipped };
+  return { sent, skipped, left: cards.length - seen };
 }

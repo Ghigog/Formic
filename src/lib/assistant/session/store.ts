@@ -13,7 +13,7 @@ import { revokePmTokens } from "@/lib/access-tokens";
  */
 
 /** The most a session file may be, gzipped. A bigger one is dropped and the next turn starts fresh. */
-export const PM_SESSION_MAX_BYTES = 8 * 1024 * 1024;
+export const PM_SESSION_MAX_BYTES = 1024 * 1024;
 
 /** A session file as the job hands it over: gzipped JSONL, base64. */
 export type PackedFile = string;

@@ -2,9 +2,9 @@ import "server-only";
 
 import { repository } from "@/lib/db";
 import type { PmWakeKind } from "@/lib/db/repository";
-import { fixAttempts, wakeLimits, type PmWakeLimits } from "@/lib/domain/pm-wake";
+import { fixAttempts, PM_ACCOUNT_WAKES, PM_QUESTION_CAP, wakeLimits, type PmWakeLimits } from "@/lib/domain/pm-wake";
 
-export { PM_WAKE_DEFAULTS, PM_WAKE_RANGE, fixAttempts, wakeLimits, type PmWakeLimits } from "@/lib/domain/pm-wake";
+export { PM_ACCOUNT_WAKES, PM_QUESTION_CAP, PM_WAKE_DEFAULTS, PM_WAKE_RANGE, fixAttempts, wakeLimits, type PmWakeLimits } from "@/lib/domain/pm-wake";
 
 /**
  * What bounds the PM waking itself (docs/plans/pm-chat.md, safety rows 3
@@ -30,7 +30,7 @@ function startOfUtcDay(now: Date): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
 
-export type WakeHeld = "fix-cap" | "hourly" | "daily";
+export type WakeHeld = "fix-cap" | "question-cap" | "hourly" | "daily" | "account";
 
 export type WakeVerdict =
   | { ok: true }
@@ -41,10 +41,14 @@ function heldLine(held: WakeHeld, limits: PmWakeLimits, key: string): string {
   switch (held) {
     case "fix-cap":
       return `The PM has looked into ${key} ${limits.fixCap === 1 ? "once" : `${limits.fixCap} times`} since its branch last changed and it is still stuck, so it leaves ${key} to you.`;
+    case "question-cap":
+      return `The PM has answered ${key}'s questions ${PM_QUESTION_CAP} times and it is still asking, so its next question comes to you. Answer in the card's chat.`;
     case "hourly":
       return `The PM has woken itself ${limits.perHour} times in the last hour, so it is pausing for a while. Until then, stuck tickets come straight to you.`;
     case "daily":
       return `The PM has used today's ${limits.perDay} wake-ups, so stuck tickets come straight to you until midnight UTC. It still answers anything you ask here. The limit is in the board's settings.`;
+    case "account":
+      return `The PM has woken itself ${PM_ACCOUNT_WAKES.perHour} times in the last hour or ${PM_ACCOUNT_WAKES.perDay} times today across all your boards, which share one Claude account, so questions come straight to you for now. It still answers anything you ask here.`;
   }
 }
 
@@ -81,12 +85,32 @@ export async function admitWake(input: {
     const attempts = fixAttempts(await repo.pmWakes(projectId, { cardId }), head);
     if (attempts >= limits.fixCap) return hold("fix-cap", null);
   }
+  if (kind === "question") {
+    const asked = (await repo.pmWakes(projectId, { cardId })).filter((r) => r.kind === "question" && r.head === head).length;
+    if (asked >= PM_QUESTION_CAP) return hold("question-cap", null);
+  }
   const wakes = recent.filter((r) => WAKES.has(r.kind));
   if (wakes.filter((r) => r.createdAt >= day).length >= limits.perDay) return hold("daily", day);
   if (wakes.filter((r) => r.createdAt >= hourAgo).length >= limits.perHour) return hold("hourly", hourAgo);
 
+  if (await accountBusy(projectId, day, hourAgo)) return hold("account", hourAgo);
+
   await repo.addPmWake({ projectId, cardId, head, kind, createdAt: now });
   return { ok: true };
+}
+
+/** Whether the board owner's boards together are at the account's hourly or daily wake-ups. */
+async function accountBusy(projectId: string, day: Date, hourAgo: Date): Promise<boolean> {
+  const repo = repository();
+  const project = await repo.projectById(projectId);
+  if (!project?.ownerId) return false;
+  const boards = await repo.listProjects({ ownerId: project.ownerId, includeUnowned: false });
+  const since = day < hourAgo ? day : hourAgo;
+  const wakes = (await Promise.all(boards.map((b) => repo.pmWakes(b.id, { since })))).flat().filter((r) => WAKES.has(r.kind));
+  return (
+    wakes.filter((r) => r.createdAt >= day).length >= PM_ACCOUNT_WAKES.perDay ||
+    wakes.filter((r) => r.createdAt >= hourAgo).length >= PM_ACCOUNT_WAKES.perHour
+  );
 }
 
 /** Notes a commit the PM landed on a ticket's branch: the fix cap keeps counting across it. */

@@ -890,6 +890,8 @@ export interface PmSessionRecord {
   /** Whether the current turn resumed a saved session. */
   resumed: boolean;
   lastTurnAt: Date | null;
+  /** The session's context at the end of its last turn, in tokens: what the next turn re-reads. */
+  contextTokens: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -920,7 +922,7 @@ export interface PmSessionRepository {
 }
 
 /** What the PM did on its own: a wake-up, a commit it landed on a ticket's branch, or a limit it said. */
-export type PmWakeKind = "question" | "stall" | "landed" | "fix-cap" | "hourly" | "daily";
+export type PmWakeKind = "question" | "stall" | "landed" | "fix-cap" | "hourly" | "daily" | "account" | "question-cap" | "started";
 
 export interface NewPmWake {
   projectId: string;
@@ -1375,6 +1377,8 @@ export interface ConversationRepository {
     id: string,
     update: Partial<Pick<AssistantMessage, "content" | "proposals" | "status" | "runnerJob" | "runnerAgent">>,
   ): Promise<void>;
+  /** Adds what a PM turn used to its reply, counted against the agent that paid for it. */
+  addAssistantTokens(id: string, usage: { presetId: string; tokensIn: number; tokensOut: number }): Promise<void>;
   clearAssistant(projectId: string): Promise<void>;
   /** One page of a card's chat, oldest first: the newest by default, or the ones before a message id. */
   cardChatMessages(cardId: string, page?: { before?: string; limit?: number }): Promise<MessagePage<CardChatMessage>>;

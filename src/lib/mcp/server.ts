@@ -34,6 +34,9 @@ import {
   updateBranch,
   WRONG_BOARD,
   type PmCaller,
+  gateMove,
+  mayStartWork,
+  ONE_START,
 } from "./pm-tools";
 
 const reply = (result: ToolResult<unknown>) =>
@@ -153,7 +156,10 @@ export function mcpServerFor(user: UserRecord, readOnly: boolean, scope: TokenSc
     },
     onBoard(async (input) => {
       const gated = scope && (await gateOptional({ user, scope }, input.board, [input.title, ...input.tickets.map((t) => t.title)]));
-      return reply(gated || (await createEpic(caller, input)));
+      if (gated) return reply(gated);
+      // An Epic lands in To Do ready to run: a start, which a wake-up makes once.
+      if (scope && !(await mayStartWork({ user, scope }, input.board, ""))) return reply({ ok: false, error: ONE_START });
+      return reply(await createEpic(caller, input));
     }),
   );
   server.registerTool(
@@ -162,10 +168,13 @@ export function mcpServerFor(user: UserRecord, readOnly: boolean, scope: TokenSc
       description: "Moves a card to a column as dragging it would, and says why when the board refuses.",
       inputSchema: { board: z.string(), card: z.string(), to: z.enum(COLUMNS) },
     },
-    onBoard(async (input) =>
+    onBoard(async (input) => {
       // Done is a merge for a ticket: a PM asks the person.
-      reply(scope && input.to === "done" ? await proposeDone({ user, scope }, input) : await moveCard(caller, input)),
-    ),
+      if (scope && input.to === "done") return reply(await proposeDone({ user, scope }, input));
+      // A wake-up starts agent work once; a second move into a working column is put to the person.
+      const gated = scope && (await gateMove({ user, scope }, input));
+      return reply(gated || (await moveCard(caller, input)));
+    }),
   );
   server.registerTool(
     "update_card",

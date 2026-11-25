@@ -363,3 +363,55 @@ export function checklistPlan(text: string): PlanStep[] | null {
   });
   return steps.length ? steps : null;
 }
+
+/**
+ * How much context Claude Code's last call carried, in tokens: input with
+ * cache reads and writes, from the last assistant message that says. This
+ * is what a resumed session re-reads on its next turn. Null when none says.
+ */
+export function claudeContext(lines: string[]): number | null {
+  let last: number | null = null;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    let event: unknown;
+    try {
+      event = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (!isObject(event) || event.type !== "assistant" || !isObject(event.message) || !isObject(event.message.usage)) continue;
+    const u = event.message.usage;
+    const n = (k: string) => (typeof u[k] === "number" ? (u[k] as number) : 0);
+    last = n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens");
+  }
+  return last;
+}
+
+/**
+ * What Claude Code says a session used, from its closing `result` line:
+ * input counts cache reads and writes too, since a resumed session re-reads
+ * its whole history and that is what spends a plan. Null when no line says.
+ */
+export function claudeUsage(lines: string[]): { tokensIn: number; tokensOut: number } | null {
+  let seen = false;
+  let tokensIn = 0;
+  let tokensOut = 0;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    let event: unknown;
+    try {
+      event = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (!isObject(event) || event.type !== "result" || !isObject(event.usage)) continue;
+    const u = event.usage;
+    const n = (k: string) => (typeof u[k] === "number" ? (u[k] as number) : 0);
+    seen = true;
+    tokensIn += n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens");
+    tokensOut += n("output_tokens");
+  }
+  return seen ? { tokensIn, tokensOut } : null;
+}

@@ -241,6 +241,8 @@ interface Store {
   /** Card id to whose keys its work runs on. */
   actors: Map<string, string>;
   assistant: AssistantMessage[];
+  /** What each PM reply used, by message id. */
+  assistantTokens: Map<string, { presetId: string; tokensIn: number; tokensOut: number; createdAt: Date }>;
   playtests: PlaytestRecord[];
   cardChat: CardChatMessage[];
   attachments: Map<string, AttachmentRow>;
@@ -351,6 +353,7 @@ function store(): Store {
     memberAgents: new Map(),
     actors: new Map(),
     assistant: [],
+    assistantTokens: new Map(),
     playtests: [],
     cardChat: [],
     attachments: new Map(),
@@ -863,6 +866,7 @@ export class MemoryRepository implements Repository {
       branch: null,
       resumed: false,
       lastTurnAt: null,
+      contextTokens: 0,
       createdAt: now,
       ...s.pmSessions.get(projectId),
       ...update,
@@ -2111,6 +2115,10 @@ export class MemoryRepository implements Repository {
       if (since && message.createdAt < since) continue;
       add(message.agentPresetId, message.tokensIn, message.tokensOut);
     }
+    for (const used_ of store().assistantTokens.values()) {
+      if (since && used_.createdAt < since) continue;
+      add(used_.presetId, used_.tokensIn, used_.tokensOut);
+    }
     return used;
   }
 
@@ -2617,6 +2625,18 @@ export class MemoryRepository implements Repository {
   ): Promise<void> {
     const found = store().assistant.find((m) => m.id === id);
     if (found) Object.assign(found, update);
+  }
+
+  async addAssistantTokens(id: string, usage: { presetId: string; tokensIn: number; tokensOut: number }): Promise<void> {
+    const found = store().assistant.find((m) => m.id === id);
+    if (!found) return;
+    const was = store().assistantTokens.get(id);
+    store().assistantTokens.set(id, {
+      presetId: usage.presetId,
+      tokensIn: (was?.tokensIn ?? 0) + usage.tokensIn,
+      tokensOut: (was?.tokensOut ?? 0) + usage.tokensOut,
+      createdAt: found.createdAt,
+    });
   }
 
   async clearAssistant(projectId: string): Promise<void> {
