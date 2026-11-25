@@ -64,3 +64,21 @@ describe("StatusChip", () => {
     expect(container.querySelector(".pulse-dot")).not.toBeNull();
   });
 });
+
+describe("StatusPill with a blockedReason", () => {
+  it("reads Question in plum, and does not pulse, for an agent's question", () => {
+    const { container } = render(
+      <StatusPill status="running" blockedReason={"Question: Which db?\nThe PM is waiting for your answer."} />,
+    );
+    const chip = container.firstElementChild!;
+    expect(chip).toHaveTextContent("Question");
+    expect(chip.firstElementChild!.className).toContain("bg-plum");
+    expect(chip.firstElementChild!.className).not.toContain("pulse-dot");
+  });
+
+  it("stays Blocked and rust for a warning reason", () => {
+    const { container } = render(<StatusPill status="blocked" blockedReason="CI failed" />);
+    expect(container.firstElementChild).toHaveTextContent("Blocked");
+    expect(container.firstElementChild!.firstElementChild!.className).toContain("bg-rust");
+  });
+});

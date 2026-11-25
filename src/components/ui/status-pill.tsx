@@ -1,6 +1,6 @@
 import { cn } from "./cn";
 import { insectTint, type InsectColor } from "./tint";
-import { STATUS_LABEL, STATUS_TONE, TONES, isLive, type ToneName } from "@/lib/tokens";
+import { TONES, isLive, statusLabel, statusTone, type ToneName } from "@/lib/tokens";
 import type { TicketStatus } from "@/lib/domain/status";
 
 /** The insect-palette colour each status tone's chip fill is tinted from. */
@@ -11,6 +11,7 @@ const CHIP_HUE: Record<ToneName, InsectColor> = {
   jade: "jade",
   rust: "umber",
   crimson: "crimson",
+  plum: "plum",
 };
 
 /**
@@ -59,13 +60,16 @@ export function StatusChip({
 export function StatusPill({
   status,
   detail,
+  blockedReason,
   className,
 }: {
   status: TicketStatus;
   detail?: string | null;
+  /** The card's stall reason; an agent's question gets the plum "Question" chip. */
+  blockedReason?: string | null;
   className?: string;
 }) {
-  const toneName = STATUS_TONE[status];
+  const toneName = statusTone(status, blockedReason);
   const tone = TONES[toneName];
   return (
     <span
@@ -81,10 +85,10 @@ export function StatusPill({
         className={cn(
           "size-[5px] shrink-0 rounded-full",
           tone.dot,
-          isLive(status) && "pulse-dot",
+          toneName !== "plum" && isLive(status) && "pulse-dot",
         )}
       />
-      {STATUS_LABEL[status]}
+      {statusLabel(status, blockedReason)}
       {detail ? <span className="font-normal opacity-75">· {detail}</span> : null}
     </span>
   );

@@ -1,4 +1,5 @@
 import type { TicketStatus } from "@/lib/domain/status";
+import { isQuestion } from "@/lib/domain/question";
 
 /**
  * Status to visual token. Kept out of the components so the board, the
@@ -17,7 +18,8 @@ export type ToneName =
   | "clay"
   | "jade"
   | "rust"
-  | "crimson";
+  | "crimson"
+  | "plum";
 
 export interface Tone {
   /** The 5px dot. The only place the status colour is used. */
@@ -33,6 +35,7 @@ export const TONES: Record<ToneName, Tone> = {
   jade: { dot: "bg-jade", chip: "bg-jade/12" },
   rust: { dot: "bg-rust", chip: "bg-rust/12" },
   crimson: { dot: "bg-crimson", chip: "bg-crimson/12" },
+  plum: { dot: "bg-plum", chip: "bg-plum/12" },
 };
 
 export const STATUS_TONE: Record<TicketStatus, ToneName> = {
@@ -60,6 +63,16 @@ export const STATUS_LABEL: Record<TicketStatus, string> = {
   blocked: "Blocked",
   failed: "Failed",
 };
+
+/** What a card's chip says: "Question" while an agent waits on the person's answer, else the status. */
+export function statusLabel(status: TicketStatus, blockedReason?: string | null): string {
+  return isQuestion(blockedReason) ? "Question" : STATUS_LABEL[status];
+}
+
+/** The chip's tone: plum for a question, else the status's own. */
+export function statusTone(status: TicketStatus, blockedReason?: string | null): ToneName {
+  return isQuestion(blockedReason) ? "plum" : STATUS_TONE[status];
+}
 
 export function toneFor(status: TicketStatus): Tone {
   return TONES[STATUS_TONE[status]];
