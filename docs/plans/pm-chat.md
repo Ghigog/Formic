@@ -358,18 +358,19 @@ How it changed (2026-11-25, after wake-ups spent a whole subscription):
   not started again fresh.
 - A turn's tokens are recorded on its reply and count toward the PM agent's
   token allowance, which now gates the PM like any column.
-- Wake-ups are also capped across every board one person owns (6 an hour,
-  20 a day), and the per-board defaults are 3 and 10.
+- Wake-ups are also capped across every board one person owns (12 an hour,
+  40 a day); the per-board defaults stay 6 and 20.
 - The golden bell restarts at most 5 cards every 10 minutes across all of
   one person's boards, instead of every stopped card at once.
 - A session whose last call carried more than 150,000 tokens starts its next
   message fresh from the summary (one notice), and the file cap is 1 MiB.
-- The PM is woken for one ticket's questions at most twice while its branch
-  stays put; the next question goes to the person.
+- The PM is woken for one ticket's questions at most four times while its
+  branch stays put; the next question goes to the person.
 - A wake-up's token is marked as one (`PM wake-up`), and its tools let it
-  start agent work once: a second move into a working column becomes a
-  proposal, a second answer or new Epic is refused with a line to tell the
-  person instead. A person's own turns are not limited this way.
+  start new agent work once: a second move into a working column becomes a
+  proposal, a second new Epic is refused with a line to tell the person
+  instead. Answering questions agents wait on is never limited: unblocking
+  them is the PM's job. A person's own turns are not limited this way.
 - Outside the PM: when the Reviewer approves the same commit twice while CI
   is red, the ticket stops for the person instead of being reviewed again.
 

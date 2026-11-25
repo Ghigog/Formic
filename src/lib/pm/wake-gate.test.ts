@@ -20,7 +20,7 @@ beforeEach(() => {
 
 describe("wakeLimits", () => {
   it("fills what was never set with the defaults", () => {
-    expect(wakeLimits({ fixCap: null, perHour: 3, perDay: null })).toEqual({ fixCap: 2, perHour: 3, perDay: 10 });
+    expect(wakeLimits({ fixCap: null, perHour: 3, perDay: null })).toEqual({ fixCap: 2, perHour: 3, perDay: 20 });
   });
 });
 
@@ -100,10 +100,9 @@ describe("admitWake", () => {
 });
 
 describe("the question cap", () => {
-  it("wakes the PM for a ticket's questions twice per head, then leaves the next to the person, said once", async () => {
+  it("wakes the PM for a ticket's questions four times per head, then leaves the next to the person, said once", async () => {
     await repository().setPmWakeLimits(PROJECT, { perHour: 60, perDay: 500 });
-    expect(await admit({ kind: "question", now: at(10, 0) })).toEqual({ ok: true });
-    expect(await admit({ kind: "question", now: at(10, 5) })).toEqual({ ok: true });
+    for (const minute of [0, 2, 4, 6]) expect(await admit({ kind: "question", now: at(10, minute) })).toEqual({ ok: true });
     const held = await admit({ kind: "question", now: at(10, 10) });
     expect(held).toMatchObject({ ok: false, held: "question-cap" });
     expect((held as { say: string }).say).toContain("E1-T1");
@@ -120,10 +119,10 @@ describe("account-wide wake-ups", () => {
     const boards = await Promise.all(
       [1, 2, 3, 4].map(async (n) => (await repo.ensureProject({ ownerId: me.id, repoFullName: `me/app${n}`, name: `App ${n}`, baseBranch: "main" })).id),
     );
-    // Two wake-ups on each of three boards: each board is within its own limit of 3 an hour.
+    // Four wake-ups on each of three boards: each board is within its own limit of 6 an hour.
     let minute = 0;
     for (const board of boards.slice(0, 3)) {
-      for (const card of ["a", "b"]) {
+      for (const card of ["a", "b", "c", "d"]) {
         expect(await admitWake({ projectId: board, cardId: card, cardKey: "K", head: "h", kind: "question", now: at(10, minute++) })).toEqual({ ok: true });
       }
     }

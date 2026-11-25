@@ -311,11 +311,11 @@ describe("a wake-up starting agent work", () => {
     expect(json(await call(pm, "move_card", { board, card: b!.id, to: "in_progress" }))).toMatchObject({ proposed: true });
     expect((await proposals()).map((p) => p.summary)).toEqual([`Move ${b!.key} to In Progress?`]);
 
-    // A question's answer would restart an agent: refused too, in the same turn.
+    // Answering a waiting agent is never held back, even after a start.
     await repository().updateTicket(b!.id, { blockedReason: "Question: Email or username?" });
     const answer = await call(pm, "answer_card_question", { board, card: b!.key, answer: "Email", own: true });
-    expect(answer.isError).toBe(true);
-    expect(answer.content[0]!.text).toContain("already started agent work");
+    expect(answer.isError).toBeFalsy();
+    expect(asked).toHaveBeenCalledWith(board, "ticket", b!.id, "From the PM: Email");
   });
 
   it("lets a turn the person started do as much as they asked", async () => {

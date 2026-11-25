@@ -95,13 +95,14 @@ const done = (text: string): ToolResult<{ done: string }> => ({ ok: true, value:
 /* What a wake-up may start. */
 
 /** What a wake-up hears once it has already started agent work. */
-export const ONE_START = "This turn was a wake-up and it has already started agent work once, which spends the person's Claude usage. Do not start more: tell the person in one line what you would do next and let them decide.";
+export const ONE_START = "This turn was a wake-up and it has already started new agent work once, which spends the person's Claude usage. Do not start more: tell the person in one line what you would do next and let them decide. Answering questions agents are waiting on is still fine.";
 
 /**
- * Whether this turn may start agent work (move a card into a working column,
- * restart an agent with an answer, add an Epic ready to run). A turn the
- * person started may, always. A wake-up may once: every start spends the
- * person's Claude usage, and a wake-up is the PM acting unasked. The start
+ * Whether this turn may start new agent work (move a card into a working
+ * column, add an Epic ready to run). A turn the person started may, always.
+ * A wake-up may once: every start spends the person's Claude usage, and new
+ * work is the PM acting unasked. Answering a waiting agent's question is not
+ * new work and is never limited here. The start
  * is counted when it is allowed.
  */
 export async function mayStartWork(caller: PmCaller, projectId: string, cardId: string): Promise<boolean> {
@@ -159,12 +160,9 @@ export function openPullRequest(
 
 export function answerQuestion(caller: PmCaller, input: { board: string; card: string; answer: string; own: boolean }) {
   return onPmBoard(caller, input.board, async (project) => {
-    const card = await cardOf(project.id, input.card);
-    if (!card) throw new Error(`${input.card} is not on the board.`);
-    const key = card.key;
-    // An answer starts the card's agent again.
-    if (!(await mayStartWork(caller, project.id, card.id))) return { ok: false as const, error: ONE_START };
-    return done(await answerCardQuestion(project.id, key, input.answer, input.own));
+    // Never limited: answering what an agent waits on is what the PM is for, and holding
+    // an answer the person would plainly approve only makes them the bottleneck.
+    return done(await answerCardQuestion(project.id, await keyOf(project.id, input.card), input.answer, input.own));
   });
 }
 
