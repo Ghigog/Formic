@@ -55,7 +55,7 @@ vi.mock("@/components/colony/colony", () => ({
 // The header's stats read a whole colony; this test only needs the board's use of it.
 vi.mock("@/components/colony/header-stats", () => ({
   ColonyHeaderStats: () => null,
-  ColonyLevelStats: () => null,
+  ColonyTimelineButton: () => null,
   ColonyMobileStats: () => null,
 }));
 

@@ -7,6 +7,7 @@ import { SoundEngine } from "./sound";
 import {
   ColonyHeaderStats,
   ColonyMobileStats,
+  ColonyTimelineButton,
   LevelBadge,
   TimelineButton,
 } from "./header-stats";
@@ -74,15 +75,13 @@ describe("ColonyHeaderStats", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("keeps the level text, XP bar and timeline label with pips on desktop", () => {
+  it("keeps the level text and XP bar, and no timeline", () => {
     renderHeader();
     expect(screen.getByText(/^Colony · /)).toBeInTheDocument();
     expect(
       screen.getByRole("progressbar", { name: "Experience to next level" }),
     ).toHaveAttribute("aria-valuenow", "0");
-    expect(
-      screen.getByRole("button", { name: "Open timeline" }),
-    ).toHaveTextContent("Timeline");
+    expect(document.querySelector('[data-colony="timeline"]')).toBeNull();
   });
 
   it("shows a full bar reading Max level at Lv 99", () => {
@@ -92,15 +91,29 @@ describe("ColonyHeaderStats", () => {
     expect(screen.getByText("Max level")).toBeInTheDocument();
   });
 
-  it("omits the LV badge and XP bar with showLevel false, keeping points, heat and timeline", () => {
-    renderHeader(<ColonyHeaderStats showLevel={false} />);
-    expect(screen.queryByText("LV")).not.toBeInTheDocument();
-    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  it("shows the level, points and heat together", () => {
+    renderHeader(<ColonyHeaderStats />);
+    expect(screen.getByText("LV")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).toBeInTheDocument();
     expect(document.querySelector('[data-colony="score"]')).toBeInTheDocument();
     expect(document.querySelector('[data-colony="heat"]')).toBeInTheDocument();
-    expect(
-      document.querySelector('[data-colony="timeline"]'),
-    ).toBeInTheDocument();
+  });
+});
+
+describe("ColonyTimelineButton", () => {
+  it("renders the full button with its label", () => {
+    renderHeader(<ColonyTimelineButton />);
+    expect(screen.getByRole("button", { name: "Open timeline" })).toHaveTextContent("Timeline");
+  });
+
+  it("renders icon-only without the label", () => {
+    renderHeader(<ColonyTimelineButton iconOnly />);
+    expect(screen.getByRole("button", { name: "Open timeline" })).not.toHaveTextContent("Timeline");
+  });
+
+  it("is hidden while the timeline is locked", () => {
+    renderHeader(<ColonyTimelineButton />, boardAtLevel(1));
+    expect(document.querySelector('[data-colony="timeline"]')).toBeNull();
   });
 });
 
@@ -136,24 +149,35 @@ describe("Hidden features", () => {
     expect(screen.getByRole("button", { name: /audit grade/i })).toBeInTheDocument();
     expect(document.querySelector('[data-colony="timeline"]')).toBeNull();
     unmount();
-    renderHeader(<ColonyHeaderStats />, boardAtLevel(10));
+    renderHeader(<ColonyTimelineButton />, boardAtLevel(10));
     expect(document.querySelector('[data-colony="timeline"]')).toBeInTheDocument();
   });
 
   it("shows Sentinels and Timeline at once on a Lv 1 board with Unlock everything on", () => {
-    renderHeader(<ColonyHeaderStats />, lv1(), true);
+    renderHeader(
+      <>
+        <ColonyHeaderStats />
+        <ColonyTimelineButton />
+      </>,
+      lv1(),
+      true,
+    );
     expect(screen.getByRole("button", { name: /audit grade/i })).toBeInTheDocument();
     expect(document.querySelector('[data-colony="timeline"]')).toBeInTheDocument();
   });
 });
 
 describe("ColonyMobileStats", () => {
-  it("shows heat and an icon-only timeline button that toggles the timeline", async () => {
+  it("shows heat, and no timeline button of its own", () => {
     renderHeader(<ColonyMobileStats />);
+    expect(document.querySelector('[data-colony="timeline"]')).toBeNull();
     // The LV badge is the Audit button; it must not sit inside another button.
     expect(document.querySelector("button button")).toBeNull();
     expect(document.querySelector('[data-colony="heat"]')).toBeInTheDocument();
+  });
 
+  it("an icon-only timeline button toggles the timeline", async () => {
+    renderHeader(<ColonyTimelineButton iconOnly />);
     const open = screen.getByRole("button", { name: "Open timeline" });
     expect(open).not.toHaveTextContent("Timeline");
     expect(open).toHaveAttribute("aria-expanded", "false");

@@ -17,9 +17,20 @@ vi.mock("./repo-picker", () => ({
   ),
 }));
 vi.mock("@/components/colony/header-stats", () => ({
-  ColonyHeaderStats: () => null,
-  ColonyLevelStats: () => null,
+  ColonyHeaderStats: () => (
+    <>
+      <span data-testid="level" />
+      <span data-testid="points" />
+    </>
+  ),
+  ColonyTimelineButton: ({ iconOnly }: { iconOnly?: boolean }) => (
+    <span data-testid={iconOnly ? "timeline-icon" : "timeline"} />
+  ),
   ColonyMobileStats: () => null,
+}));
+vi.mock("./assistant", () => ({
+  AskBox: () => <span data-testid="ask-box" />,
+  AskButton: () => <button>Ask the PM</button>,
 }));
 
 afterEach(() => {
@@ -104,6 +115,51 @@ describe("BoardHeader project button", () => {
       Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
     expect(follows(logo, ask)).toBe(true);
     expect(follows(ask, account)).toBe(true);
+  });
+});
+
+describe("BoardHeader desktop order", () => {
+  it("puts the logo and Timeline left, the ask box in the middle, level, points and account right", () => {
+    setViewportMatches(false);
+    render(
+      <BoardHeader
+        projectName="Formic"
+        repoFullName="acme/formic"
+        account={{ login: "ada", name: "Ada" } as never}
+        assistant={{} as never}
+      />,
+    );
+    const logo = screen.getAllByRole("button", { name: /Choose another project/ })[0]!;
+    const order = [
+      logo,
+      screen.getByTestId("timeline"),
+      screen.getByTestId("ask-box"),
+      screen.getByTestId("level"),
+      screen.getByTestId("points"),
+      screen.getAllByLabelText(/^Account:/)[0]!,
+    ];
+    order.slice(1).forEach((el, i) =>
+      expect(
+        Boolean(order[i]!.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING),
+      ).toBe(true),
+    );
+    const header = logo.closest("header")!;
+    const columns = Array.from(header.children);
+    expect(columns[0]).toContainElement(screen.getByTestId("timeline"));
+    expect(columns[1]).toContainElement(screen.getByTestId("ask-box"));
+    expect(columns[2]).toContainElement(screen.getByTestId("level"));
+  });
+
+  it("puts the icon-only Timeline after the logo and before the ask button on the phone", () => {
+    setViewportMatches(true);
+    render(
+      <BoardHeader projectName="Formic" repoFullName="acme/formic" assistant={{} as never} />,
+    );
+    const logo = screen.getAllByRole("button", { name: /Choose another project/ })[1]!;
+    const tl = screen.getByTestId("timeline-icon");
+    const ask = screen.getByRole("button", { name: "Ask the PM" });
+    expect(logo.compareDocumentPosition(tl) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(tl.compareDocumentPosition(ask) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 
