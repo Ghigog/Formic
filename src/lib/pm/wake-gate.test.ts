@@ -99,6 +99,20 @@ describe("admitWake", () => {
   });
 });
 
+describe("the question cap", () => {
+  it("wakes the PM for a ticket's questions twice per head, then leaves the next to the person, said once", async () => {
+    await repository().setPmWakeLimits(PROJECT, { perHour: 60, perDay: 500 });
+    expect(await admit({ kind: "question", now: at(10, 0) })).toEqual({ ok: true });
+    expect(await admit({ kind: "question", now: at(10, 5) })).toEqual({ ok: true });
+    const held = await admit({ kind: "question", now: at(10, 10) });
+    expect(held).toMatchObject({ ok: false, held: "question-cap" });
+    expect((held as { say: string }).say).toContain("E1-T1");
+    expect(await admit({ kind: "question", now: at(10, 15) })).toEqual({ ok: false, held: "question-cap", say: null });
+    // A new head (the agent pushed work) starts the count again.
+    expect(await admit({ kind: "question", head: "h2", now: at(10, 20) })).toEqual({ ok: true });
+  });
+});
+
 describe("account-wide wake-ups", () => {
   it("holds a wake-up once the owner's boards together reach the account's hourly limit", async () => {
     const repo = repository();

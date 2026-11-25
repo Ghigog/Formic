@@ -866,6 +866,7 @@ export class MemoryRepository implements Repository {
       branch: null,
       resumed: false,
       lastTurnAt: null,
+      contextTokens: 0,
       createdAt: now,
       ...s.pmSessions.get(projectId),
       ...update,

@@ -2076,6 +2076,21 @@ export async function approve(
   const checks = await client.checksFor(headSha);
   if (await ciPending(client, checks, pull.baseBranch)) return;
   const red = failing(checks);
+  if (red.length > 0 && ticket.reviewedSha === headSha) {
+    // Approved again, unchanged, on a commit whose CI is still red: another
+    // review would approve it again and spend the person's usage doing so
+    // (four quick fix runs in a row on a test the agent cannot fix). The
+    // person decides: re-run the check, or give the reviews another go.
+    const logs: FailingCheck[] = [];
+    for (const check of red) {
+      const log = await client.checkLog(check.id).catch(() => null);
+      if (log) logs.push(log);
+    }
+    const fresh = await repo.ticketDetail(ticket.id);
+    if (!fresh || fresh.status === "merged") return;
+    await stallTicket(projectId, fresh, ceilingReason(fresh, pull, red, fresh.attempts, logs), { blocked: true, stalledIn: "in_review" });
+    return;
+  }
   if (red.length > 0) {
     // CI failed while it read the diff, and that report was not a reason to
     // start a second reviewer alongside the first. Now it is: queued behind

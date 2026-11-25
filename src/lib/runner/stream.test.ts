@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { checklistPlan, claudeUsage, readStream, readStreamLine, toolLabel } from "./stream";
+import { checklistPlan, claudeContext, claudeUsage, readStream, readStreamLine, toolLabel } from "./stream";
 
 const line = (event: unknown) => JSON.stringify(event);
 
@@ -235,5 +235,14 @@ describe("claudeUsage", () => {
 
   it("is null when no result line says", () => {
     expect(claudeUsage(["plain text", JSON.stringify({ type: "assistant" })])).toBeNull();
+  });
+});
+
+
+describe("claudeContext", () => {
+  it("is the last call's input with cache reads and writes", () => {
+    const at = (n: number) => JSON.stringify({ type: "assistant", message: { usage: { input_tokens: 5, cache_creation_input_tokens: 10, cache_read_input_tokens: n } } });
+    expect(claudeContext([at(100), at(90_000), JSON.stringify({ type: "result" })])).toBe(90_015);
+    expect(claudeContext(["plain"])).toBeNull();
   });
 });

@@ -70,6 +70,8 @@ interface Script {
   /** Never ends until killed. */
   hangs?: boolean;
   isError?: boolean;
+  /** The context its last call carried, in tokens. */
+  context?: number;
 }
 
 class FakeSandbox implements PmSandbox {
@@ -105,7 +107,9 @@ class FakeSandbox implements PmSandbox {
     let release: (r: PmCommandResult) => void = () => undefined;
     const finished = new Promise<PmCommandResult>((resolve) => (release = resolve));
     const finish = () => {
-      options.onStdout?.(`${JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: script.words }] } })}\n`);
+      options.onStdout?.(
+        `${JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: script.words }], usage: { input_tokens: 5, cache_read_input_tokens: script.context ?? 1000 } } })}\n`,
+      );
       const prior = this.files.get(`${PM_SESSIONS_DIR}/${id}.jsonl`) ?? "";
       this.files.set(`${PM_SESSIONS_DIR}/${id}.jsonl`, `${prior}{"turn":${JSON.stringify(script.words)}}\n`);
       if (script.commits) {
@@ -259,6 +263,22 @@ describe("the PM in its E2B sandbox", () => {
     const run = claudeRuns(world.made[0]!)[0]!;
     expect(run).not.toContain("--model");
     expect(run).toContain("--max-turns 30");
+    // Its token is a wake-up's: the MCP tools let it start agent work once.
+    const owner = (await repository().projectById(board))!.ownerId!;
+    expect((await repository().accessTokensForUser(owner)).map((t) => t.name)).toEqual(["PM wake-up"]);
+  });
+
+  it("starts the next message fresh from the summary once the session's context is long", async () => {
+    world.next = [{ words: "Hi.", context: 200_000 }];
+    await settled(await ask("Hello"));
+    const session = await repository().pmSession(board);
+    expect(session?.fileCipher).toBeNull();
+    const notices = (await repository().assistantMessages(board)).messages.filter((m) => m.kind === "notice");
+    expect(notices.map((m) => m.content).join("\n")).toContain("session got long");
+
+    world.next = [{ words: "Short one." }];
+    await settled(await ask("And now?"));
+    expect(claudeRuns(world.made[0]!)[1]).toContain("--session-id");
   });
 
   it("resumes the paused sandbox for the next message, with the saved file and only what is new", async () => {

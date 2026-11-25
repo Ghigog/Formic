@@ -13,7 +13,14 @@ export type AccessTokenSummary = Omit<AccessTokenRecord, "userId" | "tokenHash" 
 export interface TokenScope {
   projectId: string;
   sessionId: string;
+  /** The token itself, for what one turn has done. Set when a token is verified. */
+  tokenId?: string;
+  /** A turn nobody typed (a wake-up): it may start agent work only once. */
+  wake?: boolean;
 }
+
+/** The name a wake-up turn's token carries, which is how a verified token is known as one. */
+export const PM_WAKE_TOKEN_NAME = "PM wake-up";
 
 /** How long a PM token lives unless asked for less: one session's work, not a standing key. */
 export const PM_TOKEN_HOURS = 4;
@@ -56,7 +63,7 @@ export async function createPmToken(
   const secret = TOKEN_PREFIX + randomBytes(32).toString("base64url");
   const record = await repository().createAccessToken({
     userId,
-    name: "PM session",
+    name: scope.wake ? PM_WAKE_TOKEN_NAME : "PM session",
     tokenHash: hashSecret(secret),
     lastFour: secret.slice(-4),
     readOnly: false,
@@ -91,7 +98,9 @@ export async function verifyToken(secret: string): Promise<VerifiedToken | null>
   // A board token always carries its session: one without is never honoured.
   if (token.projectId && !token.sessionId) return null;
   await repo.touchAccessToken(token.id, now);
-  const scope = token.projectId ? { projectId: token.projectId, sessionId: token.sessionId! } : null;
+  const scope = token.projectId
+    ? { projectId: token.projectId, sessionId: token.sessionId!, tokenId: token.id, wake: token.name === PM_WAKE_TOKEN_NAME }
+    : null;
   return { user, readOnly: token.readOnly, scope };
 }
 

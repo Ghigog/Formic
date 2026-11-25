@@ -1065,6 +1065,9 @@ model PmSession {
   resumed     Boolean   @default(false)
   /// When the last turn finished: what the chat said after it is new to the session.
   lastTurnAt  DateTime?
+  /// How much the session's context held at the end of its last turn, in
+  /// tokens: what the next turn re-reads. Past a limit it starts fresh.
+  contextTokens Int     @default(0)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

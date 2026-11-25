@@ -2,9 +2,9 @@ import "server-only";
 
 import { repository } from "@/lib/db";
 import type { PmWakeKind } from "@/lib/db/repository";
-import { fixAttempts, PM_ACCOUNT_WAKES, wakeLimits, type PmWakeLimits } from "@/lib/domain/pm-wake";
+import { fixAttempts, PM_ACCOUNT_WAKES, PM_QUESTION_CAP, wakeLimits, type PmWakeLimits } from "@/lib/domain/pm-wake";
 
-export { PM_ACCOUNT_WAKES, PM_WAKE_DEFAULTS, PM_WAKE_RANGE, fixAttempts, wakeLimits, type PmWakeLimits } from "@/lib/domain/pm-wake";
+export { PM_ACCOUNT_WAKES, PM_QUESTION_CAP, PM_WAKE_DEFAULTS, PM_WAKE_RANGE, fixAttempts, wakeLimits, type PmWakeLimits } from "@/lib/domain/pm-wake";
 
 /**
  * What bounds the PM waking itself (docs/plans/pm-chat.md, safety rows 3
@@ -30,7 +30,7 @@ function startOfUtcDay(now: Date): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
 
-export type WakeHeld = "fix-cap" | "hourly" | "daily" | "account";
+export type WakeHeld = "fix-cap" | "question-cap" | "hourly" | "daily" | "account";
 
 export type WakeVerdict =
   | { ok: true }
@@ -41,6 +41,8 @@ function heldLine(held: WakeHeld, limits: PmWakeLimits, key: string): string {
   switch (held) {
     case "fix-cap":
       return `The PM has looked into ${key} ${limits.fixCap === 1 ? "once" : `${limits.fixCap} times`} since its branch last changed and it is still stuck, so it leaves ${key} to you.`;
+    case "question-cap":
+      return `The PM has answered ${key}'s questions ${PM_QUESTION_CAP} times and it is still asking, so its next question comes to you. Answer in the card's chat.`;
     case "hourly":
       return `The PM has woken itself ${limits.perHour} times in the last hour, so it is pausing for a while. Until then, stuck tickets come straight to you.`;
     case "daily":
@@ -82,6 +84,10 @@ export async function admitWake(input: {
   if (kind === "stall") {
     const attempts = fixAttempts(await repo.pmWakes(projectId, { cardId }), head);
     if (attempts >= limits.fixCap) return hold("fix-cap", null);
+  }
+  if (kind === "question") {
+    const asked = (await repo.pmWakes(projectId, { cardId })).filter((r) => r.kind === "question" && r.head === head).length;
+    if (asked >= PM_QUESTION_CAP) return hold("question-cap", null);
   }
   const wakes = recent.filter((r) => WAKES.has(r.kind));
   if (wakes.filter((r) => r.createdAt >= day).length >= limits.perDay) return hold("daily", day);

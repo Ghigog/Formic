@@ -73,7 +73,7 @@ What bounds a Claude Code PM's resumable session (docs/plans/pm-chat.md).
 
 | Limit | Unit | Value | Scope | Enforcement | Settable |
 | :-- | :-- | :-- | :-- | :-- | :-- |
-| Session file (`PM_SESSION_MAX_BYTES`) | bytes, gzipped | 8 MiB | one board's session | Gate: a bigger file is dropped and the next turn starts fresh from the summary | No |
+| Session file (`PM_SESSION_MAX_BYTES`) | bytes, gzipped | 1 MiB | one board's session | Gate: a bigger file is dropped and the next turn starts fresh from the summary | No |
 | Running summary (`SUMMARY_LINES`, `SUMMARY_CHARS`) | lines, characters | 30, 6,000 | one board's session | Kept after each turn, newest lines win | No |
 | PM token (`PM_TOKEN_HOURS`, `PM_TOKEN_MAX_HOURS`) | hours | 4, at most 12 | one turn | Revoked when the turn ends or is stopped | No |
 | Session address (`SESSION_URL_TTL_MS`) | minutes | 90 | one turn's job | Gate; its handoff is collected once | No |
@@ -101,6 +101,9 @@ comes to the person as it would with no PM.
 | Account wake-ups (`PM_ACCOUNT_WAKES`) | wake-ups per hour, per UTC day | 6, 20 | every board one person owns (one Claude account) | Gate | No |
 | PM turn, wake-up (`PM_TURN_LIMITS.wake`) | minutes, Claude Code steps | 10, 30; on the agent's model | one turn nobody typed | Job (timeout); steps in E2B only | No |
 | PM turn, person (`PM_TURN_LIMITS.person`) | minutes, Claude Code steps | 20, 80; on the agent's model | one turn answering the person | Job (timeout); steps in E2B only | No |
+| Session context (`PM_CONTEXT_FRESH_AT`) | tokens the last call carried | 150,000 | one board's session | Past it, the next message starts fresh from the summary, with one notice | No |
+| Question cap (`PM_QUESTION_CAP`) | PM wake-ups for one ticket's questions | 2 | one ticket, until its branch moves | Gate; the next question goes to the person, said once | No |
+| Wake-up starts | agent work started (a move into To Do, In Progress or In Review, an answer that restarts an agent, a new Epic) | 1 | one wake-up turn | Gate in the PM's tools: a second move is a proposal, anything else is refused | No |
 | Golden bell batches (`BELL_BATCH`, `BELL_GAP_MS`) | cards, minutes | 5 every 10 | every board one person owns (one Claude account), after a reset | Gate | No |
 
 A PM turn's tokens (input with cache reads and writes, plus output, from

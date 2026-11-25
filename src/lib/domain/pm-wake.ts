@@ -4,6 +4,12 @@ export const PM_WAKE_DEFAULTS = { fixCap: 2, perHour: 3, perDay: 10 } as const;
  * Wake-ups across every board one person owns: their boards share one Claude
  * account, so per-board limits alone multiply with the number of boards.
  */
+/**
+ * The most times the PM is woken for one ticket's questions while its branch
+ * stays where it is: an answer restarts the agent, which can ask again.
+ */
+export const PM_QUESTION_CAP = 2;
+
 export const PM_ACCOUNT_WAKES = { perHour: 6, perDay: 20 } as const;
 /** What a person may set each limit to. */
 export const PM_WAKE_RANGE = { fixCap: [0, 10], perHour: [0, 60], perDay: [0, 500] } as const;

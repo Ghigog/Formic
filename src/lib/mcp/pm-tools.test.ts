@@ -69,8 +69,8 @@ let board: string;
 let otherBoard: string;
 let github: ReturnType<typeof fakeGitHub>;
 
-async function connect(projectId = board) {
-  const server = mcpServerFor(me, false, { projectId, sessionId: "s1" });
+async function connect(projectId = board, extra: { wake?: boolean; tokenId?: string } = {}) {
+  const server = mcpServerFor(me, false, { projectId, sessionId: "s1", ...extra });
   const [a, b] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "pm", version: "1.0.0" });
   await Promise.all([server.connect(a), client.connect(b)]);
@@ -286,6 +286,51 @@ describe("what a PM does without asking", () => {
     const r = await call(await connect(), "move_card", { board, card: id, to: "backlog" });
     expect(json(r)).not.toMatchObject({ proposed: true });
     expect(await proposals()).toEqual([]);
+  });
+});
+
+describe("a wake-up starting agent work", () => {
+  it("starts work once, then puts a second move to the person", async () => {
+    const made = await createEpic(
+      { user: me, readOnly: false },
+      {
+        board,
+        title: "E",
+        rawRequest: "r",
+        tickets: [
+          { key: "a", title: "A", description: "d", acceptanceCriteria: [] },
+          { key: "b", title: "B", description: "d", acceptanceCriteria: [] },
+        ],
+      },
+    );
+    if (!made.ok) throw new Error(made.error);
+    const [a, b] = made.value.tickets;
+    for (const t of [a!, b!]) await repository().move({ cardId: t.id, kind: "ticket", status: "ready", stalledIn: null, position: 1 });
+    const pm = await connect(board, { wake: true, tokenId: "tok-wake" });
+    expect(json(await call(pm, "move_card", { board, card: a!.id, to: "in_progress" }))).not.toMatchObject({ proposed: true });
+    expect(json(await call(pm, "move_card", { board, card: b!.id, to: "in_progress" }))).toMatchObject({ proposed: true });
+    expect((await proposals()).map((p) => p.summary)).toEqual([`Move ${b!.key} to In Progress?`]);
+
+    // A question's answer would restart an agent: refused too, in the same turn.
+    await repository().updateTicket(b!.id, { blockedReason: "Question: Email or username?" });
+    const answer = await call(pm, "answer_card_question", { board, card: b!.key, answer: "Email", own: true });
+    expect(answer.isError).toBe(true);
+    expect(answer.content[0]!.text).toContain("already started agent work");
+  });
+
+  it("lets a turn the person started do as much as they asked", async () => {
+    const { id } = await ticketWithPull();
+    await repository().move({ cardId: id, kind: "ticket", status: "ready", stalledIn: null, position: 1 });
+    const pm = await connect(board, { wake: false, tokenId: "tok-person" });
+    expect(json(await call(pm, "move_card", { board, card: id, to: "in_progress" }))).not.toMatchObject({ proposed: true });
+    expect(await proposals()).toEqual([]);
+  });
+
+  it("moving a card to the Backlog never counts as starting work", async () => {
+    const { id } = await ticketWithPull();
+    const pm = await connect(board, { wake: true, tokenId: "tok-wake-2" });
+    expect(json(await call(pm, "move_card", { board, card: id, to: "backlog" }))).not.toMatchObject({ proposed: true });
+    expect((await repository().pmWakes(board, {})).filter((r) => r.kind === "started")).toEqual([]);
   });
 });
 

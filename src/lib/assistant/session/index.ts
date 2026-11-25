@@ -14,7 +14,7 @@ import { publish } from "@/lib/events/bus";
 import { postPmMessage } from "@/lib/assistant/pm-messages";
 import { guestLabel, isGuestId } from "@/lib/assistant/guest-ids";
 import { attachmentsPrompt, cancelJob, dispatchPmTurn, formicOrigin, runnerTakesSession } from "@/lib/runner/runner";
-import { claudeUsage, type StreamItem } from "@/lib/runner/stream";
+import { claudeContext, claudeUsage, type StreamItem } from "@/lib/runner/stream";
 import { ASSISTANT_CHANGE_SUFFIX, jobId } from "@/lib/runner/workflow";
 import { STAGING_PREFIX } from "@/lib/vcs/types";
 import { open, seal } from "@/lib/secrets/vault";
@@ -157,7 +157,7 @@ export async function startSessionTurn(input: {
 
   const job = jobId(messageId, randomUUID().slice(0, 8), input.attempt ?? 1);
   const limits = turnLimits(!!input.wake, agent.model);
-  const token = await createPmToken(project.ownerId, { projectId, sessionId });
+  const token = await createPmToken(project.ownerId, { projectId, sessionId, wake: !!input.wake });
   const handoff: Handoff = { token: token.secret, url: `${origin}/api/mcp` };
 
   // Fast: the session's own sandbox, kept warm between turns.
@@ -171,7 +171,7 @@ export async function startSessionTurn(input: {
       handoff: null,
       resumed,
       branch: null,
-      ...(resumed ? {} : { fileCipher: null, bytes: 0 }),
+      ...(resumed ? {} : { fileCipher: null, bytes: 0, contextTokens: 0 }),
     });
     await repo.updateAssistantMessage(messageId, { runnerJob: job, runnerAgent: agent.presetId });
     const toCi = async (why: string) => {
@@ -402,12 +402,21 @@ export async function stopSessionTurn(projectId: string, job: string): Promise<v
  */
 export async function recordSessionUsage(messageId: string, lines: string[]): Promise<void> {
   const usage = claudeUsage(lines);
-  if (!usage) return;
+  const context = claudeContext(lines);
+  if (!usage && context === null) return;
   const repo = repository();
   const message = await repo.assistantMessage(messageId);
-  if (!message?.runnerAgent) return;
-  await repo.addAssistantTokens(messageId, { presetId: message.runnerAgent, ...usage });
+  if (!message) return;
+  if (usage && message.runnerAgent) await repo.addAssistantTokens(messageId, { presetId: message.runnerAgent, ...usage });
+  if (context !== null) await repo.updatePmSession(message.projectId, { contextTokens: context });
 }
+
+/**
+ * Past this much context a resumed session starts fresh from the summary:
+ * turns are minutes apart, so the prompt cache has gone and every turn pays
+ * to re-read the whole history.
+ */
+export const PM_CONTEXT_FRESH_AT = 150_000;
 
 /** The most of a streamed reply kept while it is written; the latest part wins. */
 const MAX_STREAMED = 12_000;
@@ -500,6 +509,14 @@ export async function finishSessionTurn(input: {
   }
   await input.finish({ content: reply, status: "done" });
   await keepSummary(projectId);
+  // A session this long costs a whole history per message: the next one starts fresh from the summary.
+  const after = await repo.pmSession(projectId);
+  if (after && after.contextTokens > PM_CONTEXT_FRESH_AT && after.fileCipher) {
+    await repo.updatePmSession(projectId, { fileCipher: null, bytes: 0, contextTokens: 0 });
+    await postPmMessage(projectId, {
+      content: "The PM's session got long, so its next message starts a fresh one from a summary of this chat. Each message costs much less that way.",
+    });
+  }
 }
 
 /** The PM's agent is out of usage until `until` (an hour when the CLI did not say). */

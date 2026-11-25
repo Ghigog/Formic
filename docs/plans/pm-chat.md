@@ -362,6 +362,16 @@ How it changed (2026-11-25, after wake-ups spent a whole subscription):
   20 a day), and the per-board defaults are 3 and 10.
 - The golden bell restarts at most 5 cards every 10 minutes across all of
   one person's boards, instead of every stopped card at once.
+- A session whose last call carried more than 150,000 tokens starts its next
+  message fresh from the summary (one notice), and the file cap is 1 MiB.
+- The PM is woken for one ticket's questions at most twice while its branch
+  stays put; the next question goes to the person.
+- A wake-up's token is marked as one (`PM wake-up`), and its tools let it
+  start agent work once: a second move into a working column becomes a
+  proposal, a second answer or new Epic is refused with a line to tell the
+  person instead. A person's own turns are not limited this way.
+- Outside the PM: when the Reviewer approves the same commit twice while CI
+  is red, the ticket stops for the person instead of being reviewed again.
 
 ### PR 4: Guests with memory
 

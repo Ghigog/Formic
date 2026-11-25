@@ -890,6 +890,8 @@ export interface PmSessionRecord {
   /** Whether the current turn resumed a saved session. */
   resumed: boolean;
   lastTurnAt: Date | null;
+  /** The session's context at the end of its last turn, in tokens: what the next turn re-reads. */
+  contextTokens: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -920,7 +922,7 @@ export interface PmSessionRepository {
 }
 
 /** What the PM did on its own: a wake-up, a commit it landed on a ticket's branch, or a limit it said. */
-export type PmWakeKind = "question" | "stall" | "landed" | "fix-cap" | "hourly" | "daily" | "account";
+export type PmWakeKind = "question" | "stall" | "landed" | "fix-cap" | "hourly" | "daily" | "account" | "question-cap" | "started";
 
 export interface NewPmWake {
   projectId: string;
