@@ -69,7 +69,7 @@ export function BoardHeader({
           <ColonyTimelineButton />
         </div>
 
-        <div className="flex min-w-0 justify-center">
+        <div className="flex w-[clamp(240px,40vw,520px)] min-w-0 justify-center">
           {assistant && !isMobile && (
             <AskBox a={assistant} repoName={repo ?? repoFullName} />
           )}
