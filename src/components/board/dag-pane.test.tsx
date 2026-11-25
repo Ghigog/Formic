@@ -20,4 +20,17 @@ describe("DagPane", () => {
     // The reason still reads as one sentence around the link.
     expect(container.textContent).toContain(reason);
   });
+
+  it("reads a question as \"Question\", and any other blocked reason as \"Blocked\"", () => {
+    render(
+      <DagPane
+        tickets={[
+          makeCard({ key: "T-1", title: "Pick a store", status: "blocked", blockedReason: "Question: Which database?" }),
+          makeCard({ key: "T-2", title: "Ship it", status: "blocked", blockedReason: "Needs a token" }),
+        ]}
+      />,
+    );
+    expect(screen.getAllByText("Question")).toHaveLength(1);
+    expect(screen.getAllByText("Blocked")).toHaveLength(1);
+  });
 });

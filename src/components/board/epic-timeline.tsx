@@ -3,11 +3,12 @@ import { cn } from "@/components/ui/cn";
 import type { BoardCard } from "@/lib/domain/entities";
 import { topologicalOrder } from "@/lib/domain/dag";
 import { columnFor, isStalled } from "@/lib/domain/status";
-import { STATUS_LABEL } from "@/lib/tokens";
+import { statusLabel, statusTone } from "@/lib/tokens";
 
-type Tone = "done" | "active" | "pending" | "stuck";
+type Tone = "done" | "active" | "pending" | "stuck" | "plum";
 
 function toneOf(t: BoardCard): Tone {
+  if (statusTone(t.status, t.blockedReason) === "plum") return "plum";
   if (isStalled(t.status)) return "stuck";
   const column = columnFor(t.status, t.stalledIn);
   if (column === "done") return "done";
@@ -20,6 +21,7 @@ const BAR: Record<Tone, string> = {
   active: "bg-ochre",
   pending: "bg-sunken",
   stuck: "bg-crimson",
+  plum: "bg-plum",
 };
 
 const COUNTED = [
@@ -83,7 +85,7 @@ export function EpicTimeline({
               <button
                 type="button"
                 onClick={() => onOpenTicket?.(t.id)}
-                aria-label={`${t.key} ${t.title}: ${STATUS_LABEL[t.status]}`}
+                aria-label={`${t.key} ${t.title}: ${statusLabel(t.status, t.blockedReason)}`}
                 title={`${t.key} ${t.title}`}
                 className="group flex h-6 w-full items-center"
               >
