@@ -33,7 +33,7 @@ import { handoffSection } from "./handoff";
 import { startCliAnswer, startCliDraftTicket } from "@/lib/runner/runner";
 import { prdSchema } from "@/lib/domain/entities";
 import { typeOf } from "./decomposition";
-import { unstarted } from "@/lib/domain/status";
+import { isStalled, unstarted } from "@/lib/domain/status";
 import { projectFor } from "@/lib/board/project";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { carryActor } from "@/lib/auth/actor";
@@ -525,6 +525,22 @@ export async function applyTickets(
   });
 
   await orderNewEpic(projectId, epicId);
+
+  // A breakdown that landed ends any stall the Epic was left in (a usage
+  // limit during an earlier attempt, say): it has nothing left to retry.
+  const epic = await repo.cardById(epicId);
+  if (epic && isStalled(epic.status)) {
+    await repo.move({ cardId: epicId, kind: "epic", status: "ready", stalledIn: null, position: epic.position });
+    await publish(projectId, {
+      type: "card.status",
+      cardId: epicId,
+      kind: "epic",
+      status: "ready",
+      stalledIn: null,
+      stage: 3,
+      blockedReason: null,
+    });
+  }
 
   // A record of what a re-decomposition changed: it deletes tickets outright,
   // so this is the only trace of what they were, kept where a person already
