@@ -99,9 +99,9 @@ comes to the person as it would with no PM.
 | Hourly wake-ups (`pmWakesPerHour`) | wake-ups in any hour | 3; 0 to 60 | one board, every ticket | Gate | Yes, per board in Settings |
 | Daily PM allowance (`pmWakesPerDay`) | wake-ups per UTC day | 10; 0 to 500 | one board, apart from the coders' allowances | Gate | Yes, per board in Settings |
 | Account wake-ups (`PM_ACCOUNT_WAKES`) | wake-ups per hour, per UTC day | 6, 20 | every board one person owns (one Claude account) | Gate | No |
-| PM turn, wake-up (`PM_TURN_LIMITS.wake`) | minutes, Claude Code steps | 10, 30; on Sonnet | one turn nobody typed | Job (timeout); steps in E2B only | No |
+| PM turn, wake-up (`PM_TURN_LIMITS.wake`) | minutes, Claude Code steps | 10, 30; on the agent's model | one turn nobody typed | Job (timeout); steps in E2B only | No |
 | PM turn, person (`PM_TURN_LIMITS.person`) | minutes, Claude Code steps | 20, 80; on the agent's model | one turn answering the person | Job (timeout); steps in E2B only | No |
-| Golden bell batches (`BELL_BATCH`, `BELL_GAP_MS`) | cards, minutes | 2 every 10 | one board's limit-stopped cards after a reset | Gate | No |
+| Golden bell batches (`BELL_BATCH`, `BELL_GAP_MS`) | cards, minutes | 5 every 10 | every board one person owns (one Claude account), after a reset | Gate | No |
 
 A PM turn's tokens (input with cache reads and writes, plus output, from
 Claude Code's closing line) are counted on its reply and toward its agent's

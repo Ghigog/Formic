@@ -6,26 +6,33 @@ import { limitStoppedCards, ringBell } from "@/lib/colony/bell";
 /**
  * The golden bell: armed, it rings the silver bell's ring for the person, one
  * minute after the agent's limit resets, so a person away from the board
- * comes back to work done. It restarts BELL_BATCH cards every BELL_GAP_MS,
- * and one bell is spent when the last of them is out.
+ * comes back to work done. It restarts at most BELL_BATCH cards every
+ * BELL_GAP_MS across all of one person's boards, and one bell is spent when
+ * the last of its board's cards is out.
  */
 
 /** The wait after a reset, so the provider's window has surely reopened. */
 export const BELL_DELAY_MS = 60_000;
 
 /**
- * The golden bell restarts a few cards at a time, this far apart: every
- * stopped card starting the minute a limit resets spent the fresh window at
- * once, on every board sharing the account.
+ * The golden bell restarts a few cards at a time, this far apart, counted
+ * across every board one person owns (they share one Claude account): every
+ * stopped card starting the minute a limit resets spent the fresh window at once.
  */
-export const BELL_BATCH = 2;
+export const BELL_BATCH = 5;
 export const BELL_GAP_MS = 10 * 60_000;
 
 declare global {
-  var __formicBellRungAt: Map<string, number> | undefined;
+  var __formicBellRung: Map<string, { at: number; sent: number }> | undefined;
 }
-function rungAt(): Map<string, number> {
-  return (globalThis.__formicBellRungAt ??= new Map());
+/** Per account (the board owner): when its current batch started and how many it restarted. */
+function rung(): Map<string, { at: number; sent: number }> {
+  return (globalThis.__formicBellRung ??= new Map());
+}
+
+/** Forgets the batches, for tests. */
+export function resetBellBatches(): void {
+  rung().clear();
 }
 
 /** How often the server looks for a golden bell that is due. */
@@ -53,15 +60,15 @@ export async function ringBellIfDue(projectId: string, now = Date.now()): Promis
   if (!(await repo.goldenBell(projectId)).armed) return false;
   if (!(await ringTimes(projectId)).some((t) => t <= now)) return false;
   if ((await limitStoppedCards(projectId)).length === 0) return false;
-  const last = rungAt().get(projectId);
-  if (last !== undefined && now - last < BELL_GAP_MS) return false;
-  const { sent, skipped, left } = await ringBell(projectId, BELL_BATCH);
-  rungAt().set(projectId, now);
-  // The bell is spent once its last batch is out.
-  if (left === 0) {
-    await repo.useGoldenBell(projectId);
-    rungAt().delete(projectId);
-  }
+  const account = (await repo.projectById(projectId))?.ownerId ?? projectId;
+  const batch = rung().get(account);
+  const current = batch && now - batch.at < BELL_GAP_MS ? batch : { at: now, sent: 0 };
+  const room = BELL_BATCH - current.sent;
+  if (room <= 0) return false;
+  const { sent, skipped, left } = await ringBell(projectId, room);
+  rung().set(account, { at: current.at, sent: current.sent + sent });
+  // The bell is spent once its last card is out.
+  if (left === 0) await repo.useGoldenBell(projectId);
   console.info(`[formic] golden bell rang on ${projectId}: ${sent} resumed, ${skipped} still limited, ${left} for later`);
   return true;
 }

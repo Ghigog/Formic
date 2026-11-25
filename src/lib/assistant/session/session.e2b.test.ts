@@ -250,14 +250,14 @@ describe("the PM in its E2B sandbox", () => {
     expect((await repository().agentTokensByPreset())["preset-1"]).toEqual({ tokensIn: 1100, tokensOut: 20 });
   });
 
-  it("runs a wake-up on Sonnet with a shorter step limit", async () => {
+  it("runs a wake-up on the agent's own model with a shorter step limit", async () => {
     world.next = [{ words: "Answered E1-T1's question." }];
     const repo = repository();
     const pending = await repo.addAssistantMessage({ projectId: board, role: "assistant", content: "", status: "pending", speaker: "assistant" });
     await answer(board, pending.id, "[From Formic, not the person] E1-T1 asked a question.");
     await settled(pending.id);
     const run = claudeRuns(world.made[0]!)[0]!;
-    expect(run).toContain("--model 'sonnet'");
+    expect(run).not.toContain("--model");
     expect(run).toContain("--max-turns 30");
   });
 

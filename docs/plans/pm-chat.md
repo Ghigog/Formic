@@ -352,15 +352,16 @@ How it changed (2026-11-25, after wake-ups spent a whole subscription):
   file is kept, nothing is retried (no "Reconnected" fresh start), and the
   PM's agent is marked out of usage until the reset, so question wake-ups
   wait too.
-- Each turn is bounded: a wake-up runs on Sonnet for at most 10 minutes and
-  30 steps, a person's message on the agent's model for 20 minutes and 80
+- Each turn is bounded, on the agent's own model: a wake-up for at most 10
+  minutes and 30 steps, a person's message for 20 minutes and 80
   steps (steps in E2B only; CI has the job timeout). A turn that ran out is
   not started again fresh.
 - A turn's tokens are recorded on its reply and count toward the PM agent's
   token allowance, which now gates the PM like any column.
 - Wake-ups are also capped across every board one person owns (6 an hour,
   20 a day), and the per-board defaults are 3 and 10.
-- The golden bell restarts 2 cards every 10 minutes instead of all at once.
+- The golden bell restarts at most 5 cards every 10 minutes across all of
+  one person's boards, instead of every stopped card at once.
 
 ### PR 4: Guests with memory
 

@@ -87,19 +87,19 @@ interface Handoff {
 }
 
 /**
- * What one PM turn may spend. A wake-up (a turn nobody typed) is short and
- * runs on Sonnet; a person's message gets more room on the agent's own model.
- * Without these a turn ran up to the job's hour on Opus, with no step limit.
+ * What one PM turn may spend, on the agent's own model. A wake-up (a turn
+ * nobody typed) is short; a person's message gets more room. Without these
+ * a turn ran up to the job's hour, with no step limit.
  */
 export const PM_TURN_LIMITS = {
-  wake: { minutes: 10, maxTurns: 30, model: "sonnet" },
-  person: { minutes: 20, maxTurns: 80, model: null },
+  wake: { minutes: 10, maxTurns: 30 },
+  person: { minutes: 20, maxTurns: 80 },
 } as const;
 
 /** The limits for a turn: a wake-up's, or a person's. */
 export function turnLimits(wake: boolean, agentModel: string | null): { minutes: number; maxTurns: number; model: string | null } {
   const limits = wake ? PM_TURN_LIMITS.wake : PM_TURN_LIMITS.person;
-  return { minutes: limits.minutes, maxTurns: limits.maxTurns, model: limits.model ?? agentModel };
+  return { minutes: limits.minutes, maxTurns: limits.maxTurns, model: agentModel };
 }
 
 /**
