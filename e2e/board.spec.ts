@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import {
   COLUMNS,
   card,
@@ -490,6 +490,8 @@ test("a ticket opens its own view, not its Epic's", async ({ page }) => {
 });
 
 test("a sentinel calibrates, then audits against its rubric, and its stars count toward the grade", async ({ page }) => {
+  // Two mock audits back to back: about 25 s on CI, past the 15 s default.
+  test.setTimeout(60_000);
   await gotoBoard(page);
   await page.getByRole("button", { name: /audit grade/i }).click();
   const sentinels = page.getByRole("region", { name: "Sentinels" });

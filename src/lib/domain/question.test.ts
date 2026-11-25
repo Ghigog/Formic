@@ -10,8 +10,8 @@ describe("a question for the person", () => {
     expect(isQuestion(reason)).toBe(true);
     expect(classifyNotice({ status: "blocked", stalledIn: "backlog", blockedReason: reason })).toMatchObject({
       severity: "question",
-      title: "Question for you",
-      shortDescription: "Should the bell hang from a string?",
+      title: "Should the bell hang from a string?",
+      shortDescription: "",
     });
   });
 

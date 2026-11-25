@@ -1,8 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 import { TOURS } from "./src/components/onboarding/tours";
+import { E2E_PORT as PORT, E2E_SERVERS } from "./e2e/servers";
 
-const PORT = Number(process.env.E2E_PORT ?? 3210);
-const baseURL = `http://127.0.0.1:${PORT}`;
+const baseURL = E2E_SERVERS[0]!;
 
 /**
  * A second server on the same build, in accounts mode: email sign-in with
@@ -39,12 +39,10 @@ const buildFirst = process.env.E2E_SKIP_BUILD === "1" ? "" : "npm run build && "
  */
 const storageState = {
   cookies: [],
-  origins: [
-    {
-      origin: baseURL,
-      localStorage: [{ name: "formic:tours:seen", value: JSON.stringify(Object.keys(TOURS)) }],
-    },
-  ],
+  origins: E2E_SERVERS.map((origin) => ({
+    origin,
+    localStorage: [{ name: "formic:tours:seen", value: JSON.stringify(Object.keys(TOURS)) }],
+  })),
 };
 
 export default defineConfig({
@@ -52,19 +50,20 @@ export default defineConfig({
   outputDir: "./e2e/.results",
 
   /*
-   * One worker, no parallelism, and this is deliberate.
+   * One worker per server, and each server has its own in-memory store.
    *
-   * The board these tests drive has one server process and, without a
-   * DATABASE_URL, one in-memory store. Two workers would be moving cards on
-   * the same board and reading each other's writes. Tests that mutate put
-   * the card back where they found it — see e2e/board.ts — which only works
-   * if nothing else is moving at the same time.
-   *
-   * If this ever gets slow enough to matter, the fix is a database per
-   * worker, not more workers against one store.
+   * Without a DATABASE_URL a server keeps one board in memory. Two workers on
+   * one server would be moving cards on the same board and reading each
+   * other's writes; tests that mutate put the card back where they found it
+   * (see e2e/board.ts), which only works if nothing else is moving at the
+   * same time. So each worker talks to a server of its own (e2e/fixtures.ts,
+   * E2E_SERVERS), and a file's tests stay together on one worker.
    */
-  workers: 1,
+  workers: E2E_SERVERS.length,
   fullyParallel: false,
+
+  // A test that has not finished in 15 s is stuck, not slow: fail it sooner.
+  timeout: 15_000,
 
   forbidOnly: !!process.env.CI,
   // No retries: a test that passes on its second try is a flaky test, and a
@@ -129,6 +128,15 @@ export default defineConfig({
      */
     reuseExistingServer: process.env.E2E_REUSE_SERVER === "1",
     timeout: 240_000,
+    stdout: "pipe",
+    stderr: "pipe",
+  }, {
+    // The second board server: the same build on its own port, with a store of its own.
+    command: `until curl -sf ${baseURL}/api/health >/dev/null; do sleep 1; done; npx next start -p ${PORT + 2}`,
+    env: { ...process.env, AGENT_PROVIDER: "mock" } as Record<string, string>,
+    url: `${E2E_SERVERS[1]}/api/health`,
+    reuseExistingServer: process.env.E2E_REUSE_SERVER === "1",
+    timeout: 300_000,
     stdout: "pipe",
     stderr: "pipe",
   }, {

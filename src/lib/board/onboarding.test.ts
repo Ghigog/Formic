@@ -40,7 +40,7 @@ describe("the design ticket", () => {
     expect(cards).toHaveLength(1);
     const card = cards[0]!;
     expect(card).toMatchObject({ kind: "ticket", status: "blocked", stalledIn: "todo", title: DESIGN_TICKET.title });
-    expect(classifyNotice(card)).toMatchObject({ severity: "question", shortDescription: DESIGN_TICKET.question.question });
+    expect(classifyNotice(card)).toMatchObject({ severity: "question", title: DESIGN_TICKET.question.question });
     expect((await repo.ticketDetail(card.id))!.fileScope).toEqual(["DESIGN.md"]);
   });
 });
