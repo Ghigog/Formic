@@ -343,6 +343,16 @@ How it landed (PR 3b, part 2: E2B):
 - Not done: killing the sandbox when a board is deleted (E2B's own retention
   reclaims a paused one).
 
+How it changed (2026-11-25, after wake-ups spent a whole subscription):
+
+- The PM wakes only for an agent's question or a person's message. A stall
+  (stuck, failed, out of reviews) is a notice to the person and never starts
+  a PM turn. This overrides decision 3's "a ticket that gets stuck wakes the PM".
+- A PM turn that fails on a usage limit is not a broken session: the session
+  file is kept, nothing is retried (no "Reconnected" fresh start), and the
+  PM's agent is marked out of usage until the reset, so question wake-ups
+  wait too.
+
 ### PR 4: Guests with memory
 
 Files: `src/lib/runner/workflow.ts` (upload session at run end),

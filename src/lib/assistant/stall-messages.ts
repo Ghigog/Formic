@@ -61,19 +61,12 @@ export async function reportStall(projectId: string, event: FormicEvent, seq?: n
     const notice = classifyNotice(stopped);
     if (!notice || isUsageLimitStop(stopped)) return;
 
-    // A stop that is not a question: the PM looks into it first and says what happened (questions wake it already).
-    let held: string | null = null;
-    if (notice.severity !== "question") {
-      const { wakePmForStall } = await import("@/lib/pm/questions");
-      const woke = await wakePmForStall(projectId, card.id, event.blockedReason ?? "");
-      if (woke.woke) return;
-      held = woke.say;
-    }
-
+    // The PM wakes only when an agent asks it a question or the person writes to it.
+    // A stall goes to the person as a notice; it never starts a PM turn (that spent
+    // the person's Claude usage on every stuck ticket).
     const lines = [`${card.key} · ${card.title} needs you: ${notice.title}. ${notice.shortDescription}`];
     if (notice.longDescription) lines.push("", notice.longDescription);
     if (notice.severity === "question") lines.push("", "Answer in the card's chat.");
-    if (held) lines.push("", held);
 
     await postPmMessage(projectId, {
       content: lines.join("\n"),

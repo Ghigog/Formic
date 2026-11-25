@@ -218,6 +218,35 @@ describe("the PM session, end to end", () => {
     expect((await repository().assistantMessage(second))?.status).toBe("failed");
   });
 
+  it("keeps the session and retries nothing when the PM is out of usage", async () => {
+    const first = await ask("Hello");
+    const turn = dispatched[0]!;
+    const { sessionId } = await (await get(turn.session)).json();
+    await post(turn.session, { sessionId, branch: "main", file: gzipSync("{}\n").toString("base64") });
+    reply = "Hi there.";
+    await completeCliRun(board, { job: turn.job, mode: "ask", conclusion: "success", url: null });
+    expect((await repository().assistantMessage(first))?.status).toBe("done");
+    await Promise.all(running);
+
+    const second = await ask("Where were we?");
+    const limited = dispatched[1]!;
+    await get(limited.session);
+    const { finishSessionAnswer } = await import("@/lib/assistant/turn");
+    await finishSessionAnswer(board, second, limited.job, {
+      reply: null,
+      failure: "Claude Code stopped with an error: You've hit your session limit · resets 7:40pm (UTC)",
+      changeSha: null,
+    });
+
+    expect(dispatched).toHaveLength(2);
+    const after = await repository().assistantMessage(second);
+    expect(after?.status).toBe("failed");
+    expect(after?.content).toContain("out of Claude usage");
+    const notices = (await repository().assistantMessages(board)).messages.filter((m) => m.kind === "notice");
+    expect(notices.map((m) => m.content).join("\n")).not.toContain("Reconnected");
+    expect((await repository().pmSession(board))?.fileCipher).toBeTruthy();
+  });
+
   it("leaves a repository whose workflow predates sessions on the old way of answering", async () => {
     takesSession.value = false;
     const replyId = await ask("Hello");

@@ -3,7 +3,8 @@ import "server-only";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
 import { createPmToken, revokePmTokens } from "@/lib/access-tokens";
-import type { CliAgent } from "@/lib/agents/presets";
+import { assistantAgentFor, type CliAgent } from "@/lib/agents/presets";
+import { diagnose, formatReset } from "@/lib/agents/limits";
 import { signingSecret } from "@/lib/auth/session";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { projectFor } from "@/lib/board/project";
@@ -413,6 +414,14 @@ export async function finishSessionTurn(input: {
   await repo.updatePmSession(projectId, { turnJob: null, handoff: null, lastTurnAt: new Date() });
 
   const reply = outcome.reply?.trim() ?? "";
+  const limit = outcome.failure ? diagnose(outcome.failure, "The PM") : null;
+  if (limit?.kind === "limit") {
+    // Out of usage is not a broken session: keep it, retry nothing, and keep
+    // the PM asleep until the window resets so wake-ups stop spending.
+    const at = await markPmLimited(projectId, limit.until);
+    await input.finish({ content: `The PM is out of Claude usage until ${formatReset(at)}, so it is resting until then. Nothing was retried.`, status: "failed" });
+    return;
+  }
   if (outcome.failure || !reply) {
     if (session.resumed) {
       // The saved session would not come back: carry on from the summary.
@@ -442,6 +451,17 @@ export async function finishSessionTurn(input: {
   }
   await input.finish({ content: reply, status: "done" });
   await keepSummary(projectId);
+}
+
+/** The PM's agent is out of usage until `until` (an hour when the CLI did not say). */
+async function markPmLimited(projectId: string, until: Date | null): Promise<Date> {
+  const at = until ?? new Date(Date.now() + 60 * 60 * 1000);
+  const agent = await assistantAgentFor(projectId);
+  if (agent.kind !== "cli" || !agent.agent.presetId) return at;
+  const note = `The PM hit its usage limit. It can work again at ${formatReset(at)}.`;
+  await repository().setPresetLimit(agent.agent.presetId, { until: at, note });
+  await publish(projectId, { type: "agent.limited", presetId: agent.agent.presetId, until: at.toISOString(), note });
+  return at;
 }
 
 /** The running summary, after a turn. */

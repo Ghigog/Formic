@@ -80,31 +80,16 @@ describe("reportStall", () => {
     expect(await messages()).toHaveLength(0);
   });
 
-  it("wakes the PM for a non-question stop when an agent can answer, and posts nothing canned", async () => {
+  it("never wakes the PM for a stall: it is a notice for the person", async () => {
     agent.kind = "api";
     const t = await seed();
-    const reason = "Out of reviews: build still failing\nWhat failed:\nx";
-    await reportStall(PROJECT, stall(t.id, "blocked", reason));
-    expect(wake).toHaveBeenCalledWith(PROJECT, t.id, reason);
-    expect(await messages()).toHaveLength(0);
-  });
-
-  it("posts the canned message with the description when no agent can answer", async () => {
-    const t = await seed();
-    await reportStall(PROJECT, stall(t.id, "blocked", "Out of reviews: build still failing\nWhat failed:\nboom"));
-    const [m] = await messages();
-    expect(m!.content).toContain("needs you: Out of reviews. Out of reviews: build still failing");
-    expect(m!.content).toContain("boom");
-  });
-
-  it("posts the canned message with the limit's line when the PM is held", async () => {
-    agent.kind = "api";
-    agent.held = "The PM has used today's 20 wake-ups.";
-    const t = await seed();
-    await reportStall(PROJECT, stall(t.id, "blocked", "Out of reviews: build still failing\nWhat failed:\nboom"));
-    const [m] = await messages();
-    expect(m!.content).toContain("needs you: Out of reviews.");
-    expect(m!.content).toContain("The PM has used today's 20 wake-ups.");
+    await reportStall(PROJECT, stall(t.id, "blocked", "Run stuck: no new commits for 30 minutes\nCoder: tests"));
+    await reportStall(PROJECT, stall(t.id, "failed", "Out of reviews: build still failing\nWhat failed:\nboom"));
+    expect(wake).not.toHaveBeenCalled();
+    const all = await messages();
+    expect(all).toHaveLength(2);
+    expect(all[1]!.content).toContain("Out of reviews: build still failing");
+    expect(all[1]!.content).toContain("boom");
   });
 
   it("does not wake the PM for a usage-limit stop", async () => {
