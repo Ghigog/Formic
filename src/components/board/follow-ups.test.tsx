@@ -82,6 +82,23 @@ describe("a ticket's follow-ups", () => {
     ]);
   });
 
+  it("offers add and dismiss on one still waiting for its ticket's merge", async () => {
+    const posts = serve();
+    const changed = vi.fn();
+    render(
+      <FollowUps
+        ticketId="t1"
+        followUps={[{ title: "Fix flaky receipt-fit test", why: "It fails at random.", points: 2, need: "nice", outcome: { kind: "pending" } }]}
+        onChanged={changed}
+        {...NAV}
+      />,
+    );
+    expect(screen.queryByText("Pending")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add ticket" }));
+    await waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
+    expect(posts).toEqual([{ url: "/api/tickets/t1/follow-ups", body: { index: 0, add: true } }]);
+  });
+
   it("says why when it cannot", async () => {
     serve(409, { error: "That follow-up is no longer there." });
     render(

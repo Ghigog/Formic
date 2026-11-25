@@ -45,11 +45,9 @@ function Outcome({
         </span>
       );
     case "pending":
-      return (
-        <span className={`${CHIP} text-fg-subtle whitespace-nowrap`}>
-          Pending
-        </span>
-      );
+      // Answered with buttons below: it waits for the ticket's merge otherwise,
+      // which may never come when this work is what blocks it.
+      return null;
   }
 }
 
@@ -103,7 +101,8 @@ export function FollowUps({
       <p className="text-fg-muted mt-1 text-[12px]">
         Work its agents found that is bigger than this ticket or belongs to
         another. Needed work is added to To Do; optional work is proposed in the
-        PM&apos;s chat.
+        PM&apos;s chat when this ticket merges, or you can add or dismiss it here
+        now.
       </p>
       <ul className="mt-1 space-y-1.5">
         {followUps.map((f, i) => (
@@ -126,7 +125,7 @@ export function FollowUps({
                   <p className="text-fg-muted m-0 text-[12px]">{f.why}</p>
                 )}
               </div>
-              {f.outcome ? (
+              {f.outcome && f.outcome.kind !== "pending" ? (
                 <Outcome
                   outcome={f.outcome}
                   onOpenCard={onOpenCard}
