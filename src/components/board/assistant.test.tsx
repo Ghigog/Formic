@@ -160,6 +160,30 @@ describe("the chat stream", () => {
     expect(screen.getByText("A real answer").closest("[data-kind]")).toHaveAttribute("data-kind", "pm");
   });
 
+  it("links the pull request a notice mentions, without the closing full stop", () => {
+    render(
+      <AskBox
+        a={{
+          ...controls,
+          messages: [
+            {
+              ...done,
+              id: "n",
+              role: "assistant",
+              kind: "notice",
+              content: "Opened pull request #152: https://github.com/o/r/pull/152.",
+            },
+          ],
+        }}
+        repoName="demo"
+      />,
+    );
+    expect(screen.getByRole("link", { name: "https://github.com/o/r/pull/152" })).toHaveAttribute(
+      "href",
+      "https://github.com/o/r/pull/152",
+    );
+  });
+
   it("keeps a reply directly under the question, with a notice that landed between them moved above", () => {
     const at = (s: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, s)).toISOString();
     const { container } = render(

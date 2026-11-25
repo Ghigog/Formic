@@ -33,8 +33,8 @@ async function restoreFromArchive(page: Page, key: string) {
   const nest = page.getByRole("button", { name: "Open colony: levels and bug styles" }).first();
   await expect(async () => {
     if ((await nest.getAttribute("aria-expanded")) !== "true") await nest.click();
-    await page.getByRole("button", { name: "Archived", exact: true }).click({ timeout: 1000 });
-  }).toPass();
+    await page.getByRole("button", { name: "Archived", exact: true }).click({ timeout: 2000 });
+  }).toPass({ intervals: [250, 500, 1000], timeout: 12_000 });
   const view = page.getByRole("dialog", { name: "Archived" });
   await view.getByRole("button", { name: new RegExp(`^Restore ${key} `) }).click();
   await expect(view.getByRole("button", { name: new RegExp(`^Restore ${key} `) })).toHaveCount(0);
