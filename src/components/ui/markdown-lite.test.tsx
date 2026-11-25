@@ -96,4 +96,38 @@ describe("MarkdownLite", () => {
     expect(container.querySelector("ol")?.textContent).toBe("one");
     expect(container.querySelector("p")?.textContent).toBe("after");
   });
+
+  describe("links", () => {
+    const links = (text: string) => [...render(<MarkdownLite text={text} />).container.querySelectorAll("a")];
+
+    it("links a bare URL without the sentence's full stop, in a new tab", () => {
+      const [a] = links("Merge https://github.com/o/r/pull/152.");
+      expect(a).toHaveAttribute("href", "https://github.com/o/r/pull/152");
+      expect(a).toHaveAttribute("target", "_blank");
+      expect(a).toHaveAttribute("rel", "noreferrer");
+    });
+
+    it("renders [label](url) as the label alone", () => {
+      const { container } = render(<MarkdownLite text="See [the PR](https://github.com/o/r/pull/7) now" />);
+      expect(container.querySelector("a")).toHaveTextContent("the PR");
+      expect(container.textContent).toBe("See the PR now");
+    });
+
+    it("leaves a javascript: link as plain text", () => {
+      const { container } = render(<MarkdownLite text="[click](javascript:alert(1))" />);
+      expect(container.querySelector("a")).toBeNull();
+      expect(container.textContent).toContain("click");
+    });
+
+    it("keeps a URL in a code span as code", () => {
+      const { container } = render(<MarkdownLite text="Run `https://example.com` now" />);
+      expect(container.querySelector("a")).toBeNull();
+      expect(container.querySelector("code")).toHaveTextContent("https://example.com");
+    });
+
+    it("links a URL inside bold", () => {
+      const { container } = render(<MarkdownLite text="**https://example.com/a**" />);
+      expect(container.querySelector("strong a")).toHaveAttribute("href", "https://example.com/a");
+    });
+  });
 });
