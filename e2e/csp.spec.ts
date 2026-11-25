@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import { gotoBoard } from "./board";
 
 /** The production CSP only allows nonce'd scripts: the pages must still hydrate under it. */

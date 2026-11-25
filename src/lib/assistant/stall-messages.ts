@@ -64,7 +64,9 @@ export async function reportStall(projectId: string, event: FormicEvent, seq?: n
     // The PM wakes only when an agent asks it a question or the person writes to it.
     // A stall goes to the person as a notice; it never starts a PM turn (that spent
     // the person's Claude usage on every stuck ticket).
-    const lines = [`${card.key} · ${card.title} needs you: ${notice.title}. ${notice.shortDescription}`];
+    // A question's title is the question itself.
+    const what = notice.severity === "question" ? `Question for you. ${notice.title}` : `${notice.title}. ${notice.shortDescription}`;
+    const lines = [`${card.key} · ${card.title} needs you: ${what}`];
     if (notice.longDescription) lines.push("", notice.longDescription);
     if (notice.severity === "question") lines.push("", "Answer in the card's chat.");
 
