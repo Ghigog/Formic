@@ -16,6 +16,9 @@ import { DagPane } from "./dag-pane";
 import { PrdPane } from "./prd-pane";
 import { AttachmentGallery } from "./attachment-gallery";
 import { ProblemNotice, WorkTimer } from "./card";
+import { NoticeBanner } from "./notice-banner";
+import { classifyNotice } from "@/lib/domain/notice";
+import { isQuestion } from "@/lib/domain/question";
 import {
   AGENT_ROLE_LABELS,
   COLUMN_AGENT_ROLE,
@@ -241,7 +244,11 @@ export function EpicDrawer({
   if (!epicId) return null;
 
   const epic = detail?.epic;
-  const failedAt = epic && isStalled(epic.status) ? epic.stage : null;
+  const stalledAt = epic && isStalled(epic.status) ? epic.stage : null;
+  const asking = isQuestion(epic?.blockedReason);
+  const failedAt = asking ? null : stalledAt;
+  const askedAt = asking ? stalledAt : null;
+  const notice = epic && !epic.misplacedReason ? classifyNotice(epic) : null;
   const children = detail?.children ?? [];
 
   const chat = epic && (
@@ -277,13 +284,13 @@ export function EpicDrawer({
         className="bg-bg border-line flex h-[92dvh] outline-none w-full max-w-5xl flex-col rounded-t-lg border sm:h-[85dvh] sm:rounded-lg"
       >
         <header className="border-line shrink-0 border-b p-4">
-          {epic && !kb.open && (
-            <ProblemNotice
-              card={epic}
-              className="mb-3"
-              onOpenChat={() => setTab("chat")}
-            />
-          )}
+          {epic &&
+            !kb.open &&
+            (notice ? (
+              <NoticeBanner notice={notice} className="mb-3" onOpenChat={() => setTab("chat")} />
+            ) : (
+              <ProblemNotice card={epic} className="mb-3" onOpenChat={() => setTab("chat")} />
+            ))}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
             <div className="min-w-0 sm:flex-1">
               <span className="text-fg-subtle font-mono text-[10px]">
@@ -294,7 +301,7 @@ export function EpicDrawer({
               </h2>
               {epic && (
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <StatusPill status={epic.status} />
+                  <StatusPill status={epic.status} blockedReason={epic.blockedReason} />
                   {epic.workingSince && (
                     <span className="text-ochre-text inline-flex items-center gap-1 text-[11px]">
                       Working for{" "}
@@ -386,6 +393,7 @@ export function EpicDrawer({
                 stages={LIFECYCLE_STAGES.slice(0, 3)}
                 current={Math.min(epic?.stage ?? 1, 3)}
                 failedAt={failedAt == null ? null : Math.min(failedAt, 3)}
+                askedAt={askedAt == null ? null : Math.min(askedAt, 3)}
                 working={epic?.status === "running" || !!epic?.agentRole}
               />
             ))}
