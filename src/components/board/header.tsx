@@ -8,13 +8,13 @@ import { AccountMenu, type Account } from "./account-menu";
 import { AskBox, AskButton, type AssistantControls } from "./assistant";
 import {
   ColonyHeaderStats,
-  ColonyLevelStats,
   ColonyMobileStats,
+  ColonyTimelineButton,
 } from "@/components/colony/header-stats";
 
 /**
- * The 64px board header: the project, the assistant, and the colony: level
- * centred, then points, heat and the way into the timeline. New work starts
+ * The 64px board header: the project, the assistant, and the colony: Timeline
+ * beside the logo, the ask box centred, level, points and heat on the right. New work starts
  * from the Backlog's own button.
  *
  * Below 768px it collapses to a 56px app bar.
@@ -66,16 +66,17 @@ export function BoardHeader({
             )}
           </div>
 
-          <div className="flex min-w-0 flex-1">
-            {assistant && !isMobile && (
-              <AskBox a={assistant} repoName={repo ?? repoFullName} />
-            )}
-          </div>
+          <ColonyTimelineButton />
         </div>
 
-        <ColonyLevelStats />
+        <div className="flex w-[clamp(240px,40vw,520px)] min-w-0 justify-center">
+          {assistant && !isMobile && (
+            <AskBox a={assistant} repoName={repo ?? repoFullName} />
+          )}
+        </div>
+
         <div className="flex items-center justify-end gap-4">
-          <ColonyHeaderStats showLevel={false} />
+          <ColonyHeaderStats />
           {account && <AccountMenu account={account} />}
         </div>
       </header>
@@ -97,6 +98,7 @@ export function BoardHeader({
             className="fixed top-14 left-4"
           />
         )}
+        <ColonyTimelineButton iconOnly />
         {assistant && isMobile && (
           <AskButton a={assistant} repoName={repo ?? repoFullName} />
         )}

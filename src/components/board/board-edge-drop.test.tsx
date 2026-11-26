@@ -28,7 +28,7 @@ vi.mock("@hello-pangea/dnd", async (orig) => {
 
 vi.mock("@/components/colony/header-stats", () => ({
   ColonyHeaderStats: () => null,
-  ColonyLevelStats: () => null,
+  ColonyTimelineButton: () => null,
   ColonyMobileStats: () => null,
 }));
 

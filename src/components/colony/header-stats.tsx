@@ -462,39 +462,35 @@ export function ColonyLevelStats() {
   );
 }
 
-/**
- * The colony's corner of the header: the level,
- * rank, points and heat, and the way into the timeline.
- */
-export function ColonyHeaderStats({
-  showLevel = true,
-}: {
-  showLevel?: boolean;
-}) {
+/** The colony's corner of the header: the level, rank and XP bar, with the points and heat right beside them. */
+export function ColonyHeaderStats() {
   const c = useColony();
   if (!c) return null;
   return (
-    <>
-      <div className="flex shrink-0 items-center gap-2.5">
-        {showLevel && <ColonyLevelStats />}
-      </div>
-
-      <span aria-hidden className="bg-line h-6 w-px shrink-0 max-xl:hidden" />
-
+    <div className="flex shrink-0 items-center gap-4">
+      <ColonyLevelStats />
       <div data-tour="points" className="flex shrink-0 items-center gap-2.5">
         <PointsPanel c={c} className="h-9 gap-2.5 px-3">
           <PointsCounter value={c.shownPoints} />
         </PointsPanel>
       </div>
-
-      <TimelineButton c={c} />
-    </>
+    </div>
   );
 }
 
+/** The way into the timeline, beside the logo. Nothing while it is locked. */
+export function ColonyTimelineButton({
+  iconOnly = false,
+}: {
+  iconOnly?: boolean;
+}) {
+  const c = useColony();
+  if (!c) return null;
+  return <TimelineButton c={c} iconOnly={iconOnly} />;
+}
+
 /**
- * The colony in the app bar below 768px: a level and points
- * button, heat, and an icon-only timeline button.
+ * The colony in the app bar below 768px: a level badge, points and heat.
  */
 export function ColonyMobileStats() {
   const c = useColony();
@@ -516,7 +512,6 @@ export function ColonyMobileStats() {
           />
         </PointsPanel>
       </div>
-      <TimelineButton c={c} iconOnly />
     </>
   );
 }
