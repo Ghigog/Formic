@@ -403,36 +403,63 @@ describe("applyTransition into In Progress with no agent", () => {
 });
 
 describe("applyTransition into a column whose agent is out of usage", () => {
-  it("lands the card, marked with when the agent is back", async () => {
-    const epic = makeCard({ kind: "epic", status: "specified", size: null });
-    seedMemory([epic]);
-    const repo = repository();
-    const preset = await repo.savePreset({
+  async function limit(column: "todo" | "in_progress") {
+    const preset = await repository().savePreset({
       name: "Claude (work)",
       provider: "claude-code",
       model: "",
       prompt: "",
       apiKeyCipher: null,
     });
-    await repo.setColumnAgent(PROJECT, "todo", preset.id);
-    await repo.setPresetLimit(preset.id, { until: new Date(Date.now() + 3_600_000), note: "limit" });
+    await repository().setColumnAgent(PROJECT, column, preset.id);
+    await repository().setPresetLimit(preset.id, { until: new Date(Date.now() + 3_600_000), note: "limit" });
+  }
+  const drop = (card: ReturnType<typeof makeCard>, from: "backlog" | "todo", to: "todo" | "in_progress") =>
+    applyTransition(PROJECT, { cardId: card.id, kind: card.kind, from, to, position: 1, actor: "user" });
 
-    const result = await applyTransition(PROJECT, {
-      cardId: epic.id,
-      kind: "epic",
-      from: "backlog",
-      to: "todo",
-      position: 1,
-      actor: "user",
-    });
+  it("holds an Epic dropped in To Do on the usage-limit clock", async () => {
+    const epic = makeCard({ kind: "epic", status: "specified", size: null });
+    seedMemory([epic]);
+    await limit("todo");
 
-    expect(result).toMatchObject({ ok: true, status: "specified" });
-    expect(result.ok ? result.problem : "").toContain("Claude (work) is out of usage until");
+    const result = await drop(epic, "backlog", "todo");
+
+    expect(result).toEqual({ ok: true, status: "blocked", runId: null });
     expect(await repository().cardById(epic.id)).toMatchObject({
-      status: "specified",
-      misplacedIn: "todo",
+      status: "blocked",
+      stalledIn: "todo",
+      misplacedIn: null,
     });
+    expect((await repository().cardById(epic.id))?.blockedReason).toContain("Claude (work) is out of usage until");
     expect(launched).toEqual([]);
+  });
+
+  it("holds a ticket dropped in In Progress there, starting no agent", async () => {
+    const ticket = makeCard({ status: "ready" });
+    seedMemory([ticket]);
+    await limit("in_progress");
+
+    const result = await drop(ticket, "todo", "in_progress");
+
+    expect(result).toEqual({ ok: true, status: "blocked", runId: null });
+    expect(await repository().cardById(ticket.id)).toMatchObject({
+      status: "blocked",
+      stalledIn: "in_progress",
+      misplacedIn: null,
+    });
+    expect((await repository().cardById(ticket.id))?.blockedReason).toContain(" is out of usage until ");
+    expect(launched).toEqual([]);
+  });
+
+  it("still tells a needsHuman ticket it is for the person", async () => {
+    const ticket = makeCard({ status: "ready", needsHuman: "Add the API key." });
+    seedMemory([ticket]);
+    await limit("in_progress");
+
+    const result = await drop(ticket, "todo", "in_progress");
+
+    expect(result.ok ? result.problem : "").toContain("is for you, not an agent");
+    expect(await repository().cardById(ticket.id)).toMatchObject({ status: "ready", misplacedIn: "in_progress" });
   });
 });
 
