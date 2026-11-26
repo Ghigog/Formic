@@ -8,6 +8,7 @@ import { claimLabel, heldBy } from "@/lib/domain/queue";
 import { byPosition } from "@/lib/ordering";
 import { readiness } from "@/lib/domain/stack";
 import { LeaseBusy, repoKey, withLease } from "./lease";
+import { boardPorts } from "./ports";
 import type { ProjectSummary } from "@/lib/db/repository";
 import { scoreOf } from "@/lib/colony/game";
 import { colonyAdmits, effectiveColony, isTopPriority, isUrgent, slotsInUse, slotsOf, type ColonySettings } from "@/lib/colony/reserve";
@@ -46,7 +47,7 @@ async function startQueuedOn(repoFullName: string): Promise<void> {
   const pulled: Array<{ projectId: string; card: BoardCard; position: number }> = [];
   const started = await withLease(reservationLease(repoFullName), () => claimQueued(repoFullName, recalled, waiting, pulled));
   // Moved after the lease: a move decides its own start under it.
-  const { applyTransition } = await import("./service");
+  const { applyTransition } = boardPorts().service;
   const moved = new Set<string>();
   for (const { projectId, card, position } of pulled) {
     if (moved.has(card.id)) continue;
