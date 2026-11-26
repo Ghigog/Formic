@@ -33,7 +33,6 @@ import {
   scopedWorkspace,
 } from "@/lib/sandbox/workspace";
 import { MockVcsClient, type VcsClient, resetVcs, setVcs } from "@/lib/vcs";
-import { applyCardAction } from "@/lib/agents/card-actions";
 import { publish } from "@/lib/events/bus";
 import { noteTexts } from "./notes";
 import { resetEnvCache } from "@/lib/secrets/env";
@@ -182,6 +181,11 @@ async function seedTicket(options?: {
     },
   ]);
   return (await repo.ticketDetail(ticket!.id))!;
+}
+
+/** The head of a mock pull request now. */
+async function vcsHead(number: number): Promise<string> {
+  return (await new MockVcsClient(REPO).pullRequest(number)).headSha;
 }
 
 /** Waits for detached work (launch()) to reach a state, or gives up loudly. */
@@ -871,6 +875,19 @@ describe("the Reviewer Agent pipeline", () => {
     expect(after.blockedReason).toContain("had no fix");
   });
 
+  it("brings main in rather than stop, when red CI has no fix and the branch is behind main", async () => {
+    useAgents(new StubCoder(writesInScope()), new StubReviewer());
+    const ticket = await seedTicket();
+    const pull = await openPullRequestFor(ticket, false);
+    MockVcsClient.behindBase(pull.number);
+
+    await reviewPullRequest(PROJECT, pull.number, pull.headSha);
+
+    await until(async () => (await repository().ticketDetail(ticket.id))!.status !== "blocked" &&
+      (await vcsHead(pull.number)) !== pull.headSha, "main brought in");
+    expect((await repository().ticketDetail(ticket.id))!.blockedReason ?? "").not.toContain("had no fix");
+  });
+
   it("has the reviewer fix CI that went red while it approved the diff", async () => {
     let reviews = 0;
     const reviewer = new StubReviewer(async (workspace, input) => {
@@ -1098,74 +1115,32 @@ describe("work that needs files outside the ticket's scope", () => {
     expect(chat.at(-1)!.content).toContain("src/app/page.tsx");
   });
 
-  it("keeps the work, moves the ticket back to To Do and asks in its chat", async () => {
+  it("keeps the work, takes the files into its scope and queues, without asking", async () => {
     useAgents(new StubCoder(writesOutside), new StubReviewer());
     const after = await asked();
 
-    expect(after.status).toBe("blocked");
-    expect(after.stalledIn).toBe("todo");
+    expect(after.status).toBe("queued");
+    expect(after.fileScope).toEqual(["src/app/page.tsx", "src/lib/feature"]);
     expect(after.scopeRequest).toEqual(["src/app/page.tsx"]);
-    expect(after.blockedReason).toContain("src/app/page.tsx");
+    expect(after.blockedReason).toContain("T-9");
     expect(after.prNumber).toBeNull();
     const chat = (await repository().cardChatMessages(after.id)).messages;
     expect(chat.at(-1)).toMatchObject({ role: "assistant" });
     expect(chat.at(-1)!.content).toContain("src/app/page.tsx");
+    expect(chat.at(-1)!.content).not.toMatch(/say yes/i);
   });
 
-  it("carries the kept work on to a pull request once the person allows it", async () => {
-    const coder = new StubCoder(writesOutside);
-    useAgents(coder, new StubReviewer());
-    const ticket = await asked();
-
-    const said = await applyCardAction(PROJECT, "ticket", ticket.id, { type: "widen_scope", allow: true });
-    expect(said).toContain("src/app/page.tsx");
-
-    await until(
-      async () => !!(await repository().ticketDetail(ticket.id))?.prNumber,
-      "the kept work's pull request",
-    );
-    const after = (await repository().ticketDetail(ticket.id))!;
-    expect(after.fileScope).toEqual(["src/app/page.tsx", "src/lib/feature"]);
-    expect(after.scopeRequest).toEqual([]);
-    expect(after.summary).toBe("did the thing");
-    // Carried on, not done again.
-    expect(coder.tasks).toHaveLength(1);
-  });
-
-  it("queues in In Progress while a running ticket works in those files, then starts", async () => {
+  it("carries the kept work on to a pull request once the files are free, with no one answering", async () => {
     const coder = new StubCoder(writesOutside);
     useAgents(coder, new StubReviewer());
     const ticket = await asked();
     const repo = repository();
-    const [other] = await repo.createTickets([
-      {
-        epicId: ticket.epicId,
-        key: "T-2",
-        title: "The page",
-        description: "The page.",
-        acceptanceCriteria: ["It shows"],
-        fileScope: ["src/app"],
-        size: "M",
-        position: 2,
-        dependsOnKeys: [],
-      },
-    ]);
-    await repo.updateTicket(other!.id, { status: "running" });
+    const other = (await repo.boardCards(PROJECT)).find((c) => c.key === "T-9")!;
 
-    const said = await applyCardAction(PROJECT, "ticket", ticket.id, { type: "widen_scope", allow: true });
-
-    expect(said).toContain("queued behind T-2");
-    const after = (await repo.ticketDetail(ticket.id))!;
-    expect(after.status).toBe("queued");
-    expect(after.fileScope).toContain("src/app/page.tsx");
-    expect(after.prNumber).toBeNull();
-    const runs = coder.tasks.length;
-
-    // T-2 stops running: T-1's turn comes, with no one moving it.
-    await repo.updateTicket(other!.id, { status: "review" });
+    // T-9 stops running: T-1's turn comes, with no one moving it.
     await publish(PROJECT, {
       type: "card.status",
-      cardId: other!.id,
+      cardId: other.id,
       kind: "ticket",
       status: "review",
       stalledIn: null,
@@ -1173,21 +1148,13 @@ describe("work that needs files outside the ticket's scope", () => {
       blockedReason: null,
     });
 
-    // Its kept work goes on to a pull request.
-    await until(async () => (await repo.ticketDetail(ticket.id))!.prNumber !== null, "the queued run");
-    expect(coder.tasks).toHaveLength(runs);
-  });
-
-  it("drops the kept work and starts again within the scope when the person says no", async () => {
-    const coder = new StubCoder(writesOutside);
-    useAgents(coder, new StubReviewer());
-    const ticket = await asked();
-
-    await applyCardAction(PROJECT, "ticket", ticket.id, { type: "widen_scope", allow: false });
-
-    await until(async () => coder.tasks.length === 2, "the second run");
-    expect(coder.tasks[1]!.fileScope).toEqual(["src/lib/feature"]);
-    expect((await noteTexts(PROJECT, ticket.id)).at(-1)).toContain("inside the file scope");
+    await until(async () => !!(await repo.ticketDetail(ticket.id))?.prNumber, "the kept work's pull request");
+    const after = (await repo.ticketDetail(ticket.id))!;
+    expect(after.fileScope).toEqual(["src/app/page.tsx", "src/lib/feature"]);
+    expect(after.scopeRequest).toEqual([]);
+    expect(after.summary).toBe("did the thing");
+    // Carried on, not done again.
+    expect(coder.tasks).toHaveLength(1);
   });
 });
 

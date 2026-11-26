@@ -5,6 +5,7 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { createPmToken, revokePmTokens } from "@/lib/access-tokens";
 import { assistantAgentFor, markKeyLimited, type CliAgent } from "@/lib/agents/presets";
 import { diagnose, formatReset } from "@/lib/agents/limits";
+import { workedOn } from "@/lib/agents/limit-lift";
 import { signingSecret } from "@/lib/auth/session";
 import { credentialsForProject } from "@/lib/auth/credentials";
 import { projectFor } from "@/lib/board/project";
@@ -470,7 +471,9 @@ export async function finishSessionTurn(input: {
   await repo.updatePmSession(projectId, { turnJob: null, handoff: null, lastTurnAt: new Date() });
 
   const reply = outcome.reply?.trim() ?? "";
-  const limit = outcome.failure ? diagnose(outcome.failure, "The PM") : null;
+  // A PM that replied reached its model: whatever its failure text says, its
+  // account is not out of usage.
+  const limit = outcome.failure && !reply ? diagnose(outcome.failure, "The PM") : null;
   if (limit?.kind === "limit") {
     // Out of usage is not a broken session: keep it, retry nothing, and keep
     // the PM asleep until the window resets so wake-ups stop spending.
@@ -508,6 +511,7 @@ export async function finishSessionTurn(input: {
     );
   }
   await input.finish({ content: reply, status: "done" });
+  await workedOn(projectId, await repo.assistantAgent(projectId));
   await keepSummary(projectId);
   // A session this long costs a whole history per message: the next one starts fresh from the summary.
   const after = await repo.pmSession(projectId);

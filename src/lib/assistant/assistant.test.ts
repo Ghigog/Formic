@@ -913,24 +913,23 @@ describe("re-running CI on a red ticket", () => {
     return { ticket: ticket!, client };
   }
 
-  it("does not re-run a failure the code caused, and proposes updating from main", async () => {
+  it("does not re-run a failure the code caused, and brings main in instead", async () => {
     const { ticket, client } = await seedRed("Waiting on #726, then updates from main", "blocked");
     await client.commitFile("formic/t-1", "src/lib/example.ts", "x", "c");
 
-    await expect(applyAction(PROJECT, { type: "rerun_ci", key: ticket.key })).rejects.toThrow(/has not changed/);
+    const said = await applyAction(PROJECT, { type: "rerun_ci", key: ticket.key });
 
+    expect(said).toMatch(/T-1/);
     expect(MockVcsClient.runner().reruns).toEqual([]);
     const { messages } = await repository().assistantMessages(PROJECT);
-    const warning = messages.at(-1)!;
-    expect(warning.content).toContain("a re-run tests the same commit");
-    expect(warning.proposals[0]).toMatchObject({ summary: "Update T-1 from main", action: { type: "update_branch", key: "T-1" } });
+    expect(messages.flatMap((m) => m.proposals)).toEqual([]);
   });
 
   it("does not re-run when the failing check's annotation names a file in the repository", async () => {
     const { ticket, client } = await seedRed("CI is red on build.");
     await client.commitFile("formic/t-1", "src/lib/example.ts", "x", "c");
 
-    await expect(applyAction(PROJECT, { type: "rerun_ci", key: ticket.key })).rejects.toThrow(/same commit/);
+    await applyAction(PROJECT, { type: "rerun_ci", key: ticket.key });
     expect(MockVcsClient.runner().reruns).toEqual([]);
   });
 

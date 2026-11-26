@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { markKeyLimited, agentConfigFor, agentFor, assistantAgentFor, columnIsPlain, columnLimit, tokensUsedInWindow, runTargetFor, savePreset, sentinelAgent } from "./presets";
+import { clearKeyLimited, markKeyLimited, agentConfigFor, agentFor, assistantAgentFor, columnIsPlain, columnLimit, tokensUsedInWindow, runTargetFor, savePreset, sentinelAgent } from "./presets";
 import { SHOWCASE_BRIEF } from "./prompts";
 import { LoopCoderAgent, LoopReviewerAgent } from "./coder";
 import { MockCoderAgent } from "./mock";
@@ -350,5 +350,38 @@ describe("markKeyLimited", () => {
     await repository().setPresetLimit(b.id, { until: later, note: "later" });
     expect(await markKeyLimited(a.id, { until, note })).toEqual([a.id]);
     expect(await limitOf(b.id)).toMatchObject({ limitedUntil: later.toISOString(), limitNote: "later" });
+  });
+});
+
+describe("clearKeyLimited", () => {
+  const until = new Date("2026-09-23T20:00:00.000Z");
+  const before = Date.parse("2026-09-23T18:00:00.000Z");
+  const cli = (name: string, extra: Record<string, unknown> = {}) =>
+    savePreset({ name, provider: "claude-code", model: "", prompt: "x", ownerId: "u1", secretName: "CLAUDE_CODE_OAUTH_TOKEN", ...extra });
+  const limitOf = async (id: string) => (await repository().presetForRun(id))!.preset;
+
+  it("lifts the usage mark from every agent on the account once one of them works", async () => {
+    const a = await cli("a");
+    const b = await cli("b");
+    const other = await cli("other-owner", { ownerId: "u2" });
+    await markKeyLimited(a.id, { until, note: "Claude Code hit its usage limit." });
+    await repository().setPresetLimit(other.id, { until, note: "x" });
+
+    expect((await clearKeyLimited(b.id, before)).sort()).toEqual([a.id, b.id].sort());
+    expect((await limitOf(a.id)).limitedUntil).toBeNull();
+    expect((await limitOf(b.id)).limitedUntil).toBeNull();
+    expect((await limitOf(other.id)).limitedUntil).toBe(until.toISOString());
+  });
+
+  it("leaves Formic's own token allowance mark alone", async () => {
+    const a = await cli("a");
+    await repository().setPresetLimit(a.id, { until, note: "Token allowance spent for the window." });
+    expect(await clearKeyLimited(a.id, before)).toEqual([]);
+    expect((await limitOf(a.id)).limitedUntil).toBe(until.toISOString());
+  });
+
+  it("does nothing when nothing is marked", async () => {
+    const a = await cli("a");
+    expect(await clearKeyLimited(a.id, before)).toEqual([]);
   });
 });

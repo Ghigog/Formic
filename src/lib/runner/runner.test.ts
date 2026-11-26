@@ -717,6 +717,24 @@ describe("taking a CLI agent's work", () => {
     expect(after.prNumber).toBeGreaterThan(0);
   });
 
+  it("lifts a stale out-of-usage mark once the agent's run succeeds", async () => {
+    const { job, staging } = await dispatched();
+    const presetId = (await repository().columnAgents(PROJECT)).in_progress!;
+    // Marked while the run was out: a misread log, or a limit long gone.
+    await repository().setPresetLimit(presetId, { until: new Date(Date.now() + 3_600_000), note: "Claude Code hit its usage limit." });
+    MockVcsClient.stage(staging, ["src/lib/feature/a.ts"], "T-1: stuff");
+    const before = (await repository().eventsAfter(PROJECT, 0)).length;
+
+    await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
+
+    expect((await repository().presetForRun(presetId))!.preset.limitedUntil).toBeNull();
+    const lifted = (await repository().eventsAfter(PROJECT, 0))
+      .slice(before)
+      .map((e) => e.payload as { type: string; presetId?: string; until?: string | null })
+      .filter((p) => p.type === "agent.limited");
+    expect(lifted).toEqual([expect.objectContaining({ presetId, until: null })]);
+  });
+
   it("opens the pull request from the staged work", async () => {
     const { ticket, job, staging } = await dispatched();
     const sha = MockVcsClient.stage(
@@ -851,9 +869,9 @@ describe("taking a CLI agent's work", () => {
     await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
 
     const after = (await repository().ticketDetail(ticket.id))!;
-    expect(after.status).toBe("blocked");
-    expect(after.blockedReason).toContain(".github/workflows/ci.yml");
-    expect(after.blockedReason).not.toContain(".formic/carry");
+    expect(after.status).toBe("queued");
+    expect(after.fileScope).toContain(".github/workflows/ci.yml");
+    expect(after.fileScope.join(" ")).not.toContain(".formic/carry");
   });
 
   describe("the coder's plan when its work is taken", () => {
@@ -907,7 +925,7 @@ describe("taking a CLI agent's work", () => {
     });
   });
 
-  it("keeps work outside the file scope on the ticket's branch and asks, when a running ticket uses the files", async () => {
+  it("keeps work outside the file scope on the ticket's branch and queues with the files, when a running ticket uses them", async () => {
     const { ticket, job, staging } = await dispatched();
     await runningIn(ticket.epicId, ["package.json"]);
     const sha = MockVcsClient.stage(staging, ["src/lib/feature/a.ts", "package.json"], "T-1: stuff");
@@ -915,8 +933,9 @@ describe("taking a CLI agent's work", () => {
     await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
 
     const after = (await repository().ticketDetail(ticket.id))!;
-    expect(after).toMatchObject({ status: "blocked", stalledIn: "todo", scopeRequest: ["package.json"] });
-    expect(after.blockedReason).toContain("package.json");
+    expect(after).toMatchObject({ status: "queued", stalledIn: null, scopeRequest: ["package.json"] });
+    expect(after.fileScope).toContain("package.json");
+    expect(after.blockedReason).toMatch(/^Waiting for /);
     expect(after.prNumber).toBeNull();
     const branches = MockVcsClient.runner().branches;
     expect(branches.get(after.branchName!)).toBe(sha);

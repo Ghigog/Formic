@@ -38,16 +38,21 @@ export function resetBellBatches(): void {
 /** How often the server looks for a golden bell that is due. */
 const TICK_MS = 60_000;
 
-/** When the bell is due: each reset of the project's agents, plus a minute. */
-async function ringTimes(projectId: string): Promise<number[]> {
+/**
+ * When the bell is due: each reset of the project's agents, plus a minute.
+ * An agent with no mark is due now: its mark was lifted early, because the
+ * account was seen working (clearKeyLimited), and the cards it stopped wait
+ * for nothing.
+ */
+async function ringTimes(projectId: string, now: number): Promise<number[]> {
   const repo = repository();
   const project = await repo.projectById(projectId);
   if (!project) return [];
   const ids = new Set(Object.values(await repo.columnAgents(projectId)));
   const presets = await repo.listPresets({ ownerId: project.ownerId ?? "", includeUnowned: project.ownerId === null });
   return presets
-    .filter((p) => ids.has(p.id) && p.limitedUntil)
-    .map((p) => Date.parse(p.limitedUntil!) + BELL_DELAY_MS);
+    .filter((p) => ids.has(p.id))
+    .map((p) => (p.limitedUntil ? Date.parse(p.limitedUntil) + BELL_DELAY_MS : now));
 }
 
 /**
@@ -58,7 +63,7 @@ async function ringTimes(projectId: string): Promise<number[]> {
 export async function ringBellIfDue(projectId: string, now = Date.now()): Promise<boolean> {
   const repo = repository();
   if (!(await repo.goldenBell(projectId)).armed) return false;
-  if (!(await ringTimes(projectId)).some((t) => t <= now)) return false;
+  if (!(await ringTimes(projectId, now)).some((t) => t <= now)) return false;
   if ((await limitStoppedCards(projectId)).length === 0) return false;
   const account = (await repo.projectById(projectId))?.ownerId ?? projectId;
   const batch = rung().get(account);

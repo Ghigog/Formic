@@ -18,6 +18,7 @@ import {
   type RunHandle,
 } from "@/lib/agents/pipeline";
 import { cliAgentFor, markKeyLimited, type CliAgent } from "@/lib/agents/presets";
+import { workedOn } from "@/lib/agents/limit-lift";
 import { ATTEMPT_DEFAULTS, type Budget } from "@/lib/budget/budget-for";
 import { attemptsFor } from "@/lib/budget/in-process";
 import { diagnose, finalMessage, lastWords } from "@/lib/agents/limits";
@@ -1898,6 +1899,8 @@ async function takeCliRun(projectId: string, result: RunnerResult): Promise<void
     await stop(await whyItFailed(projectId, client, result, ticket.runnerAgent), false);
     return;
   }
+  // The agent ran to the end on its model: its account has usage.
+  await workedOn(projectId, ticket.runnerAgent);
 
   const branch = ticket.branchName!;
   // A new ticket started from the branch it merges into, or the branch it is
