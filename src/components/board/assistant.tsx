@@ -56,6 +56,8 @@ export interface AssistantControls {
   loadEarlier?: () => Promise<void>;
   pending: boolean;
   error: string | null;
+  /** The board has an E2B key of the person's own, so a starting reply needn't suggest adding one. */
+  hasE2bKey?: boolean;
   /** Sends a message; `speakers` are who answers it, in order (the PM by default), `requestId` the draft its images were uploaded under. */
   ask: (text: string, speakers?: string[], requestId?: string) => Promise<void>;
   /** Stops one pending reply: only an explicit Stop does. */
@@ -871,7 +873,7 @@ function Shade({
     ? providerInfo(selected.provider)?.kind === "cli"
     : false;
   // A Claude Code PM with no token kept answers from CI, a minute at a time.
-  const fastHint = !!selected && providerInfo(selected.provider)?.cli === "claude" && !selected.hasKey;
+  const fastHint = !!selected && providerInfo(selected.provider)?.cli === "claude" && !selected.hasKey && !a.hasE2bKey;
 
   // A reply always sits directly under the message it answers.
   const thread = useMemo(() => threadOrder(a.messages), [a.messages]);
