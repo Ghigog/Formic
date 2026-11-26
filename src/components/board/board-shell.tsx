@@ -72,6 +72,7 @@ export function BoardShell({
   account,
   noCi,
   noSandboxKey,
+  hasE2bKey,
   autoMerge,
 }: {
   initialCards: BoardCard[];
@@ -104,6 +105,8 @@ export function BoardShell({
   noCi?: boolean;
   /** Neither the board's owner nor the server has an E2B key, so no agent can run. */
   noSandboxKey?: boolean;
+  /** The person has an E2B key of their own (or the board's shared one). */
+  hasE2bKey?: boolean;
   /** Whether Formic merges an approved ticket itself. */
   autoMerge?: boolean;
 }) {
@@ -261,6 +264,7 @@ export function BoardShell({
   const assistantControls: AssistantControls = {
       boardId,
       ...assistant,
+      hasE2bKey,
       questions: cards.filter((c) => isQuestion(c.blockedReason)).length,
       waiting: cards
         .filter((c) => isQuestion(c.blockedReason))

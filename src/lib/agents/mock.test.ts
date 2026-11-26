@@ -68,6 +68,19 @@ describe("the mock Product Agent", () => {
     expect(out.ok && out.value.kind).toBe("reroute");
   });
 
+  it("asks questions with its PRD when the request says to ask", async () => {
+    const { ctx } = context();
+
+    const out = await settled(
+      new MockProductAgent().draftPrd(ctx, { epicId: "e1", rawRequest: "Please ask me first", attachments: [] }),
+    );
+
+    expect(out.ok && out.value.kind === "prd" && out.value.questions?.map((q) => q.question)).toEqual([
+      "Who should be able to see this?",
+      "Does it replace the current screen?",
+    ]);
+  });
+
   it("stops when cancelled", async () => {
     const abort = new AbortController();
     abort.abort();

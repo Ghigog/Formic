@@ -8,6 +8,7 @@ import { DEFAULT_ALLOWANCE_WINDOW_DAYS } from "@/lib/domain/limit-settings";
 import { OUT_OF_USAGE_PHRASE } from "@/lib/domain/notice";
 import { COLUMN_LABELS, type ColumnId } from "@/lib/domain/status";
 import { SHOWCASE_BRIEF } from "./prompts";
+import { secretNameFor } from "@/lib/domain/providers";
 import { hintFor, open, seal } from "@/lib/secrets/vault";
 import {
   AnthropicArchitectAgent,
@@ -121,6 +122,50 @@ export async function gateAllowance(preset: AgentPreset, now = Date.now()): Prom
   if (!own || !preset.limitedUntil) return preset;
   await repository().setPresetLimit(preset.id, null);
   return { ...preset, limitedUntil: null, limitNote: null };
+}
+
+/** The credential a preset runs on, as a string two presets share only when they share the account. */
+async function credentialOf(presetId: string): Promise<string | null> {
+  const found = await repository().presetForRun(presetId);
+  if (!found) return null;
+  const { preset, apiKeyCipher } = found;
+  const info = providerInfo(preset.provider);
+  if (!info) return null;
+  if (info.kind === "cli") return `secret:${secretNameFor({ presetId: preset.id, info, secretName: preset.secretName })}`;
+  if (!preset.hasKey || !apiKeyCipher) return "env";
+  const key = open(apiKeyCipher);
+  return key ? `key:${key}` : null;
+}
+
+/**
+ * An agent hit its plan's usage limit: marks it, and every agent of the same
+ * owner on the same account, out of usage until `until`. A sibling already out
+ * until later keeps its own time and note. Returns the ids it marked, for the
+ * caller to publish `agent.limited` for each.
+ */
+export async function markKeyLimited(
+  presetId: string,
+  limit: { until: Date; note: string },
+): Promise<string[]> {
+  const repo = repository();
+  const found = await repo.presetForRun(presetId);
+  if (!found) return [];
+  const { preset } = found;
+  const marked = [preset.id];
+  await repo.setPresetLimit(preset.id, limit);
+  if (!preset.ownerId) return marked;
+  const mine = await credentialOf(preset.id);
+  if (!mine) return marked;
+  const others = await repo.listPresets({ ownerId: preset.ownerId, includeUnowned: false });
+  for (const other of others) {
+    if (other.id === preset.id || other.ownerId !== preset.ownerId || other.provider !== preset.provider) continue;
+    if (other.hasKey !== preset.hasKey || other.keyHint !== preset.keyHint) continue;
+    if (other.limitedUntil && Date.parse(other.limitedUntil) > limit.until.getTime()) continue;
+    if ((await credentialOf(other.id)) !== mine) continue;
+    await repo.setPresetLimit(other.id, limit);
+    marked.push(other.id);
+  }
+  return marked;
 }
 
 function envKey(id: ProviderId): string | null {

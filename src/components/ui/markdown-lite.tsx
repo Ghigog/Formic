@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from "react";
 import { cn } from "./cn";
+import { ExternalLink, isWebUrl, linkify } from "./links";
 
 /**
  * The little Markdown tickets are written in: headings, bullet and numbered
@@ -133,12 +134,12 @@ function lines(parts: string[], keepLineBreaks: boolean): ReactNode {
 // Marks must hug their text. Underscores and single stars never start or end
 // inside a word (snake_case) and a star never pairs with a bullet's or a **.
 const INLINE =
-  /(`[^`]+`|\*\*(?=\S)[^*]+?(?<=\S)\*\*|(?<!\w)__(?=\S).+?(?<=\S)__(?!\w)|(?<![\w*])\*(?=[^\s*])[^*]+?(?<=[^\s*])\*(?![\w*])|(?<!\w)_(?=[^\s_])[^_]+?(?<=[^\s_])_(?!\w))/g;
+  /(`[^`]+`|\[[^\]\n]+\]\([^)\s]+\)|\*\*(?=\S)[^*]+?(?<=\S)\*\*|(?<!\w)__(?=\S).+?(?<=\S)__(?!\w)|(?<![\w*])\*(?=[^\s*])[^*]+?(?<=[^\s*])\*(?![\w*])|(?<!\w)_(?=[^\s_])[^_]+?(?<=[^\s_])_(?!\w))/g;
 
-/** Bold, italic and `code` inside a line. */
+/** Bold, italic, `code` and links inside a line. */
 function inline(text: string): ReactNode {
   return text.split(INLINE).map((part, i) => {
-    if (i % 2 === 0) return <Fragment key={i}>{part}</Fragment>;
+    if (i % 2 === 0) return <Fragment key={i}>{linkify(part)}</Fragment>;
     if (part.startsWith("`")) {
       return (
         <code key={i} className="bg-sunken rounded px-1 font-mono text-[0.9em]">
@@ -146,9 +147,21 @@ function inline(text: string): ReactNode {
         </code>
       );
     }
-    if (part.startsWith("**") || part.startsWith("__")) {
-      return <strong key={i}>{part.slice(2, -2)}</strong>;
+    if (part.startsWith("[")) {
+      const split = part.lastIndexOf("](");
+      const label = part.slice(1, split);
+      const href = part.slice(split + 2, -1);
+      // Any scheme but http(s) stays the words it was written as.
+      if (!isWebUrl(href)) return <Fragment key={i}>{part}</Fragment>;
+      return (
+        <ExternalLink key={i} href={href}>
+          {label}
+        </ExternalLink>
+      );
     }
-    return <em key={i}>{part.slice(1, -1)}</em>;
+    if (part.startsWith("**") || part.startsWith("__")) {
+      return <strong key={i}>{linkify(part.slice(2, -2))}</strong>;
+    }
+    return <em key={i}>{linkify(part.slice(1, -1))}</em>;
   });
 }
