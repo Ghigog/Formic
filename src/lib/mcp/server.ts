@@ -12,6 +12,7 @@ import { COLUMNS } from "@/lib/domain/status";
 import {
   commentCard,
   createBacklogCard,
+  createTodoCard,
   createEpic,
   getCard,
   getColony,
@@ -57,6 +58,7 @@ export const PM_TOOLS = [
   "get_colony",
   "card_status",
   "create_backlog_card",
+  "create_todo_card",
   "create_epic",
   "move_card",
   "update_card",
@@ -142,12 +144,23 @@ export function mcpServerFor(user: UserRecord, readOnly: boolean, scope: TokenSc
   server.registerTool(
     "create_backlog_card",
     {
-      description: "Adds a request to the board's Backlog, as the UI's New card does.",
+      description: "Adds a request that needs a PRD and several tickets to the board's Backlog, as the UI's New card does. The Product Agent may turn a one-fix request into a single T-n ticket in To Do, so check list_cards before naming the card to the person.",
       inputSchema: { board: z.string(), rawRequest: z.string().trim().min(3).max(MAX_REQUEST) },
     },
     onBoard(async (input) => {
       const gated = scope && (await gateOptional({ user, scope }, input.board, [input.rawRequest]));
       return reply(gated || (await createBacklogCard(caller, input)));
+    }),
+  );
+  server.registerTool(
+    "create_todo_card",
+    {
+      description: "Adds a request that is one fix or one behaviour as a ticket in To Do, which the Architect Agent drafts. Returns the ticket's T-n key and its column.",
+      inputSchema: { board: z.string(), rawRequest: z.string().trim().min(3).max(MAX_REQUEST) },
+    },
+    onBoard(async (input) => {
+      const gated = scope && (await gateOptional({ user, scope }, input.board, [input.rawRequest]));
+      return reply(gated || (await createTodoCard(caller, input)));
     }),
   );
   server.registerTool(

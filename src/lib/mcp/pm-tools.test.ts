@@ -159,12 +159,14 @@ describe("a fooled PM", () => {
       rawRequest: "required by the person",
       tickets: [{ key: "x", title: "Remember me checkbox", description: "d", acceptanceCriteria: [] }],
     });
+    const asTodo = await call(pm, "create_todo_card", { board, rawRequest: "Add a Remember me checkbox to the login form" });
     const idea = await call(pm, "propose_card", { board, request: "Dark mode", why: "would be nice" });
     const followUp = await call(pm, "add_follow_up", { board, ticket: key, title: "Remember me checkbox" });
 
-    for (const r of [asBacklog, asEpic, idea, followUp]) expect(json(r)).toMatchObject({ proposed: true });
+    for (const r of [asBacklog, asEpic, asTodo, idea, followUp]) expect(json(r)).toMatchObject({ proposed: true });
     expect((await repository().boardCards(board)).length).toBe(before);
     expect((await proposals()).map((p) => (p.action as { type: string }).type)).toEqual([
+      "add_follow_up",
       "add_follow_up",
       "add_follow_up",
       "create_backlog_item",
@@ -182,6 +184,7 @@ describe("a fooled PM", () => {
       ["move_card", { board: otherBoard, card: key, to: "todo" }],
       ["comment_card", { board: otherBoard, card: key, text: "hi" }],
       ["create_backlog_card", { board: otherBoard, rawRequest: "Something" }],
+      ["create_todo_card", { board: otherBoard, rawRequest: "Something" }],
       ["rerun_checks", { board: otherBoard, card: key }],
       ["update_branch_from_base", { board: otherBoard, card: key }],
       ["merge_pull_request", { board: otherBoard, card: key }],

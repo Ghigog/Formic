@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { UserRecord } from "@/lib/db/repository";
+import { columnOf } from "@/lib/domain/status";
 
 const launched = vi.hoisted(() => [] as string[]);
 const published = vi.hoisted(() => [] as Array<{ type: string }>);
@@ -20,7 +21,7 @@ vi.mock("@/lib/review/pipeline", () => ({ mergeByPerson: vi.fn(async () => "Red 
 vi.mock("@/lib/events/bus", () => ({ publish: vi.fn(async (_project: string, event: { type: string }) => void published.push(event)) }));
 vi.mock("@/lib/fixtures/board", () => ({ FIXTURE_CARDS: [], FIXTURE_TICKET_DETAILS: {} }));
 
-const { commentCard, createBacklogCard, createEpic, moveCard, updateCard } = await import("./tools");
+const { commentCard, createBacklogCard, createEpic, createTodoCard, moveCard, updateCard } = await import("./tools");
 const { repository } = await import("@/lib/db");
 
 let n = 1;
@@ -67,6 +68,18 @@ describe("write tools", () => {
     expect(result.ok && result.value.title).toBe("Add dark mode");
     expect(published.map((e) => e.type)).toContain("card.created");
     expect(launched).toHaveLength(1);
+  });
+
+  it("creates a To Do ticket and returns its T-n key, not the holder Epic's", async () => {
+    const result = await createTodoCard(rw(), { board, rawRequest: "Ease table patience on later days" });
+    expect(result).toMatchObject({ ok: true, value: { key: expect.stringMatching(/^T-\d+$/), column: "todo" } });
+    const cards = await repository().boardCards(board);
+    expect(cards.filter((c) => c.kind === "epic" && columnOf(c) === "backlog")).toEqual([]);
+  });
+
+  it("says a backlog card may become a To Do ticket", async () => {
+    const result = await createBacklogCard(rw(), { board, rawRequest: "Add dark mode" });
+    expect(result.ok && result.value.note).toMatch(/T-n ticket in To Do.*list_cards/);
   });
 
   it("creates an Epic with its tickets and their dependency", async () => {
@@ -183,6 +196,7 @@ describe("a read-only token", () => {
     const before = JSON.stringify(await repo.boardCards(board));
     const results = [
       await createBacklogCard(ro(), { board, rawRequest: "Add dark mode" }),
+      await createTodoCard(ro(), { board, rawRequest: "Add dark mode" }),
       await createEpic(ro(), { board, title: "E", rawRequest: "r", tickets: [{ key: "a", title: "A", description: "", acceptanceCriteria: [] }] }),
       await moveCard(ro(), { board, card: id, to: "done" }),
       await updateCard(ro(), { board, card: id, edit: { title: "New" } }),

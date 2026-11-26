@@ -7,7 +7,7 @@ import { startedBy, withActor } from "@/lib/auth/actor";
 import { boardsFor, canSeeBoard } from "@/lib/board/sharing";
 import { XP_PER_LEVEL, scoreOf } from "@/lib/colony/game";
 import { COLUMNS, columnOf, type ColumnId } from "@/lib/domain/status";
-import { applyTransition, createBacklogItem } from "@/lib/board/service";
+import { applyTransition, createBacklogItem, createTodoItem } from "@/lib/board/service";
 import { applyPrd } from "@/lib/agents/pipeline";
 import { publish } from "@/lib/events/bus";
 import { placePlannedEpic } from "@/lib/assistant/actions";
@@ -133,7 +133,23 @@ async function boardCard(projectId: string, cardId: string) {
 export function createBacklogCard(caller: Caller, input: { board: string; rawRequest: string }) {
   return writeOn(caller, input.board, async (project) => {
     const card = await createBacklogItem(project.id, input.rawRequest);
-    return { ok: true as const, value: { id: card.id, key: card.key, title: card.title } };
+    return {
+      ok: true as const,
+      value: {
+        id: card.id,
+        key: card.key,
+        title: card.title,
+        note: "The Product Agent may turn a one-fix request into a single T-n ticket in To Do. Check list_cards before naming this card to the person again.",
+      },
+    };
+  });
+}
+
+/** One fix or one behaviour: a ticket in To Do that the Architect Agent drafts. Its key is the ticket's T-n, never the holder Epic's. */
+export function createTodoCard(caller: Caller, input: { board: string; rawRequest: string }) {
+  return writeOn(caller, input.board, async (project) => {
+    const card = await createTodoItem(project.id, input.rawRequest);
+    return { ok: true as const, value: { id: card.id, key: card.key, title: card.title, column: "todo" as const } };
   });
 }
 

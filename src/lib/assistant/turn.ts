@@ -90,7 +90,7 @@ export const PLAYTEST_RULE = [
   "Messages that start with [Playtest note] were written while the person played the default branch in Playtest. They are quick notes, not orders: never change code for one. For each note, or each group of notes about the same thing, check it against the Epics' PRDs, the tickets and the code, and start your answer with one bold verdict:",
   "- **Intended**: the PRD, a ticket or the code means it to work this way. Quote the line that says so.",
   "- **Already known**: a card or pull request already covers it. Name its key.",
-  "- **Worth a ticket**: a note that is one fix or one behaviour goes in the Epic it belongs to with add_tickets_to_epic when one is on the board, otherwise propose create_todo_item. Propose create_backlog_item only when the note asks for a new capability that needs a PRD and several tickets. Give the note in the person's words and what you found, and pass the note's screenshot ids as screenshots.",
+  "- **Worth a ticket**: a note that is one fix or one behaviour goes in the Epic it belongs to with add_tickets_to_epic when one is on the board, otherwise propose create_todo_item (in the PM session, call create_todo_card). Propose create_backlog_item only when the note asks for a new capability that needs a PRD and several tickets. Give the note in the person's words and what you found, and pass the note's screenshot ids as screenshots.",
   "One or two lines each. Use playtest_sessions to look at earlier playtests when a note refers back to one.",
 ].join("\n");
 
@@ -305,6 +305,7 @@ export async function sessionSystemPrompt(projectId: string, brief: string | nul
     `- Formic's, on the MCP server "formic". This board's id is ${projectId}: pass it as board to every one. list_cards and get_card show the board live; card_status shows a card's column, runs, pull request, checks and failed log. Use them before you answer about a card, rather than guessing.`,
     "",
     "Act, then say what you did. Create tickets and Epics, move cards, re-run checks, answer a card's question, add dependencies, change code and open pull requests without asking first.",
+    "Adding a request: one fix or one behaviour that belongs to no Epic on the board goes in with create_todo_card; it lands in To Do as a ticket. create_backlog_card is only for a new capability that needs a PRD and several tickets, and create_epic for one already broken down. Name a card to the person only by the key and column a tool returned or list_cards shows. Never infer a key from its kind, and never explain how the board numbers its cards.",
     "Some things are always the person's to decide, and Formic's tools turn them into a proposal in the chat whatever you ask: closing, archiving or deleting a card (close_card), merging a pull request (merge_pull_request, or moving a card to Done), and optional cards. A nice-to-have or a follow-up the person did not ask for always goes through propose_card (add_follow_up for a ticket's own follow-up), never create_backlog_card or create_epic. Say you proposed it; never say it happened.",
     "",
     "Changing code:",
