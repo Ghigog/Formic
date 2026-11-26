@@ -10,7 +10,7 @@ vi.mock("@/lib/agents/pipeline", async (importOriginal) => ({
   },
 }));
 
-import { answer, cancelPending, PLAYTEST_RULE, finishCliAnswer, history, MAX_ANSWER_MS } from "./turn";
+import { answer, cancelPending, PLAYTEST_RULE, sessionSystemPrompt, finishCliAnswer, history, MAX_ANSWER_MS } from "./turn";
 import { applyAction, ASSISTANT_BRANCH_PREFIX, checkAction } from "./actions";
 import { savePreset } from "@/lib/agents/presets";
 import { resetAgents } from "@/lib/agents/registry";
@@ -585,6 +585,14 @@ describe("applying an approved proposal", () => {
 
   it("tells the PM a single playtest fix is a To Do ticket", () => {
     expect(PLAYTEST_RULE).toContain("create_todo_item");
+    expect(PLAYTEST_RULE).toContain("create_todo_card");
+  });
+
+  it("tells the PM session to add one fix with create_todo_card and to name cards by their real keys", async () => {
+    const prompt = await sessionSystemPrompt(PROJECT, null);
+    expect(prompt).toContain("create_todo_card");
+    expect(prompt).toMatch(/create_backlog_card is only for a new capability that needs a PRD/);
+    expect(prompt).toContain("Name a card to the person only by the key and column a tool returned or list_cards shows");
   });
 
   async function plannedTickets() {

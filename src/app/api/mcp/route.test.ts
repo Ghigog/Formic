@@ -48,6 +48,7 @@ describe("/api/mcp", () => {
       "comment_card",
       "create_backlog_card",
       "create_epic",
+      "create_todo_card",
       "get_card",
       "get_colony",
       "list_boards",

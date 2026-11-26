@@ -12,6 +12,7 @@ const tools = vi.hoisted(() => {
     getCard: ok(),
     getColony: ok(),
     createBacklogCard: ok(),
+    createTodoCard: ok(),
     createEpic: ok(),
     moveCard: ok(),
     updateCard: ok(),
@@ -40,7 +41,7 @@ describe("mcpServerFor", () => {
   it("registers every board tool, the reads marked read-only", async () => {
     const { tools: listed } = await (await connect()).listTools();
     expect(listed.map((t) => t.name).sort()).toEqual(
-      ["comment_card", "create_backlog_card", "create_epic", "get_card", "get_colony", "list_boards", "list_cards", "move_card", "update_card"],
+      ["comment_card", "create_backlog_card", "create_epic", "create_todo_card", "get_card", "get_colony", "list_boards", "list_cards", "move_card", "update_card"],
     );
     const readOnly = listed.filter((t) => t.annotations?.readOnlyHint).map((t) => t.name).sort();
     expect(readOnly).toEqual(["get_card", "get_colony", "list_boards", "list_cards"]);
@@ -64,6 +65,8 @@ describe("mcpServerFor", () => {
     const caller = { user, readOnly: true };
     await client.callTool({ name: "create_backlog_card", arguments: { board: "b", rawRequest: "  add it  " } });
     expect(tools.createBacklogCard).toHaveBeenCalledWith(caller, { board: "b", rawRequest: "add it" });
+    await client.callTool({ name: "create_todo_card", arguments: { board: "b", rawRequest: "  fix it  " } });
+    expect(tools.createTodoCard).toHaveBeenCalledWith(caller, { board: "b", rawRequest: "fix it" });
     const epic = { board: "b", title: "E", rawRequest: "r", tickets: [{ key: "a", title: "A", description: "d", acceptanceCriteria: ["c"] }] };
     await client.callTool({ name: "create_epic", arguments: epic });
     expect(tools.createEpic).toHaveBeenCalledWith(caller, epic);
