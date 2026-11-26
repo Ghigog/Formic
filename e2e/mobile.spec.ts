@@ -145,6 +145,16 @@ test("the sentinel Re-audit label stays on one line at 390px", async ({
     .getByRole("listitem", { name: /Professor O'Chumley/ });
   // The store is shared across the run, so an earlier test may already have
   // calibrated or audited this sentinel; take it only as far as it needs.
+  // isVisible() does not wait, so first let the card settle on a state it can
+  // be taken from: a button to press, or already audited.
+  await expect(async () => {
+    const audited = /stars/.test((await card.getAttribute("aria-label")) ?? "");
+    const actionable = await card
+      .getByRole("button", { name: /^(Calibrate|Audit)$/ })
+      .first()
+      .isVisible();
+    expect(audited || actionable).toBe(true);
+  }).toPass({ timeout: 15_000 });
   if (await card.getByRole("button", { name: "Calibrate" }).isVisible()) {
     await card.getByRole("button", { name: "Calibrate" }).click();
     await expect(
