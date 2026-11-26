@@ -62,9 +62,10 @@ export function useAgents(
    * agent's settings is the moment it matters.
    */
   const refreshUsage = useCallback(async () => {
-    const next = await send<{ usage?: AgentUsage; window?: TokenWindowView }>("/api/agents", "GET").catch(
+    const next = await send<{ presets?: AgentPreset[]; usage?: AgentUsage; window?: TokenWindowView }>("/api/agents", "GET").catch(
       () => null,
     );
+    if (next?.presets) setPresets(next.presets);
     if (next?.usage) setUsage(next.usage);
     if (next?.window) setWindow(next.window);
   }, []);

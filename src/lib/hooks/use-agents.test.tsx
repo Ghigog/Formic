@@ -26,6 +26,15 @@ describe("useAgents", () => {
     expect(result.current.window.kind).toBe("reset");
   });
 
+  it("replaces the presets with the refreshed ones, carrying their usage", async () => {
+    vi.stubGlobal("fetch", async () =>
+      Response.json({ presets: [{ ...preset("a", "Coder"), tokenAllowance: 10, allowanceUsed: 4 }] }),
+    );
+    const { result } = renderHook(() => useAgents([preset("a", "Coder")], {}));
+    await act(() => result.current.refreshUsage());
+    expect(result.current.presets[0]!.allowanceUsed).toBe(4);
+  });
+
   it("adds a saved preset to the list", async () => {
     vi.stubGlobal("fetch", async () => Response.json({ preset: preset("b", "Reviewer") }));
     const { result } = renderHook(() => useAgents([preset("a", "Coder")], {}));
