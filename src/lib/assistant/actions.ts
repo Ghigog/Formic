@@ -19,7 +19,6 @@ import { positionForIndex } from "@/lib/ordering";
 import { addFollowUpTicket } from "@/lib/board/follow-ups";
 import { mergeByPerson, rerunRedActions, updateFromMain } from "@/lib/review/pipeline";
 import { waitedOn, waitingOnReason } from "@/lib/domain/notice";
-import { postPmMessage } from "./pm-messages";
 import { ask as askCardChat } from "@/lib/agents/card-chat";
 import { isQuestion, PM_ANSWER_PREFIX } from "@/lib/domain/question";
 import { SENTINELS, sentinel as findSentinel } from "@/lib/sentinels/roster";
@@ -597,14 +596,10 @@ export async function rerunCi(projectId: string, key: string): Promise<string> {
   const client = vcs(project.repoFullName, creds.repoToken);
   const pull = await client.pullRequest(card.prNumber);
   const checks = await client.checksFor(pull.headSha);
+  // A re-run tests the same commit, so a failure in the code fails again.
+  // Bringing main in is the step that can turn it green: do that instead.
   if (await failureIsInTheCode(client, pull.headBranch, checks, card.status === "blocked" ? card.blockedReason : null)) {
-    const reason = `The head of ${key}'s pull request has not changed, and a re-run tests the same commit, so it would fail the same way. Bringing main into the branch is the step that can turn it green.`;
-    await postPmMessage(projectId, {
-      content: `${key}: ${reason}`,
-      cards: [{ id: card.id, key: card.key, title: card.title }],
-      proposals: [{ summary: `Update ${key} from main`, action: { type: "update_branch", key }, state: "proposed" }],
-    });
-    throw new Error(reason);
+    return updateBranch(projectId, key);
   }
   const started = await rerunRedActions(client, pull.headBranch, checks);
   if (started === 0) {

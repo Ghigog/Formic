@@ -93,6 +93,10 @@ export async function restartIdleCards(projectId: string, now = Date.now()): Pro
     await repo.pruneEvents(projectId, KEEP_PRUNABLE_EVENTS);
   }
 
+  // Scope is granted on its own now; a ticket still waiting for a yes gets it.
+  const { grantAskedScope } = await import("@/lib/coder/scope-request");
+  await grantAskedScope(projectId);
+
   for (const card of await repo.boardCards(projectId)) {
     if (card.workingSince || card.needsHuman) continue;
     const updated = card.updatedAt ? Date.parse(card.updatedAt) : now;

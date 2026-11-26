@@ -4,7 +4,9 @@ import { repository } from "@/lib/db";
 import type { TicketDetail } from "@/lib/db/repository";
 import { normalizeScope, pathInScope, violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
-import { widenClaim } from "@/lib/board/queue";
+import { heldReason, widenClaim } from "@/lib/board/queue";
+import { heldBy } from "@/lib/domain/queue";
+import type { Reservation } from "@/lib/db/repository";
 import { handoffFromSummary, withoutHandoff } from "@/lib/agents/handoff";
 import { VcsError, mergeTarget, type VcsClient } from "@/lib/vcs";
 import { projectFor } from "@/lib/board/project";
@@ -14,11 +16,11 @@ import { projectFor } from "@/lib/board/project";
  *
  * The scope is how tickets run side by side without writing the same files,
  * not a limit on how good a change may be. So an agent that needs more makes
- * the change anyway, and Formic keeps its work on the ticket's own branch,
- * moves the ticket back to To Do and asks the person, in its chat, for the
- * extra files. Once they allow them, the ticket goes back to In Progress the
- * way any ticket does, once nothing running overlaps its wider scope, and the
- * kept work goes on to its pull request without being done again.
+ * the change anyway. Files nothing running is writing join its scope at once
+ * (widenScope). Files a running ticket holds join it too, and the ticket
+ * waits its turn in the queue (askForScope), its work kept on its own
+ * branch; once they are free the kept work goes on to its pull request
+ * without being done again. Nobody is asked.
  */
 
 /** The files a ticket asked for that its scope does not cover yet. */
@@ -105,8 +107,11 @@ export async function widenScope(
 }
 
 /**
- * The agent's work needs `outside`: the ticket goes back to To Do and asks.
- * `kept` says whether the work is on the ticket's branch to carry on from.
+ * The agent's work needs `outside`, and a running ticket is writing some of
+ * those files. Nobody is asked: the files join the ticket's scope and it
+ * waits in the queue, in In Progress, until nothing running uses them, then
+ * carries on the way any queued ticket starts. `kept` says whether the work
+ * is on the ticket's branch to carry on from (see hasKeptWork).
  */
 export async function askForScope(
   projectId: string,
@@ -115,7 +120,7 @@ export async function askForScope(
   options: { kept: boolean },
 ): Promise<void> {
   const requested = normalizeScope(outside);
-  // A scout does not ask: it is one scout fewer.
+  // A scout does not wait: it is one scout fewer.
   if (ticket.scoutOf) {
     const { scoutReturned } = await import("./scouts");
     await scoutReturned(projectId, ticket, {
@@ -124,35 +129,68 @@ export async function askForScope(
     });
     return;
   }
-  const reason = `Needs files outside its scope: ${listed(requested)}. Allow them in its chat to carry on.`;
   const repo = repository();
+  const fileScope = normalizeScope([...ticket.fileScope, ...requested]);
+  const holder = await heldFiles(projectId, ticket, requested);
+  const reason = holder
+    ? heldReason(holder, projectId)
+    : "Waiting for the files it added to its scope to be free. It starts on its own then.";
+  // Kept work is what the next run picks up (hasKeptWork reads scopeRequest);
+  // with nothing kept, the next run simply does the work in the wider scope.
   await repo.updateTicket(ticket.id, {
-    status: "blocked",
-    stalledIn: "todo",
-    scopeRequest: requested,
-    blockedReason: reason,
-  });
-  await publish(projectId, {
-    type: "card.status",
-    cardId: ticket.id,
-    kind: "ticket",
-    status: "blocked",
-    stalledIn: "todo",
-    stage: ticket.stage,
+    status: "queued",
+    stalledIn: null,
+    fileScope,
+    scopeRequest: options.kept ? requested : [],
     blockedReason: reason,
   });
 
   const text = [
-    `To do ${ticket.key} properly I needed files outside its scope (${ticket.fileScope.map((p) => `\`${p}\``).join(", ")}):`,
+    `${ticket.key} needed files outside its scope that ${holder ? holder.key : "another running ticket"} is writing, so I added them to its scope:`,
     "",
     ...requested.map((p) => `- \`${p}\``),
     "",
     options.kept
-      ? "My work is kept on its branch. Say yes and I'll add them to its scope and carry on once nothing else running is using them. Say no and I'll start again within its scope."
-      : "Say yes and I'll add them to its scope and do it again once nothing else running is using them. Say no and I'll do it within its scope.",
+      ? "Its work is kept on its branch. It is queued and carries on from there as soon as those files are free."
+      : "It is queued and does the work again as soon as those files are free.",
   ].join("\n");
   await repo.addCardChatMessage({ projectId, cardKind: "ticket", cardId: ticket.id, role: "assistant", content: text });
   await publish(projectId, { type: "ticket.reply", ticketId: ticket.id, agent: "Coder Agent", text });
+  // Published last: a card that stops running moves the queue on (see the bus).
+  await publish(projectId, {
+    type: "card.status",
+    cardId: ticket.id,
+    kind: "ticket",
+    status: "queued",
+    stalledIn: null,
+    stage: ticket.stage,
+    blockedReason: reason,
+  });
+}
+
+/**
+ * Tickets left in To Do waiting for a person to allow files, from before
+ * scope was granted on its own: granted now, and queued the same way.
+ */
+export async function grantAskedScope(projectId: string): Promise<void> {
+  const repo = repository();
+  for (const card of await repo.boardCards(projectId)) {
+    if (card.kind !== "ticket" || card.status !== "blocked" || card.stalledIn !== "todo") continue;
+    if (!card.blockedReason?.startsWith("Needs files outside its scope")) continue;
+    const ticket = await repo.ticketDetail(card.id);
+    const asked = ticket ? scopeAsked(ticket) : [];
+    if (!ticket || asked.length === 0) continue;
+    await askForScope(projectId, ticket, asked, { kept: hasKeptWork(ticket) });
+  }
+}
+
+/** The running ticket holding some of `files`, other than this one and its scouts. */
+async function heldFiles(projectId: string, ticket: TicketDetail, files: string[]): Promise<Reservation | null> {
+  const repo = repository();
+  const project = await repo.projectById(projectId);
+  if (!project) return null;
+  const together = (await repo.scoutsOf(ticket.id)).map((s) => s.id);
+  return heldBy({ id: ticket.id, fileScope: files }, await repo.reservations(project.repoFullName), together);
 }
 
 /**

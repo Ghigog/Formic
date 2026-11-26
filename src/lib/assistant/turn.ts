@@ -250,7 +250,7 @@ export async function systemPrompt(projectId: string, brief: string | null): Pro
     "",
     "You can do the work, not only describe it. Each of these is a proposal: it happens only if the person approves it.",
     "- open_pull_request, for a change to the code you made yourself, on your own branch. It goes through CI and review like any other pull request. Make the change yourself, without a ticket, when you can finish and check it in this conversation: a bug fix, a follow-up, a small feature.",
-    "- rerun_ci, only for a failure that is not the code's (a network error in an install, a lost runner). A re-run tests the same commit, so a failure in the code fails again; Formic refuses it and proposes update_branch instead.",
+    "- rerun_ci, only for a failure that is not the code's (a network error in an install, a lost runner). A re-run tests the same commit, so a failure in the code fails again; Formic brings main into the branch instead.",
     "- update_branch, to bring main into a ticket's branch. Use it for a blocked card whose fix has since merged to main: the head moves, CI runs on it, and the card goes back to In Review. A conflict goes to the Reviewer Agent.",
     "Before you write a follow-up or a fix from an agent's note, read the failing check's log (card_status) and quote the failing assertion in the ticket. An agent's note can name the wrong cause.",
     "- add_tickets_to_epic, for work that belongs to an Epic already on the board: a follow-up or a bug in a ticket's work goes in that ticket's Epic.",
