@@ -374,7 +374,14 @@ async function redoEpic(projectId: string, card: BoardCard): Promise<string> {
     return "Writing the PRD again, with what you said.";
   }
   if (home === "todo") {
-    if (!prdSchema.safeParse(detail.prd).success) return "This Epic has no PRD to break down yet.";
+    if (!prdSchema.safeParse(detail.prd).success) {
+      // Dropped here while the agent was out of usage, it never got its PRD:
+      // start the Product Agent as moving it into To Do would have.
+      if (await working(card)) return "The Product Agent is already writing this PRD.";
+      await repo.setEpicRunnerJob(card.id, null);
+      launch(() => runProductAgent(projectId, card.id, detail.rawRequest), `product agent for ${card.key}, from its chat`);
+      return "Writing the PRD, then the Architect Agent breaks it down.";
+    }
     if (await working(card)) return "The Architect Agent is already breaking this Epic down. It reads what you said.";
     launch(() => decomposeEpic(projectId, card.id), `architect agent for ${card.key}, from its chat`);
     return "Breaking it down again with what you said. Tickets already started stay; the rest follow it.";

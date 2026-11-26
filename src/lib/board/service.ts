@@ -99,9 +99,6 @@ async function whatIsWrong(
     return `${verdict.reason} ${where} ${back}`;
   }
 
-  const limited = await columnLimit(projectId, to);
-  if (limited) return `${limited} ${back}`;
-
   if (to === "in_progress" && card.needsHuman) {
     return `${card.key} is for you, not an agent: ${card.needsHuman} When it is done, say so in its chat and it closes. ${back}`;
   }
@@ -275,6 +272,43 @@ export async function applyTransition(
       blockedReason: card.blockedReason,
     });
     return { ok: true, status: card.status, runId: null, problem };
+  }
+
+  // The column's agent is out of usage: that is not the person's mistake, so
+  // the card waits there on the gray usage-limit clock, as a request in To Do
+  // does (createTodoItem). The bell restarts it when the limit resets.
+  const limited = await columnLimit(projectId, t.to);
+  if (limited) {
+    if (t.actor === "user") await startedBy(card.id);
+    const position = await placeAmong(projectId, t.to, card, t.position);
+    await repo.move({
+      cardId: card.id,
+      kind: card.kind,
+      status: "blocked",
+      stalledIn: t.to,
+      position,
+      detached,
+      misplaced: null,
+    });
+    await repo.rebalanceColumn(projectId, t.to);
+    if (card.kind === "ticket") await repo.updateTicket(card.id, { blockedReason: limited });
+    else await repo.stallEpic(card.id, { status: "blocked", stalledIn: t.to, stage: card.stage, reason: limited });
+    await publish(projectId, {
+      type: "card.status",
+      cardId: card.id,
+      kind: card.kind,
+      status: "blocked",
+      stalledIn: t.to,
+      stage: card.stage,
+      blockedReason: limited,
+    });
+    await separateIfDroppedAlone();
+    if (card.kind === "epic" && t.to === "backlog") await parkTickets(projectId, card.id);
+    if (card.kind === "epic" && t.to === "todo") {
+      const parked = await parkedTickets(card.id);
+      if (parked.length > 0) await unparkTickets(projectId, parked, cards);
+    }
+    return { ok: true, status: "blocked", runId: null };
   }
 
   // An Epic is broken down from its PRD. With none yet it waits in To Do for
