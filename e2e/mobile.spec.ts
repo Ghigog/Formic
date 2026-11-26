@@ -185,6 +185,25 @@ test("the sentinel Re-audit label stays on one line at 390px", async ({
   expect(label).toBeLessThanOrEqual(lineHeight + 1);
 });
 
+/** The release coin is inside the viewport and not under either finger. */
+async function expectHintClearOfFingers(
+  page: import("@playwright/test").Page,
+  points: Array<{ x: number; y: number }>,
+) {
+  const box = await page.getByTestId("swap-hint").boundingBox();
+  const view = page.viewportSize()!;
+  expect(box).not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(view.width);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(view.height);
+  for (const p of points) {
+    const over =
+      p.x >= box!.x && p.x <= box!.x + box!.width && p.y >= box!.y && p.y <= box!.y + box!.height;
+    expect(over).toBe(false);
+  }
+}
+
 test("a two-finger swipe digs through the earth to another board", async ({
   page,
   context,
@@ -246,6 +265,8 @@ test("a two-finger swipe digs through the earth to another board", async ({
   }).toPass({ timeout: 20_000 });
   await expect(page.getByTestId("dig-band")).toBeVisible();
   await expect(page.getByTestId("swap-hint")).toBeVisible();
+  await expect(page.getByTestId("swap-hint-line")).toBeVisible();
+  await expectHintClearOfFingers(page, fingers(to));
   await cdp.send("Input.dispatchTouchEvent", {
     type: "touchEnd",
     touchPoints: [],

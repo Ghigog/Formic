@@ -29,6 +29,8 @@ export function pullFor(dx: number, dy: number): number {
 interface Point {
   clientX: number;
   clientY: number;
+  /** Touch.identifier, when the event has one. */
+  identifier?: number;
 }
 
 /** Travel, in px, a two-finger gesture needs before it is told apart as a swipe or a pinch. */
@@ -56,6 +58,12 @@ export function classifyTwoFingerTravel(start: readonly [Point, Point], now: rea
   if (Math.abs(dy) >= SLOP && Math.abs(dy) > Math.abs(dx) * 2 && spread <= Math.max(SLOP, Math.abs(dy) * 0.4)) return "swipe";
   return "pending";
 }
+
+/** Why a gesture the swap claimed ended without swapping. */
+export type SwapMiss = "short" | "lost" | "cancelled";
+
+/** Which input a missed gesture came from. */
+export type SwapMissSource = "touch" | "pointer";
 
 export interface SwapGestureEvents {
   touchStart(e: { touches: ArrayLike<Point>; target: EventTarget | null }, boundary: Element): void;
@@ -104,45 +112,81 @@ export function createSwapGestures(
   onSwap: (direction: SwapDirection) => void,
   onPull: (pull: number | null) => void = () => {},
   onAim: (aim: SwapAim | null) => void = () => {},
+  onMiss: (reason: SwapMiss, source: SwapMissSource) => void = () => {},
 ): SwapGestureEvents {
-  /** The two fingers' start, once down, and the midpoint of their latest move once swiping. */
-  let touch: { start: readonly [Point, Point]; last: Point | null } | null = null;
-  let drag: Point | null = null;
+  /**
+   * The two fingers' start (and their identifiers, when the browser gives
+   * them), and the midpoint of their latest move once swiping.
+   */
+  let touch: { start: readonly [Point, Point]; ids: readonly [number, number] | null; last: Point | null } | null = null;
+  let drag: (Point & { moved?: boolean }) | null = null;
   let suppressMenu = false;
   const release = () => onPull(null);
+  /** The gesture's own two fingers among the touches now down, or null if one is gone. */
+  const fingers = (list: ArrayLike<Point>): [Point, Point] | null => {
+    if (!touch) return null;
+    if (!touch.ids) return list.length === 2 ? [list[0]!, list[1]!] : null;
+    const [i, j] = touch.ids;
+    let first: Point | undefined;
+    let second: Point | undefined;
+    for (let n = 0; n < list.length; n++) {
+      if (list[n]!.identifier === i) first = list[n];
+      else if (list[n]!.identifier === j) second = list[n];
+    }
+    return first && second ? [first, second] : null;
+  };
   /** Lets go of a touch gesture without swapping; false, as touchMove returns it. */
-  const stopTouch = () => {
+  const stopTouch = (reason: SwapMiss) => {
     const swiping = touch?.last;
     touch = null;
     if (swiping) {
       release();
       onAim(null);
+      onMiss(reason, "touch");
     }
     return false;
   };
   const cancel = () => {
     if (!drag) return;
+    const moved = drag.moved;
     drag = null;
     release();
     onAim(null);
+    if (moved) onMiss("cancelled", "pointer");
   };
   return {
     touchStart(e, boundary) {
       const [first, second] = [e.touches[0], e.touches[1]];
       // Exactly two fingers: one finger is a column swipe or card drag, three or more do nothing.
-      touch = first && second && e.touches.length === 2 && !ownsGesture(e.target, boundary) ? { start: [first, second], last: null } : null;
+      touch =
+        first && second && e.touches.length === 2 && !ownsGesture(e.target, boundary)
+          ? {
+              start: [first, second],
+              ids: first.identifier !== undefined && second.identifier !== undefined ? [first.identifier, second.identifier] : null,
+              last: null,
+            }
+          : null;
     },
     touchMove(e) {
       if (!touch) return false;
-      const [first, second] = [e.touches[0], e.touches[1]];
-      const kind = first && second && e.touches.length === 2 ? classifyTwoFingerTravel(touch.start, [first, second]) : "pinch";
-      if (kind === "pinch") return stopTouch();
-      if (kind === "pending") return false;
+      const pair = fingers(e.touches);
+      if (!pair) return stopTouch("lost");
       const from = midpoint(...touch.start);
-      const now = midpoint(first!, second!);
-      touch.last = now;
+      const now = midpoint(...pair);
       const dx = now.clientX - from.clientX;
       const dy = now.clientY - from.clientY;
+      let kind: TwoFingerTravel;
+      if (touch.last) {
+        // Once a swipe, always a swipe, unless the fingers spread by more than they travelled.
+        const spread = Math.abs(gap(...pair) - gap(...touch.start));
+        kind = spread >= SLOP && spread > Math.abs(dy) ? "pinch" : "swipe";
+      } else {
+        kind = classifyTwoFingerTravel(touch.start, pair);
+      }
+      if (kind === "pinch") return stopTouch("lost");
+      // Mostly vertical but not yet decided: claim it, so the browser does not start a native scroll.
+      if (kind === "pending") return Math.abs(dy) > Math.abs(dx);
+      touch.last = now;
       // One threshold from where the fingers started, the way they are travelling.
       onAim({ x: from.clientX, y: from.clientY + (dy < 0 ? -SWAP_THRESHOLD : SWAP_THRESHOLD), armed: swapDirection(dx, dy) !== null, touch: true });
       onPull(pullFor(dx, dy));
@@ -157,9 +201,10 @@ export function createSwapGestures(
       const from = midpoint(...t.start);
       const direction = swapDirection(t.last.clientX - from.clientX, t.last.clientY - from.clientY);
       if (direction) onSwap(direction);
+      else onMiss("short", "touch");
     },
     touchCancel() {
-      stopTouch();
+      stopTouch("cancelled");
     },
     pointerDown(e, boundary) {
       suppressMenu = false;
@@ -175,6 +220,7 @@ export function createSwapGestures(
       if ((e.buttons & 2) === 0) return cancel();
       const dx = e.clientX - drag.clientX;
       const dy = e.clientY - drag.clientY;
+      if (Math.hypot(dx, dy) >= SLOP) drag.moved = true;
       // One threshold from the press, the way the pointer is travelling.
       onAim({ x: drag.clientX, y: drag.clientY + (dy > 0 ? SWAP_THRESHOLD : -SWAP_THRESHOLD), armed: swapDirection(dx, dy) !== null });
       onPull(pullFor(e.clientX - drag.clientX, e.clientY - drag.clientY));
@@ -187,7 +233,10 @@ export function createSwapGestures(
       release();
       onAim(null);
       const direction = swapDirection(e.clientX - start.clientX, e.clientY - start.clientY);
-      if (!direction) return;
+      if (!direction) {
+        if (start.moved) onMiss("short", "pointer");
+        return;
+      }
       suppressMenu = true;
       onSwap(direction);
     },

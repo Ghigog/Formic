@@ -6,7 +6,7 @@ import { takeNewBoard } from "@/components/onboarding/store";
 import { BoardShell } from "./board-shell";
 import type { Account } from "./account-menu";
 import { DigTransition, type DigTransitionHandle } from "./dig-transition";
-import { createSwapGestures, type SwapAim } from "./swap-gesture";
+import { createSwapGestures, type SwapAim, type SwapMiss, type SwapMissSource } from "./swap-gesture";
 import { SwapHint } from "./swap-hint";
 import { attachSwapSound, swapSfx } from "./swap-sound";
 import { createSwapHistory, type SwapDirection } from "./swap-order";
@@ -19,6 +19,12 @@ export interface SwappableBoardProps {
   projectId: string;
   board: BoardProps;
 }
+
+const MISS_MESSAGES: Record<SwapMiss, (source: SwapMissSource) => string> = {
+  short: (source) => `${source === "pointer" ? "Drag" : "Swipe"} a little further to switch boards.`,
+  lost: () => "Lost that swipe. Keep two fingers together and try again.",
+  cancelled: () => "Board switch cancelled. You're still on this board.",
+};
 
 /**
  * The board, swappable without a reload: a two-finger swipe up (or a
@@ -112,10 +118,11 @@ export function SwappableBoard({ account, projectId, board }: SwappableBoardProp
       (direction) => void swapRef.current(direction),
       (px) => dig.current?.pull(px),
       setAim,
+      (reason, source) => setError(MISS_MESSAGES[reason](source)),
     );
     const touchStart = (e: TouchEvent) => g.touchStart(e, el);
     const touchMove = (e: TouchEvent) => {
-      if (g.touchMove(e)) e.preventDefault();
+      if (g.touchMove(e) && e.cancelable) e.preventDefault();
     };
     const touchEnd = () => g.touchEnd();
     const touchCancel = () => g.touchCancel();

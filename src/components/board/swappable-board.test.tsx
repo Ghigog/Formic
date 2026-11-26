@@ -63,6 +63,16 @@ const opened = () => calls.filter((c) => c.url === "/api/projects/opened");
 const toLoad = { timeout: 3000 };
 
 describe("SwappableBoard", () => {
+  it("says so in the alert pill when a swipe falls short, and clears it", async () => {
+    renderBoard();
+    fireEvent.touchStart(stage(), { touches: fingers(400) });
+    fireEvent.touchMove(stage(), { touches: fingers(370) });
+    fireEvent.touchEnd(stage(), { touches: [], changedTouches: fingers(370) });
+    expect((await screen.findByRole("alert")).textContent).toBe("Swipe a little further to switch boards.");
+    expect(calls.filter((c) => c.url === "/api/projects/swap")).toHaveLength(0);
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull(), { timeout: 5000 });
+  }, 8000);
+
   it("offers the switch-boards tour once after a board was just created", () => {
     window.localStorage.clear();
     window.localStorage.setItem("formic:tours:new-board", "1");
