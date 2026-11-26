@@ -138,6 +138,35 @@ async function credentialOf(presetId: string): Promise<string | null> {
 }
 
 /**
+ * Every agent of the same owner on the same account as this one, itself
+ * first. Siblings share the owner and provider, and the same credential: for
+ * a CLI agent the same Actions secret, for an API agent no key at all or the
+ * same key. An unowned agent has none.
+ */
+async function sameAccount(presetId: string, only?: (other: AgentPreset) => boolean): Promise<AgentPreset[]> {
+  const repo = repository();
+  const found = await repo.presetForRun(presetId);
+  if (!found) return [];
+  const { preset } = found;
+  if (!preset.ownerId) return [preset];
+  const candidates = (await repo.listPresets({ ownerId: preset.ownerId, includeUnowned: false })).filter(
+    (other) =>
+      other.id !== preset.id &&
+      other.ownerId === preset.ownerId &&
+      other.provider === preset.provider &&
+      other.hasKey === preset.hasKey &&
+      other.keyHint === preset.keyHint &&
+      (!only || only(other)),
+  );
+  if (candidates.length === 0) return [preset];
+  const mine = await credentialOf(preset.id);
+  if (!mine) return [preset];
+  const same: AgentPreset[] = [preset];
+  for (const other of candidates) if ((await credentialOf(other.id)) === mine) same.push(other);
+  return same;
+}
+
+/**
  * An agent hit its plan's usage limit: marks it, and every agent of the same
  * owner on the same account, out of usage until `until`. A sibling already out
  * until later keeps its own time and note. Returns the ids it marked, for the
@@ -148,24 +177,51 @@ export async function markKeyLimited(
   limit: { until: Date; note: string },
 ): Promise<string[]> {
   const repo = repository();
-  const found = await repo.presetForRun(presetId);
-  if (!found) return [];
-  const { preset } = found;
-  const marked = [preset.id];
-  await repo.setPresetLimit(preset.id, limit);
-  if (!preset.ownerId) return marked;
-  const mine = await credentialOf(preset.id);
-  if (!mine) return marked;
-  const others = await repo.listPresets({ ownerId: preset.ownerId, includeUnowned: false });
-  for (const other of others) {
-    if (other.id === preset.id || other.ownerId !== preset.ownerId || other.provider !== preset.provider) continue;
-    if (other.hasKey !== preset.hasKey || other.keyHint !== preset.keyHint) continue;
-    if (other.limitedUntil && Date.parse(other.limitedUntil) > limit.until.getTime()) continue;
-    if ((await credentialOf(other.id)) !== mine) continue;
-    await repo.setPresetLimit(other.id, limit);
-    marked.push(other.id);
+  const [preset, ...others] = await sameAccount(
+    presetId,
+    (other) => !(other.limitedUntil && Date.parse(other.limitedUntil) > limit.until.getTime()),
+  );
+  if (!preset) return [];
+  const marked: string[] = [];
+  for (const p of [preset, ...others]) {
+    await repo.setPresetLimit(p.id, limit);
+    marked.push(p.id);
   }
   return marked;
+}
+
+/** A usage-limit mark: not Formic's own token allowance, which only the window lifts. */
+function usageMarked(preset: AgentPreset, now: number): boolean {
+  return !!preset.limitedUntil && Date.parse(preset.limitedUntil) > now && preset.limitNote !== ALLOWANCE_NOTE;
+}
+
+/**
+ * An agent just did work on its model: its account is not out of usage,
+ * whatever an earlier reading of a log said. Lifts the usage-limit mark from
+ * it and every agent on the same account, and returns the ids it lifted, for
+ * the caller to publish `agent.limited` (until null) for each.
+ *
+ * This is what keeps a mark honest. A limit is read off text, and text can
+ * be wrong; a model that answers is not. Without it a wrong reading held
+ * every agent on the key out for hours while the same account kept working,
+ * and the PM, running on it, told the person it was out of usage.
+ */
+export async function clearKeyLimited(presetId: string, now = Date.now()): Promise<string[]> {
+  const repo = repository();
+  const found = await repo.presetForRun(presetId);
+  if (!found) return [];
+  // Cheap when nothing is marked, which is nearly always.
+  const owned = found.preset.ownerId
+    ? await repo.listPresets({ ownerId: found.preset.ownerId, includeUnowned: false })
+    : [];
+  if (!usageMarked(found.preset, now) && !owned.some((p) => usageMarked(p, now))) return [];
+  const lifted: string[] = [];
+  for (const p of await sameAccount(presetId)) {
+    if (!usageMarked(p, now)) continue;
+    await repo.setPresetLimit(p.id, null);
+    lifted.push(p.id);
+  }
+  return lifted;
 }
 
 function envKey(id: ProviderId): string | null {

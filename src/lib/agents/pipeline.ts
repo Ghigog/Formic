@@ -40,6 +40,7 @@ import { carryActor } from "@/lib/auth/actor";
 import { fileLayout } from "@/lib/vcs/repositories";
 import { holdFunction } from "@/lib/usage/governor";
 import { isUsageLimitStop } from "@/lib/domain/notice";
+import { workedOn } from "./limit-lift";
 
 /**
  * Wires agents to column transitions.
@@ -214,6 +215,8 @@ export function startRun(
       error: outcome.ok ? null : outcome.error,
     });
     endRun(runId);
+    // A run that reached its model and finished proves its account has usage.
+    if (outcome.ok && usage.tokensOut > 0) await workedOn(projectId, ids.presetId);
   };
 
   return { runId, ctx, attachSandbox, finish };

@@ -16,7 +16,6 @@ import { prdSchema } from "@/lib/domain/entities";
 import { REVIEW_CEILING, waitedOn } from "@/lib/domain/notice";
 import { violationsInDiff } from "@/lib/domain/scope";
 import { publish } from "@/lib/events/bus";
-import { postPmMessage } from "@/lib/assistant/pm-messages";
 import { proposeFollowUps } from "@/lib/assistant/follow-up-messages";
 import { recordFollowUps, requestFix, waitingOnFixReason } from "@/lib/board/follow-ups";
 import { recordRubricFixes } from "@/lib/board/rubric-fixes";
@@ -623,6 +622,8 @@ export async function closeAlreadyDone(
       onlyWithReason: true,
     }).catch(() => ({ started: 0, declined: [] as string[] }));
     if (rerun.started === 0 && rerun.declined.length > 0) {
+      // Main may already hold the fix: bring it in before giving up.
+      if (await bringMainInIfBehind(projectId, ticket, client, pull)) return;
       await stallTicket(
         projectId,
         ticket,
@@ -1223,7 +1224,7 @@ async function releaseDependents(
   for (const card of cards) if (card.id === merged.id) card.status = "merged";
   await releaseWaiting(projectId, cards);
   await reviewAgainAfterFix(projectId, merged, cards);
-  await proposeUpdates(projectId, merged, cards).catch((e: unknown) => console.error("[formic] proposing branch updates failed:", e));
+  await updateBehind(projectId, merged, cards).catch((e: unknown) => console.error("[formic] updating branches from main failed:", e));
 }
 
 /** Blocked cards whose reason waited on this pull request take main into their branch. */
@@ -1254,10 +1255,11 @@ async function reviewAgainAfterFix(projectId: string, merged: TicketDetail, card
 
 /**
  * Blocked tickets with an open pull request that is behind the base, and are
- * not waiting on a fix that has yet to land, get one "Update KEY from main"
- * proposal from the PM; none while an earlier one is still undecided.
+ * not waiting on a fix that has yet to land, take main into their branch on
+ * their own: bringing the base in is what can turn them green, and nobody
+ * needs to be asked for it.
  */
-async function proposeUpdates(projectId: string, merged: TicketDetail, cards: BoardCard[]): Promise<void> {
+async function updateBehind(projectId: string, merged: TicketDetail, cards: BoardCard[]): Promise<void> {
   const repo = repository();
   const candidates = cards.filter((c) => {
     if (c.kind !== "ticket" || c.status !== "blocked" || !c.prNumber || c.archived || c.id === merged.id) return false;
@@ -1270,25 +1272,14 @@ async function proposeUpdates(projectId: string, merged: TicketDetail, cards: Bo
   if (candidates.length === 0) return;
   const project = await projectFor(projectId);
   const client = vcs(project.repoFullName, (await credentialsForProject(project)).repoToken);
-  const asked = new Set(
-    (await repo.assistantMessages(projectId)).messages.flatMap((m) =>
-      m.proposals.flatMap((p) => {
-        const a = p.action as { type?: string; key?: string };
-        return p.state === "proposed" && a.type === "update_branch" && a.key ? [a.key] : [];
-      }),
-    ),
-  );
   for (const card of candidates) {
-    if (asked.has(card.key)) continue;
     const pull = await client.pullRequest(card.prNumber!).catch(() => null);
     if (!pull || pull.merged || pull.state !== "open") continue;
     const behind = await client.compare(pull.headSha, pull.baseBranch).catch(() => null);
     if (!behind || behind.messages.length === 0) continue;
-    await postPmMessage(projectId, {
-      content: `${card.key} is blocked and its branch is behind ${pull.baseBranch}, which has changed since. Bringing ${pull.baseBranch} in may be what turns it green.`,
-      cards: [{ id: card.id, key: card.key, title: card.title }],
-      proposals: [{ summary: `Update ${card.key} from main`, action: { type: "update_branch", key: card.key }, state: "proposed" }],
-    });
+    const waiting = await repo.ticketDetail(card.id);
+    if (!waiting?.prNumber) continue;
+    launch(async () => void (await updateFromMain(projectId, waiting)), `update of ${card.key} from ${pull.baseBranch}`);
   }
 }
 
@@ -1549,6 +1540,11 @@ async function reviewTicket(
     const changed = await checkout.raw.changedFiles();
     if (changed.length === 0) {
       if (red.length > 0) {
+        // Main may already hold the fix: bring it in before giving up.
+        if (await bringMainInIfBehind(projectId, ticket, client, pull)) {
+          await run.finish(outcome);
+          return;
+        }
         const reason =
           `${names} is failing on pull request #${pull.number} and the Reviewer Agent had no fix to offer. ` +
           `Re-run ${names} on GitHub if the check is the problem; if the change is, close the pull request and ` +
@@ -1646,6 +1642,25 @@ export async function updateFromMain(projectId: string, ticket: TicketDetail): P
     );
   }
   return `Brought ${before.baseBranch} into ${ticket.key}; it is in In Review and its new head is reviewed.`;
+}
+
+/**
+ * A red ticket nothing else can fix: when its branch is behind the base,
+ * main is brought in (it may hold the fix) instead of stopping for the
+ * person. True when it was, and the card is in review again.
+ */
+async function bringMainInIfBehind(
+  projectId: string,
+  ticket: TicketDetail,
+  client: ReturnType<typeof vcs>,
+  pull: PullRequestDetail,
+): Promise<boolean> {
+  const behind = await client.compare(pull.headSha, pull.baseBranch).catch(() => null);
+  if (!behind || behind.messages.length === 0) return false;
+  const fresh = await repository().ticketDetail(ticket.id);
+  if (!fresh?.prNumber) return false;
+  launch(async () => void (await updateFromMain(projectId, fresh)), `update of ${ticket.key} from ${pull.baseBranch}`);
+  return true;
 }
 
 /** The hand-off a restack uses for a pull request it could not rebase: the Reviewer Agent, in the ticket's lane. */

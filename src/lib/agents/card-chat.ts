@@ -1,5 +1,6 @@
 import "server-only";
 
+import { workedOn } from "./limit-lift";
 import { z } from "zod";
 
 import { MODELS } from "./anthropic";
@@ -546,8 +547,15 @@ async function reply(
     const creds = await credentialsForProject(project);
     const client = vcs(project.repoFullName, creds.repoToken);
     const done: string[] = [];
+    let proven = false;
     const act = async (action: CardAction) => {
       if (answered) return "Not done: the work already started again with their answer.";
+      // The model is acting, so its account has usage: lifted before the
+      // action, so a restart it asks for is not held by a stale mark.
+      if (!proven) {
+        proven = true;
+        await workedOn(projectId, agentPresetId);
+      }
       const result = await applyCardAction(projectId, cardKind, cardId, action);
       done.push(result);
       return result;
@@ -562,6 +570,7 @@ async function reply(
     tokensIn += ran.usage.tokensIn;
     tokensOut += ran.usage.tokensOut;
     costCents += ran.usage.costCents;
+    if (!proven && ran.usage.tokensOut > 0) await workedOn(projectId, agentPresetId);
     if (ran.end === "answered") {
       await finish(messageId, {
         content: ran.text || done.join("\n") || "I have nothing to add.",
@@ -664,6 +673,9 @@ export async function finishCliCardChat(
     } catch {
       // Not JSON: the text is the reply.
     }
+    // It answered, so its account has usage: lifted before its actions run,
+    // so a restart it asks for is not held by a stale mark.
+    await workedOn(projectId, message.agentPresetId);
     const parsed = cliAnswerSchema.safeParse(raw);
     if (!parsed.success) {
       await finish(messageId, { content: answerText.trim(), status: "done" });

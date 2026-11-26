@@ -93,6 +93,15 @@ export async function restartIdleCards(projectId: string, now = Date.now()): Pro
     await repo.pruneEvents(projectId, KEEP_PRUNABLE_EVENTS);
   }
 
+  // Scope is granted on its own now; a ticket still waiting for a yes gets it.
+  const { grantAskedScope } = await import("@/lib/coder/scope-request");
+  await grantAskedScope(projectId);
+
+  // A card paused by a usage mark that was since lifted, because the account
+  // was seen working, was never really out: it starts again on its own.
+  const { resumeLifted } = await import("@/lib/colony/bell");
+  await resumeLifted(projectId);
+
   for (const card of await repo.boardCards(projectId)) {
     if (card.workingSince || card.needsHuman) continue;
     const updated = card.updatedAt ? Date.parse(card.updatedAt) : now;

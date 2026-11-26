@@ -17,7 +17,7 @@ vi.mock("@/lib/agents/presets", () => ({ columnChatAgentFor }));
 const { MemoryRepository, seedMemory } = await import("@/lib/db/memory-repository");
 const repo = new MemoryRepository();
 vi.mock("@/lib/db", () => ({ repository: () => repo }));
-const { ringBell } = await import("./bell");
+const { ringBell, resumeLifted } = await import("./bell");
 
 function card(id: string, over: Partial<BoardCard>): BoardCard {
   return {
@@ -104,5 +104,22 @@ describe("ringBell", () => {
   it("leaves cards stopped for other reasons alone", async () => {
     await ringBell(project);
     expect(applyCardAction.mock.calls.map((c) => c[2])).not.toContain("credit");
+  });
+});
+
+describe("resumeLifted", () => {
+  it("starts again a card whose agent's usage mark was lifted, once, and leaves one still marked", async () => {
+    const reviewer = await repo.savePreset({ provider: "claude-code", name: "claude-reviewer-1", model: "", prompt: "x" });
+    await repo.setColumnAgent(project, "in_review", reviewer.id);
+
+    // Still marked: the bell's business, not this.
+    await repo.setPresetLimit(reviewer.id, { until: new Date(Date.now() + 3_600_000), note: "n" });
+    expect(await resumeLifted(project)).toBe(0);
+
+    // Lifted, because the account was seen working: "gate" was never really out.
+    await repo.setPresetLimit(reviewer.id, null);
+    expect(await resumeLifted(project)).toBe(1);
+    expect(applyCardAction.mock.calls.map((c) => c[2])).toEqual(["gate"]);
+    expect(await resumeLifted(project)).toBe(0);
   });
 });

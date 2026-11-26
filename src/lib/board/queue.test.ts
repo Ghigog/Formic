@@ -181,7 +181,7 @@ describe("a ticket dropped into In Progress before its prerequisites are ready",
     return applyTransition(PROJECT, { cardId: mine.id, kind: "ticket", from: "todo", to: "in_progress", position: 1, actor: "user" });
   }
 
-  it("waits queued with the reason, then starts once the prerequisite opens its pull request", async () => {
+  it("waits queued with the reason, starts its prerequisite from To Do, then starts once that opens its pull request", async () => {
     const [epic, below, mine] = makeEpicWithChildren({ status: "ready" }, [{ status: "ready" }, { status: "waiting" }]);
     mine!.dependsOn = [below!.id];
     seedMemory([epic!, below!, mine!], {
@@ -197,14 +197,16 @@ describe("a ticket dropped into In Progress before its prerequisites are ready",
     expect(card?.blockedReason).toBe(`Waiting for ${below!.key} to merge or open its pull request. It starts on its own then.`);
     expect(launched).toEqual([]);
 
+    // The prerequisite sat in To Do with nothing to start it: the queue pulls it in.
     await startQueued(PROJECT);
     expect((await repository().cardById(mine!.id))?.status).toBe("queued");
-    expect(launched).toEqual([]);
+    expect((await repository().cardById(below!.id))?.status).toBe("running");
+    expect(launched).toEqual([`coder agent for ${below!.key}`]);
 
     await repository().updateTicket(below!.id, { status: "review", prNumber: 4 });
     await startQueued(PROJECT);
     expect((await repository().cardById(mine!.id))?.status).toBe("running");
-    expect(launched).toEqual([`coder agent for ${mine!.key}`]);
+    expect(launched).toEqual([`coder agent for ${below!.key}`, `coder agent for ${mine!.key}`]);
   });
 
   it("starts once the prerequisite merges", async () => {

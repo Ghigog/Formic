@@ -1,9 +1,11 @@
 import "server-only";
 
+import { workedOn } from "@/lib/agents/limit-lift";
 import { McpServer, type RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { TokenScope } from "@/lib/access-tokens";
 import type { UserRecord } from "@/lib/db/repository";
+import { repository } from "@/lib/db";
 import { prdSchema } from "@/lib/domain/entities";
 import { MAX_REQUEST } from "@/lib/domain/request";
 import { COLUMNS } from "@/lib/domain/status";
@@ -72,6 +74,17 @@ export const PM_TOOLS = [
 
 const wrongBoard = () => reply({ ok: false, error: WRONG_BOARD });
 
+/** Once a minute per board is plenty: a mark lifted stays lifted. */
+const PM_PROOF_EVERY_MS = 60_000;
+const pmProven = new Map<string, number>();
+
+async function pmWorking(projectId: string): Promise<void> {
+  const now = Date.now();
+  if (now - (pmProven.get(projectId) ?? 0) < PM_PROOF_EVERY_MS) return;
+  pmProven.set(projectId, now);
+  await workedOn(projectId, await repository().assistantAgent(projectId).catch(() => null));
+}
+
 /**
  * A server for one request, whose tools act as one person: read-only when
  * their token is. A PM token's `scope` limits it to its one board and the
@@ -84,7 +97,13 @@ export function mcpServerFor(user: UserRecord, readOnly: boolean, scope: TokenSc
   const readHint = { readOnlyHint: true };
   // Every tool names its board; a PM token refuses any other before a tool runs.
   const onBoard = <I extends { board: string }>(handle: (input: I) => Promise<ReturnType<typeof reply>>) =>
-    async (input: I) => (scope && input.board !== scope.projectId ? wrongBoard() : handle(input));
+    async (input: I) => {
+      if (scope && input.board !== scope.projectId) return wrongBoard();
+      // A PM calling a tool is a PM whose model is answering: its account has
+      // usage, so a stale mark must not hold back a card it restarts.
+      if (scope) await pmWorking(scope.projectId);
+      return handle(input);
+    };
   server.registerTool(
     "list_boards",
     { description: scope ? "The board this session works on." : "The boards you can see.", annotations: readHint },
@@ -273,7 +292,7 @@ function registerPmTools(server: McpServer, pm: PmCaller): void {
   server.registerTool(
     "add_dependency",
     {
-      description: "Makes a ticket wait for another ticket on the board to merge first.",
+      description: "Makes a ticket wait for another ticket on the board to merge first. Only for a ticket that needs the other's change; never because they share files, which Formic already runs one at a time.",
       inputSchema: { ...cardInput, dependsOn: z.string().describe("The key of the ticket it waits for.") },
     },
     async (input) => reply(await addCardDependency(pm, input)),
