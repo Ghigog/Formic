@@ -17,6 +17,7 @@ import type {
 } from "./ports";
 import type { PlanStep } from "@/lib/domain/entities";
 import type { Prd } from "@/lib/domain/entities";
+import type { AgentQuestion } from "@/lib/domain/question";
 import type { Workspace } from "@/lib/sandbox/workspace";
 
 /**
@@ -63,7 +64,7 @@ export class MockProductAgent implements ProductAgent {
     input: { epicId: string; rawRequest: string; attachments: AgentAttachment[] },
   ): Promise<
     AgentOutcome<
-      | { kind: "prd"; title: string; prd: Prd }
+      | { kind: "prd"; title: string; prd: Prd; questions?: AgentQuestion[] }
       | { kind: "reroute"; reason: string; ticket: DraftTicket }
     >
   > {
@@ -137,7 +138,16 @@ export class MockProductAgent implements ProductAgent {
     }
     ctx.emit({ type: "epic.prd", epicId: input.epicId, delta: "", done: true });
 
-    return { ok: true, value: { kind: "prd", title, prd }, usage: MOCK_USAGE };
+    // Like "reroute", a raw request that says "ask me" stands in for a real
+    // Product Agent that cannot tell what the person wants and asks.
+    const questions = /\bask me\b/i.test(input.rawRequest)
+      ? [
+          { question: "Who should be able to see this?", why: "It decides whether the data needs per-person access." },
+          { question: "Does it replace the current screen?", why: "Replacing it means a migration." },
+        ]
+      : undefined;
+
+    return { ok: true, value: { kind: "prd", title, prd, ...(questions && { questions }) }, usage: MOCK_USAGE };
   }
 }
 
