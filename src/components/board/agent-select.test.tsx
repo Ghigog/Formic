@@ -135,3 +135,35 @@ describe("AgentSelect", () => {
     });
   });
 });
+
+describe("AgentSelect allowance line", () => {
+  const show = (over: Partial<AgentPreset>) =>
+    render(
+      <AgentSelect slot="todo" presets={[]} selected={preset({ name: "Coder", ...over })} onAssign={vi.fn()} onEdit={vi.fn()} />,
+    );
+
+  it("draws nothing without an allowance or without usage", () => {
+    show({ tokenAllowance: null, allowanceUsed: 5 });
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+
+  it("draws a clay line at the share used, naming the agent and its allowance", () => {
+    show({ tokenAllowance: 1_000_000, allowanceUsed: 400_000 });
+    const bar = screen.getByRole("progressbar", { name: "Coder has used 40% of its 1.00M-token allowance" });
+    expect(bar).toHaveAttribute("aria-valuenow", "40");
+    expect(bar).toHaveStyle({ width: "40%" });
+    expect(bar).toHaveClass("bg-clay");
+    expect(screen.getByRole("button", { name: /Change/ })).toHaveAttribute("title", bar.getAttribute("aria-label"));
+  });
+
+  it("turns rust from 80% and full crimson at or past the allowance", () => {
+    const { unmount } = show({ tokenAllowance: 1000, allowanceUsed: 850 });
+    expect(screen.getByRole("progressbar")).toHaveClass("bg-rust");
+    unmount();
+    show({ tokenAllowance: 1000, allowanceUsed: 5000 });
+    const bar = screen.getByRole("progressbar");
+    expect(bar).toHaveClass("bg-crimson");
+    expect(bar).toHaveAttribute("aria-valuenow", "100");
+    expect(bar).toHaveStyle({ width: "100%" });
+  });
+});
