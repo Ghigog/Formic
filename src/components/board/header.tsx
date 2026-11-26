@@ -46,7 +46,7 @@ export function BoardHeader({
   return (
     <>
       {/* Desktop */}
-      <header className="border-line bg-card relative z-[2] hidden h-16 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-4 border-b px-6 md:grid">
+      <header className="border-line bg-card relative z-[2] hidden h-16 shrink-0 grid-cols-[minmax(max-content,1fr)_minmax(160px,clamp(240px,40vw,520px))_minmax(max-content,1fr)] items-center gap-6 border-b px-8 md:grid">
         <div className="flex min-w-0 items-center gap-4">
           <div className="relative shrink-0">
             <LogoButton
@@ -61,7 +61,7 @@ export function BoardHeader({
               <RepoPicker
                 current={repoFullName}
                 onClose={() => setPicker(false)}
-                className="fixed top-[57px] left-6"
+                className="fixed top-[57px] left-8"
               />
             )}
           </div>
@@ -69,13 +69,13 @@ export function BoardHeader({
           <ColonyTimelineButton />
         </div>
 
-        <div className="flex w-[clamp(240px,40vw,520px)] min-w-0 justify-center">
+        <div className="flex min-w-0 justify-center">
           {assistant && !isMobile && (
             <AskBox a={assistant} repoName={repo ?? repoFullName} />
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-4">
+        <div className="flex shrink-0 items-center justify-end gap-4 justify-self-end">
           <ColonyHeaderStats />
           {account && <AccountMenu account={account} />}
         </div>
