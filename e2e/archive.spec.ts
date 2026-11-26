@@ -33,14 +33,18 @@ async function restoreFromArchive(page: Page, key: string) {
   const nest = page.getByRole("button", { name: "Open colony: levels and bug styles" }).first();
   await expect(async () => {
     if ((await nest.getAttribute("aria-expanded")) !== "true") await nest.click();
-    await page.getByRole("button", { name: "Archived", exact: true }).click({ timeout: 1000 });
-  }).toPass();
+    await page.getByRole("button", { name: "Archived", exact: true }).click({ timeout: 2000 });
+  }).toPass({ intervals: [250, 500, 1000], timeout: 30_000 });
   const view = page.getByRole("dialog", { name: "Archived" });
   await view.getByRole("button", { name: new RegExp(`^Restore ${key} `) }).click();
   await expect(view.getByRole("button", { name: new RegExp(`^Restore ${key} `) })).toHaveCount(0);
   await page.getByTestId("archive-backdrop").click({ position: { x: 4, y: 4 } });
   await expect(view).toBeHidden();
 }
+
+// Opening the colony popover is the slow step; the suite-wide 15 s would leave
+// it no room to retry, and a timeout there strands the ticket in the archive.
+test.setTimeout(45_000);
 
 test("dragging a ticket onto the archive zone archives it, and the Archived view restores it", async ({ page }) => {
   await gotoBoard(page);

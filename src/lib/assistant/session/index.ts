@@ -3,7 +3,7 @@ import "server-only";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
 import { createPmToken, revokePmTokens } from "@/lib/access-tokens";
-import { assistantAgentFor, type CliAgent } from "@/lib/agents/presets";
+import { assistantAgentFor, markKeyLimited, type CliAgent } from "@/lib/agents/presets";
 import { diagnose, formatReset } from "@/lib/agents/limits";
 import { signingSecret } from "@/lib/auth/session";
 import { credentialsForProject } from "@/lib/auth/credentials";
@@ -525,8 +525,9 @@ async function markPmLimited(projectId: string, until: Date | null): Promise<Dat
   const agent = await assistantAgentFor(projectId);
   if (agent.kind !== "cli" || !agent.agent.presetId) return at;
   const note = `The PM hit its usage limit. It can work again at ${formatReset(at)}.`;
-  await repository().setPresetLimit(agent.agent.presetId, { until: at, note });
-  await publish(projectId, { type: "agent.limited", presetId: agent.agent.presetId, until: at.toISOString(), note });
+  for (const presetId of await markKeyLimited(agent.agent.presetId, { until: at, note })) {
+    await publish(projectId, { type: "agent.limited", presetId, until: at.toISOString(), note });
+  }
   return at;
 }
 

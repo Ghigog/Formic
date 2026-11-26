@@ -17,7 +17,7 @@ import {
   startRun,
   type RunHandle,
 } from "@/lib/agents/pipeline";
-import { cliAgentFor, type CliAgent } from "@/lib/agents/presets";
+import { cliAgentFor, markKeyLimited, type CliAgent } from "@/lib/agents/presets";
 import { ATTEMPT_DEFAULTS, type Budget } from "@/lib/budget/budget-for";
 import { attemptsFor } from "@/lib/budget/in-process";
 import { diagnose, finalMessage, lastWords } from "@/lib/agents/limits";
@@ -467,13 +467,15 @@ export async function whyItFailed(
       : plain;
   }
   if (diagnosis.kind === "limit" && diagnosis.until && found) {
-    await repo.setPresetLimit(found.preset.id, { until: diagnosis.until, note: diagnosis.message });
-    await publish(projectId, {
-      type: "agent.limited",
-      presetId: found.preset.id,
-      until: diagnosis.until.toISOString(),
-      note: diagnosis.message,
-    });
+    const marked = await markKeyLimited(found.preset.id, { until: diagnosis.until, note: diagnosis.message });
+    for (const presetId of marked) {
+      await publish(projectId, {
+        type: "agent.limited",
+        presetId,
+        until: diagnosis.until.toISOString(),
+        note: diagnosis.message,
+      });
+    }
   }
   const type = {
     limit: "Usage limit reached",
