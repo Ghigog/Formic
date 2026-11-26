@@ -30,7 +30,7 @@ export async function boardPropsFor(project: ProjectSummary, user: UserRecord): 
   const provider = process.env.SANDBOX_PROVIDER ?? "local";
   // The viewer's own keys: on a shared board, theirs are what their runs use.
   const credentials = withActor(user.id, () => credentialsForProject(project)).catch(() => null);
-  const [cards, { presets, columns: columnAgents }, columnOverrides, sentinels, agentUsage, hasCi, noSandboxKey, tourSeen, pmReadAt] = await Promise.all([
+  const [cards, { presets, columns: columnAgents }, columnOverrides, sentinels, agentUsage, hasCi, noSandboxKey, tourSeen, pmReadAt, hasE2bKey] = await Promise.all([
     repo.boardCards(project.id),
     agentView(project, user),
     repo.columnOverrides(project.id),
@@ -50,6 +50,9 @@ export async function boardPropsFor(project: ProjectSummary, user: UserRecord): 
     repo.boardTourSeen(user.id, project.id).catch(() => false),
     // When this person last read the PM's chat, on any device.
     repo.pmReadAt(user.id, project.id).catch(() => null),
+    // Whether the person has an E2B key of their own (or the board's shared
+    // one), as the PM's sandbox does. The operator's fallback doesn't count.
+    credentials.then((creds) => !!creds?.e2bKey && creds.e2bFallbackUserId === null),
   ]);
   const pmUnread = await repo.unreadPmCount(project.id, pmReadAt).catch(() => 0);
 
@@ -76,6 +79,7 @@ export async function boardPropsFor(project: ProjectSummary, user: UserRecord): 
     repoFullName: project.repoFullName,
     noCi: !hasCi,
     noSandboxKey,
+    hasE2bKey,
     tourSeen,
     initialPmUnread: pmUnread,
     initialPmReadAt: pmReadAt?.toISOString() ?? null,
