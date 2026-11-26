@@ -96,8 +96,8 @@ export const Column = memo(function Column({
   className,
 }: ColumnProps) {
   const dot = COLUMN_DOT[id];
-  // The column's agent is out of usage on its plan: nothing can land here
-  // until it resets. Picking another agent lifts it at once.
+  // The column's agent is out of usage on its plan: cards dropped here wait on
+  // the usage-limit clock until it resets. Picking another agent lifts it at once.
   const limitedFor = useCountdown(agent?.selected?.limitedUntil);
   const limited = limitedFor !== null;
   const [ownCollapsed, setOwnCollapsed] = useState<Set<string>>(new Set());

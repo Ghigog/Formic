@@ -300,6 +300,16 @@ export function Board({
     return out;
   }, [live]);
 
+  const presets = agents?.presets;
+  const agentColumns = agents?.columns;
+  /** The reason a card dropped on `to` waits, when that column's agent is out of usage. */
+  const limitOf = useCallback((to: ColumnId): string | null => {
+    const preset = presets?.find((p) => p.id === agentColumns?.[to]);
+    const until = preset?.limitedUntil ? new Date(preset.limitedUntil) : null;
+    if (!preset || !until || until.getTime() <= Date.now()) return null;
+    const at = until.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return `${preset.name} is out of usage until ${at}. Wait for it, or pick an agent on another account for ${COLUMN_LABELS[to]}.`;
+  }, [presets, agentColumns]);
   /** `index` is the drag library's: among the destination's rendered rows. */
   const commit = useCallback(
     async (card: BoardCard, to: ColumnId, index: number) => {
@@ -332,8 +342,20 @@ export function Board({
       );
       // Onto files another agent is writing, it queues behind that one.
       const queues = card.kind === "ticket" && to === "in_progress" && !!runningConflict(card, live);
+      const limit = fits && to !== from && to !== home && to !== "done" && !unstaffed && !card.needsHuman && (depsMet || card.kind === "epic") ? limitOf(to) : null;
       const moved: BoardCard =
-        fits
+        limit
+          ? {
+              ...card,
+              status: "blocked",
+              stalledIn: to,
+              blockedReason: limit,
+              position,
+              detached,
+              misplacedIn: null,
+              misplacedReason: null,
+            }
+          : fits
           ? {
               ...card,
               status:
@@ -394,22 +416,18 @@ export function Board({
         requestAnimationFrame(() => colony?.reject(card.id, "Needs you"));
       }
     },
-    [byColumn, collapsed, live, onTransition, colony, agents],
+    [byColumn, collapsed, live, onTransition, colony, agents, limitOf],
   );
 
   /** Whether a column would take a card dragged out of `from`. */
   // The parts of `agents` that matter, so a parent that rebuilds the object
   // each render does not redraw every card.
-  const presets = agents?.presets;
-  const agentColumns = agents?.columns;
   const accepts = useCallback(
     (from: ColumnId, to: ColumnId) => {
       if (from === to) return true;
-      if (!canUserMove(from, to).ok) return false;
-      const until = presets?.find((p) => p.id === agentColumns?.[to])?.limitedUntil;
-      return !until || new Date(until).getTime() <= Date.now();
+      return canUserMove(from, to).ok;
     },
-    [presets, agentColumns],
+    [],
   );
 
   /* A swipe on the mobile board: where the touch began, unless it is not ours. */

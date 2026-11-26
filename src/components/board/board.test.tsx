@@ -136,6 +136,27 @@ describe("Board, on a wide screen", () => {
     expect(screen.getByRole("button", { name: /Agent for In Progress/ })).not.toHaveClass("border-crimson");
   });
 
+  it("takes a card into a column whose agent is out of usage, with no error", async () => {
+    const ticket = makeCard({ kind: "ticket", status: "ready", key: "T-1" });
+    const onTransition = vi.fn(async (): Promise<TransitionResult> => ({ ok: true, status: "blocked", runId: null }));
+    const preset = {
+      id: "p1",
+      name: "Claude (work)",
+      provider: "claude-code",
+      model: "",
+      limitedUntil: new Date(Date.now() + 3_600_000).toISOString(),
+    } as never;
+    renderBoard([ticket], {
+      onTransition,
+      agents: { presets: [preset], columns: { in_progress: "p1" }, onAssign: vi.fn(), onEdit: vi.fn() },
+    });
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "Move T-1 to In Progress" }));
+
+    await waitFor(() => expect(onTransition).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("says nothing started when a ticket is moved into In Progress with no agent, once", async () => {
     const t1 = makeCard({ kind: "ticket", status: "ready", key: "T-1" });
     const t2 = makeCard({ kind: "ticket", status: "ready", key: "T-2" });
