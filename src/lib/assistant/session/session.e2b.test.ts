@@ -58,7 +58,7 @@ vi.mock("@/lib/runner/runner", async (original) => ({
 const { repository } = await import("@/lib/db");
 const { answer, cancelPending } = await import("@/lib/assistant/turn");
 const { verifyToken } = await import("@/lib/access-tokens");
-const { endPmSession, setPmSandboxes } = await import("./index");
+const { endPmSession, killOwnerSandboxes, setPmSandboxes } = await import("./index");
 const { PM_SESSIONS_DIR, resultOf } = await import("./e2b-turn");
 const { setVcs, resetVcs } = await import("@/lib/vcs");
 
@@ -378,6 +378,32 @@ describe("the PM in its E2B sandbox", () => {
     await endPmSession(board);
     expect(world.killedIds).toEqual(["sbx-1"]);
     expect(await repository().pmSession(board)).toBeNull();
+  });
+
+  const owner = async () => (await repository().projectById(board))!.ownerId!;
+
+  it("kills the sandbox of an owner's board before the board is deleted", async () => {
+    world.next = [{ words: "Done." }];
+    await settled(await ask("Hi"));
+    await killOwnerSandboxes(await owner());
+    expect(world.killedIds).toEqual(["sbx-1"]);
+  });
+
+  it("lets the delete go on when the kill fails", async () => {
+    world.next = [{ words: "Done." }];
+    await settled(await ask("Hi"));
+    world.kill = async () => {
+      throw new Error("E2B is down");
+    };
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await expect(killOwnerSandboxes(await owner())).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("kills nothing for a board with no sandbox", async () => {
+    await killOwnerSandboxes(await owner());
+    expect(world.killedIds).toEqual([]);
   });
 });
 

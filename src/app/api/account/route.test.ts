@@ -13,6 +13,7 @@ const { SESSION_COOKIE, signSession } = await import("@/lib/auth/session");
 const { seal } = await import("@/lib/secrets/vault");
 const { resetEnvCache } = await import("@/lib/secrets/env");
 const { DELETE } = await import("./route");
+const { setPmSandboxes } = await import("@/lib/assistant/session");
 
 async function actAs(userId: string) {
   jar.clear();
@@ -103,5 +104,32 @@ describe("DELETE /api/account", () => {
 
     const cleared = res.headers.getSetCookie().find((c) => c.startsWith(`${SESSION_COOKIE}=`));
     expect(cleared).toContain("Max-Age=0");
+  });
+
+  it("deletes the account even when a board's sandbox cannot be killed", async () => {
+    const user = await repository().upsertUser({ githubId: 3, login: "c", name: null, avatarUrl: null });
+    const project = await repository().ensureProject({ ownerId: user.id, repoFullName: "a/c", baseBranch: "main" });
+    await repository().savePmSession(project.id, { sessionId: "s1", where: "e2b", sandboxId: "sbx-1" });
+    setPmSandboxes({
+      create: async () => {
+        throw new Error("unused");
+      },
+      connect: async () => {
+        throw new Error("unused");
+      },
+      kill: async () => {
+        throw new Error("E2B is down");
+      },
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await actAs(user.id);
+
+    const res = await DELETE(request({ confirm: true }));
+
+    setPmSandboxes(undefined);
+    warn.mockRestore();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(await repository().userById(user.id)).toBeNull();
   });
 });

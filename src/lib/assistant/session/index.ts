@@ -326,13 +326,36 @@ async function runInSandbox(input: Omit<Parameters<typeof runE2bTurn>[0], "onIte
  * a fresh session.
  */
 export async function endPmSession(projectId: string): Promise<void> {
-  const session = await repository().pmSession(projectId);
-  if (session?.sandboxId) {
-    const project = await projectFor(projectId).catch(() => null);
-    const creds = project ? await credentialsForProject(project).catch(() => null) : null;
-    if (creds?.e2bKey) await killPmSandbox(session.sandboxId, creds.e2bKey).catch(() => undefined);
-  }
+  await killBoardSandbox(projectId);
   await endStoredSession(projectId);
+}
+
+/**
+ * Kills the board's PM sandbox, if it has one, with the owner's E2B key. A
+ * failure (no key, E2B down) is logged and swallowed: it must never block
+ * Clear or a delete. A board that is deleted calls this first, since the
+ * key is read from rows the delete removes.
+ */
+export async function killBoardSandbox(projectId: string): Promise<void> {
+  try {
+    const session = await repository().pmSession(projectId);
+    if (!session?.sandboxId) return;
+    const project = await projectFor(projectId);
+    const creds = await credentialsForProject(project);
+    if (creds.e2bKey) await killPmSandbox(session.sandboxId, creds.e2bKey);
+  } catch (err) {
+    console.warn(`[formic] could not kill the PM sandbox of board ${projectId}:`, err);
+  }
+}
+
+/** Kills the PM sandbox of every board this person owns, before their account goes. Never rejects. */
+export async function killOwnerSandboxes(ownerId: string): Promise<void> {
+  try {
+    const boards = await repository().listProjects({ ownerId, includeUnowned: false });
+    await Promise.allSettled(boards.map((b) => killBoardSandbox(b.id)));
+  } catch (err) {
+    console.warn("[formic] could not list boards to kill their PM sandboxes:", err);
+  }
 }
 
 /**

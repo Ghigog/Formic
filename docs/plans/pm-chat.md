@@ -340,8 +340,6 @@ How it landed (PR 3b, part 2: E2B):
   "Formic restarted while the PM was answering".
 - Hint: while a Claude Code PM with no token kept starts in CI, the chat says
   replies start in seconds with E2B and what to add.
-- Not done: killing the sandbox when a board is deleted (E2B's own retention
-  reclaims a paused one).
 
 How it changed (2026-11-25, after wake-ups spent a whole subscription):
 
