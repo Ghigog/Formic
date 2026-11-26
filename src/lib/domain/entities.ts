@@ -328,6 +328,8 @@ export interface AgentPreset {
   tokenAllowance?: number | null;
   /** The rolling window the allowance is measured over, in days; absent means 30. */
   tokenAllowanceWindowDays?: number;
+  /** Tokens used inside that window, set only with an allowance (agentView). */
+  allowanceUsed?: number;
 }
 
 export const agentPresetInputSchema = z

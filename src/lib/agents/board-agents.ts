@@ -4,6 +4,7 @@ import { repository } from "@/lib/db";
 import type { ProjectSummary, UserRecord } from "@/lib/db/repository";
 import type { AgentPreset, ColumnAgents } from "@/lib/domain/entities";
 import type { ColumnId } from "@/lib/domain/status";
+import { DEFAULT_ALLOWANCE_WINDOW_DAYS } from "@/lib/domain/limit-settings";
 import { authMode } from "@/lib/auth/session";
 import { ownerScope } from "@/lib/auth/user";
 
@@ -27,6 +28,34 @@ export interface AgentView {
 }
 
 export async function agentView(project: ProjectSummary | null, user: UserRecord): Promise<AgentView> {
+  const view = await pickedAgents(project, user);
+  return { ...view, presets: await withAllowanceUsed(view.presets) };
+}
+
+/**
+ * Sets allowanceUsed on each preset that has a token allowance, counted as
+ * tokensUsedInWindow counts it so the line ends where gateAllowance stops the
+ * agent. One query per distinct window length, not one per preset.
+ */
+async function withAllowanceUsed(presets: AgentPreset[], now = Date.now()): Promise<AgentPreset[]> {
+  const windows = new Set(
+    presets.filter((p) => p.tokenAllowance != null).map((p) => p.tokenAllowanceWindowDays ?? DEFAULT_ALLOWANCE_WINDOW_DAYS),
+  );
+  if (windows.size === 0) return presets;
+  const byWindow = new Map<number, Record<string, { tokensIn: number; tokensOut: number }>>();
+  await Promise.all(
+    [...windows].map(async (days) => {
+      byWindow.set(days, await repository().agentTokensByPreset(new Date(now - days * 86_400_000)));
+    }),
+  );
+  return presets.map((p) => {
+    if (p.tokenAllowance == null) return p;
+    const used = byWindow.get(p.tokenAllowanceWindowDays ?? DEFAULT_ALLOWANCE_WINDOW_DAYS)?.[p.id];
+    return { ...p, allowanceUsed: used ? used.tokensIn + used.tokensOut : 0 };
+  });
+}
+
+async function pickedAgents(project: ProjectSummary | null, user: UserRecord): Promise<AgentView> {
   const repo = repository();
   const own = await repo.listPresets(ownerScope(user));
   if (!project) return { presets: own, columns: {}, assistant: null };

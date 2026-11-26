@@ -12,6 +12,7 @@ import { modelLabel } from "@/lib/agents/models";
 import { provider as providerInfo, shortModelName } from "@/lib/llm/providers";
 import { AutoTour } from "@/components/onboarding/tour";
 import { ProviderLogo } from "./provider-logo";
+import { compact } from "@/components/ui/compact-number";
 import { formatCountdown, useCountdown } from "@/lib/hooks/use-countdown";
 
 /** "Sonnet 5" for a known Claude model, the bare id for anything else. */
@@ -93,6 +94,13 @@ export function AgentSelect({
       : (providerInfo(selected.provider)?.label ?? selected.provider).split(" (")[0]
     : role;
 
+  // Progress toward the token allowance, measured as the start gate measures it.
+  const allowance = selected?.tokenAllowance;
+  const meter =
+    selected && allowance != null && allowance > 0 && selected.allowanceUsed != null
+      ? allowanceMeter(selected.name, selected.allowanceUsed, allowance)
+      : null;
+
   return (
     <div ref={root} data-tour={isAssistant ? undefined : "column-head"} className="relative">
       <button
@@ -100,7 +108,7 @@ export function AgentSelect({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={backAt && selected ? (selected.limitNote ?? undefined) : undefined}
+        title={backAt && selected ? (selected.limitNote ?? undefined) : meter?.label}
         // Starts from what the button shows, so a screen reader and a voice command name it alike.
         aria-label={
           backAt && selected && left !== null
@@ -108,7 +116,7 @@ export function AgentSelect({
             : `${shown} ${detail}. ${name}. Change`
         }
         className={cn(
-          "bg-card flex h-11 w-full items-center gap-1.5 rounded-md border px-2 md:h-8 text-left text-[11px] transition-colors",
+          "bg-card relative flex h-11 w-full items-center gap-1.5 overflow-hidden rounded-md border px-2 md:h-8 text-left text-[11px] transition-colors",
           "border-line hover:border-clay",
         )}
       >
@@ -133,6 +141,21 @@ export function AgentSelect({
           </>
         )}
         <Chevron />
+        {meter && (
+          <span
+            role="progressbar"
+            aria-label={meter.label}
+            aria-valuenow={meter.percent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            data-tone={meter.tone}
+            style={{ width: `${meter.percent}%` }}
+            className={cn(
+              "absolute bottom-0 left-0 h-0.5 ease-out motion-safe:transition-[width] motion-safe:duration-500",
+              meter.tone === "crimson" ? "bg-crimson" : meter.tone === "rust" ? "bg-rust" : "bg-clay",
+            )}
+          />
+        )}
       </button>
 
       {open && (
@@ -231,6 +254,14 @@ export function AgentSelect({
       )}
     </div>
   );
+}
+
+/** The allowance line: how full, in which colour, and the sentence that says so. */
+function allowanceMeter(name: string, used: number, allowance: number) {
+  const ratio = Math.min(used / allowance, 1);
+  const percent = Math.round(ratio * 100);
+  const tone = ratio >= 1 ? "crimson" : ratio >= 0.8 ? "rust" : "clay";
+  return { percent, tone, label: `${name} has used ${percent}% of its ${compact(allowance)}-token allowance` };
 }
 
 function AgentIcon() {
