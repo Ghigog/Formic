@@ -33,7 +33,6 @@ import {
   scopedWorkspace,
 } from "@/lib/sandbox/workspace";
 import { MockVcsClient, type VcsClient, resetVcs, setVcs } from "@/lib/vcs";
-import { applyCardAction } from "@/lib/agents/card-actions";
 import { publish } from "@/lib/events/bus";
 import { noteTexts } from "./notes";
 import { resetEnvCache } from "@/lib/secrets/env";

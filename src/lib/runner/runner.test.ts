@@ -717,6 +717,24 @@ describe("taking a CLI agent's work", () => {
     expect(after.prNumber).toBeGreaterThan(0);
   });
 
+  it("lifts a stale out-of-usage mark once the agent's run succeeds", async () => {
+    const { job, staging } = await dispatched();
+    const presetId = (await repository().columnAgents(PROJECT)).in_progress!;
+    // Marked while the run was out: a misread log, or a limit long gone.
+    await repository().setPresetLimit(presetId, { until: new Date(Date.now() + 3_600_000), note: "Claude Code hit its usage limit." });
+    MockVcsClient.stage(staging, ["src/lib/feature/a.ts"], "T-1: stuff");
+    const before = (await repository().eventsAfter(PROJECT, 0)).length;
+
+    await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "success", url: null });
+
+    expect((await repository().presetForRun(presetId))!.preset.limitedUntil).toBeNull();
+    const lifted = (await repository().eventsAfter(PROJECT, 0))
+      .slice(before)
+      .map((e) => e.payload as { type: string; presetId?: string; until?: string | null })
+      .filter((p) => p.type === "agent.limited");
+    expect(lifted).toEqual([expect.objectContaining({ presetId, until: null })]);
+  });
+
   it("opens the pull request from the staged work", async () => {
     const { ticket, job, staging } = await dispatched();
     const sha = MockVcsClient.stage(
