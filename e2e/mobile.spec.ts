@@ -422,3 +422,35 @@ test("at 390px a PM draft stays with its board across a swipe, with no flash of 
   }
   await expect(next).toHaveValue("");
 });
+
+/*
+ * The mock Product Agent asks when the request says "ask me" (see mock.ts).
+ * Its Epic waits on the answer: the drawer shows a plum Question, never the
+ * red warning a failed step gets.
+ */
+test("an Epic with a question reads as a plum Question", async ({ page }) => {
+  const title = "Ask me about sharing boards";
+
+  await column(page, "Backlog").getByRole("button", { name: "New request" }).click();
+  await page.getByLabel("New feature request").fill(title);
+  await page.getByRole("button", { name: "Draft PRD" }).click();
+
+  await column(page, "Backlog").getByText(title).click();
+  const dialog = page.getByRole("dialog", { name: "Epic detail" });
+  await expect(dialog).toBeVisible();
+
+  const banner = dialog.getByRole("alert");
+  await expect(banner).toHaveAttribute("data-severity", "question");
+  await expect(banner).toContainText("Question");
+  await expect(banner).toContainText("Who should be able to see this?");
+  await expect(banner.getByRole("img", { name: /^Question/ })).toBeVisible();
+
+  // The chip says Question with a plum dot, and nothing in the drawer is red.
+  const chip = dialog.locator("span.rounded-full", { hasText: /^Question$/ });
+  await expect(chip).toBeVisible();
+  await expect(chip.locator("span.bg-plum")).toHaveCount(1);
+  await expect(dialog.getByText("Blocked")).toHaveCount(0);
+  await expect(dialog.getByRole("img", { name: /^Needs you/ })).toHaveCount(0);
+  await expect(dialog.locator('[data-severity="warning"]')).toHaveCount(0);
+  await expect(dialog.getByText(/failed/i)).toHaveCount(0);
+});
