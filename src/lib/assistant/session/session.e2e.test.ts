@@ -247,6 +247,34 @@ describe("the PM session, end to end", () => {
     expect((await repository().pmSession(board))?.fileCipher).toBeTruthy();
   });
 
+  it("marks every agent on the PM's key out of usage when the PM hits its limit", async () => {
+    const { savePreset } = await import("@/lib/agents/presets");
+    const { publish } = await import("@/lib/events/bus");
+    const mk = (name: string, extra: Record<string, unknown> = {}) =>
+      savePreset({ name, provider: "claude-code", model: "", prompt: "x", ownerId: "u1", secretName: "CLAUDE_CODE_OAUTH_TOKEN", ...extra });
+    const pm = await mk("pm");
+    const sibling = await mk("worker");
+    const other = await mk("own-secret", { secretName: undefined });
+    claude.agent.presetId = pm.id;
+    vi.mocked(publish).mockClear();
+
+    const second = await ask("Hello");
+    const turn = dispatched[0]!;
+    await get(turn.session);
+    const { finishSessionAnswer } = await import("@/lib/assistant/turn");
+    await finishSessionAnswer(board, second, turn.job, {
+      reply: null,
+      failure: "Claude Code stopped with an error: You've hit your session limit · resets 7:40pm (UTC)",
+      changeSha: null,
+    });
+
+    const limited = vi.mocked(publish).mock.calls.map(([, event]) => event).filter((e) => e.type === "agent.limited");
+    expect(limited.map((e) => e.presetId).sort()).toEqual([pm.id, sibling.id].sort());
+    expect(new Set(limited.map((e) => e.until)).size).toBe(1);
+    expect((await repository().presetForRun(other.id))?.preset.limitedUntil).toBeNull();
+    claude.agent.presetId = "preset-1";
+  });
+
   it("does not start a turn that ran out of time again", async () => {
     const first = await ask("Hello");
     const turn = dispatched[0]!;
