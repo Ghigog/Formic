@@ -445,6 +445,24 @@ describe("a PM session's reply", () => {
     expect(screen.queryByTestId("pm-e2b-hint")).toBeNull();
   });
 
+  it("drops the E2B hint while a reply starts when the board already has an E2B key", () => {
+    render(
+      <AskBox
+        a={{
+          ...controls,
+          pending: true,
+          hasE2bKey: true,
+          presets: [{ ...claude, hasKey: false }],
+          presetId: "c1",
+          messages: [{ id: "r", role: "assistant", content: "", status: "pending", proposals: [] }],
+        }}
+        repoName="demo"
+      />,
+    );
+    expect(screen.queryByTestId("pm-e2b-hint")).toBeNull();
+    expect(screen.getByRole("status")).toHaveTextContent("Starting…");
+  });
+
   it("shows its words as they stream in, with Stop still there", () => {
     render(
       <AskBox
