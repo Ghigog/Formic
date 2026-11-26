@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { agentConfigFor, agentFor, assistantAgentFor, columnIsPlain, columnLimit, tokensUsedInWindow, runTargetFor, savePreset, sentinelAgent } from "./presets";
+import { markKeyLimited, agentConfigFor, agentFor, assistantAgentFor, columnIsPlain, columnLimit, tokensUsedInWindow, runTargetFor, savePreset, sentinelAgent } from "./presets";
 import { SHOWCASE_BRIEF } from "./prompts";
 import { LoopCoderAgent, LoopReviewerAgent } from "./coder";
 import { MockCoderAgent } from "./mock";
@@ -297,5 +297,58 @@ describe("token allowance", () => {
     spy.mockResolvedValue({});
     expect(await columnLimit(PROJECT, "in_progress")).toBeNull();
     expect((await repository().presetForRun(preset.id))?.preset.limitedUntil).toBeNull();
+  });
+});
+
+describe("markKeyLimited", () => {
+  const until = new Date("2026-09-23T20:00:00.000Z");
+  const note = "Claude Code hit its usage limit.";
+  const cli = (name: string, extra: Record<string, unknown> = {}) =>
+    savePreset({ name, provider: "claude-code", model: "", prompt: "x", ownerId: "u1", secretName: "CLAUDE_CODE_OAUTH_TOKEN", ...extra });
+  const api = (name: string, apiKey: string | undefined, extra: Record<string, unknown> = {}) =>
+    savePreset({ name, provider: "anthropic", model: "m", prompt: "x", ownerId: "u1", apiKey, ...extra });
+  const limitOf = async (id: string) => (await repository().presetForRun(id))!.preset;
+
+  it("marks every agent of the owner on the same custom secret, with the same note", async () => {
+    const a = await cli("a");
+    const b = await cli("b");
+    expect((await markKeyLimited(a.id, { until, note })).sort()).toEqual([a.id, b.id].sort());
+    expect(await limitOf(b.id)).toMatchObject({ limitedUntil: until.toISOString(), limitNote: note });
+  });
+
+  it("leaves other owners, other providers and default per-agent secrets alone", async () => {
+    const a = await cli("a");
+    const other = await cli("other-owner", { ownerId: "u2" });
+    const own = await cli("own-secret", { secretName: undefined });
+    const codex = await cli("codex", { provider: "codex" });
+    expect(await markKeyLimited(a.id, { until, note })).toEqual([a.id]);
+    for (const p of [other, own, codex]) expect((await limitOf(p.id)).limitedUntil).toBeNull();
+  });
+
+  it("has no siblings for an unowned agent", async () => {
+    const a = await cli("a", { ownerId: null });
+    await cli("b", { ownerId: null });
+    expect(await markKeyLimited(a.id, { until, note })).toEqual([a.id]);
+  });
+
+  it("matches API agents by key, and keyless ones with each other", async () => {
+    const a = await api("a", "sk-ant-same-key-1234");
+    const b = await api("b", "sk-ant-same-key-1234");
+    const c = await api("c", "sk-ant-other-key-1234");
+    const n1 = await api("n1", undefined);
+    const n2 = await api("n2", undefined);
+    expect((await markKeyLimited(a.id, { until, note })).sort()).toEqual([a.id, b.id].sort());
+    expect((await limitOf(c.id)).limitedUntil).toBeNull();
+    expect((await limitOf(n1.id)).limitedUntil).toBeNull();
+    expect((await markKeyLimited(n1.id, { until, note })).sort()).toEqual([n1.id, n2.id].sort());
+  });
+
+  it("keeps a sibling's later mark", async () => {
+    const a = await cli("a");
+    const b = await cli("b");
+    const later = new Date("2026-09-24T20:00:00.000Z");
+    await repository().setPresetLimit(b.id, { until: later, note: "later" });
+    expect(await markKeyLimited(a.id, { until, note })).toEqual([a.id]);
+    expect(await limitOf(b.id)).toMatchObject({ limitedUntil: later.toISOString(), limitNote: "later" });
   });
 });

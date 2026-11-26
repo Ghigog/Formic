@@ -964,6 +964,33 @@ describe("taking a CLI agent's work", () => {
     expect(preset.limitedUntil).toBe("2026-09-23T18:30:00.000Z");
   });
 
+  it("marks every agent on the same sign-in out of usage and publishes one event for each", async () => {
+    const url = "https://github.com/acme/widgets/actions/runs/3";
+    MockVcsClient.runner().logs.set(
+      url,
+      ["2026-09-23T15:41:32.5220071Z You've hit your session limit · resets 6:30pm (UTC)", "##[error]Process completed with exit code 1."].join("\n"),
+    );
+    const make = (name: string) =>
+      savePreset({ name, provider: "claude-code", model: "", prompt: "x", secretName: "SHARED_TOKEN", ownerId: "u1" });
+    const first = await make("first");
+    const sibling = await make("sibling");
+    await repository().setColumnAgent(PROJECT, "in_progress", first.id);
+    const presetId = first.id;
+    await installRunner();
+    await runCoderAgent(PROJECT, (await seedTicket()).id);
+    const job = MockVcsClient.runner().dispatches[0]!.inputs.job!;
+    const before = (await repository().eventsAfter(PROJECT, 0)).length;
+
+    await completeCliRun(PROJECT, { job, mode: "implement", conclusion: "failure", url });
+
+    const published = (await repository().eventsAfter(PROJECT, 0))
+      .slice(before)
+      .map((e) => e.payload as { type: string; presetId?: string })
+      .filter((p) => p.type === "agent.limited")
+      .map((p) => p.presetId);
+    expect(published.sort()).toEqual([presetId, sibling.id].sort());
+  });
+
   it("does not blame the plan for a failure the log never said was one", async () => {
     // Run 36642551420: an agent three turns into the scope-request ticket read
     // Formic's own `card-actions.test.ts`, whose fixture quotes "Claude Code
