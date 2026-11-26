@@ -3,6 +3,7 @@ import { repository } from "@/lib/db";
 import { currentUser } from "@/lib/auth/user";
 import { revokeToken } from "@/lib/auth/github";
 import { SESSION_COOKIE, cookieHeader } from "@/lib/auth/session";
+import { killOwnerSandboxes } from "@/lib/assistant/session";
 import { open } from "@/lib/secrets/vault";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +28,8 @@ export async function DELETE(req: Request) {
 
   const token = user.githubTokenCipher ? open(user.githubTokenCipher) : null;
   if (token) await revokeToken(token);
+  // Before the delete: the owner's E2B key is read from rows it removes.
+  await killOwnerSandboxes(user.id);
   await repository().deleteUser(user.id);
 
   const res = Response.json({ ok: true });

@@ -220,6 +220,17 @@ describe("moving a stopped card to the column it stopped in", () => {
     expect((await repo.cardById(epic.id))!.status).toBe("draft");
   });
 
+  it("starts the Product Agent on a paused To Do Epic that has no PRD", async () => {
+    const repo = repository();
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "An epic", rawRequest: "Do a thing", position: 1 });
+    await repo.stallEpic(epic.id, { status: "blocked", stalledIn: "todo", stage: 1, reason: "Claude is out of usage until 3:40 PM." });
+
+    const said = await applyCardAction(PROJECT, "epic", epic.id, { type: "redo", instruction: "" });
+
+    expect(said).toContain("Writing the PRD");
+    await until(async () => !!(await repo.epicDetail(epic.id))?.prd, "the Product Agent to write the PRD");
+  });
+
   it("still says a working card is already there", async () => {
     const { ticket } = await seedInReview();
 
