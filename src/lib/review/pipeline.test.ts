@@ -622,6 +622,27 @@ describe("closeAlreadyDone", () => {
     expect(after.status).toBe("blocked");
     expect(after.blockedReason).toContain("was not run again");
   });
+
+  it("brings main in rather than block, when the branch is behind it", async () => {
+    const { ticketId } = await seedTicketWithPull({ merged: false, state: "open" });
+    const ticket = (await repository().ticketDetail(ticketId))!;
+    const pull = await vcs.pullRequest(ticket.prNumber!);
+    MockVcsClient.setChecks(pull.number, "failure");
+    (await vcs.checksFor(pull.headSha))[0]!.detailsUrl = `https://github.com/${REPO}/actions/runs/79/job/9`;
+    const url = `https://github.com/${REPO}/actions/runs/79`;
+    MockVcsClient.runner().branchRuns.set(pull.headBranch, [
+      { name: "CI", sha: pull.headSha, status: "completed", conclusion: "failure", attempt: 1, startedAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", url },
+    ]);
+    MockVcsClient.runner().logs.set(url, "AssertionError: expected 2 to be 3");
+    MockVcsClient.behindBase(pull.number);
+    setAgents({ reviewer: { review: async () => ({ ok: true, value: { summary: "ok", detail: "", verifiedWith: null, sendBack: null }, usage: { model: "s", tokensIn: 0, tokensOut: 0, costCents: 0 } }) } } as never);
+
+    await closeAlreadyDone(PROJECT, ticket, { summary: "already there", detail: "found in place" });
+
+    const head = (await vcs.pullRequest(pull.number)).headSha;
+    await vi.waitFor(async () => expect((await vcs.pullRequest(pull.number)).headSha).not.toBe(head));
+    expect((await repository().ticketDetail(ticketId))!.blockedReason ?? "").not.toContain("was not run again");
+  });
 });
 
 describe("a conflict in review", () => {

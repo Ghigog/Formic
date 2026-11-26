@@ -1420,7 +1420,7 @@ async function runTool(
 /** What a write outside the ticket's file scope means, told as it happens. */
 function outsideNote(workspace: Workspace, path: string): string {
   if (!workspace.outsideScope?.(path)) return "";
-  return " It is outside this ticket's file scope. That is fine when the right change needs it: Formic asks the person to add it to the scope before your work goes further. Where an equally good change fits inside the scope, prefer that.";
+  return " It is outside this ticket's file scope. That is fine when the right change needs it: Formic adds it to the scope on its own. Where an equally good change fits inside the scope, prefer that.";
 }
 
 function invalid(detail: string | undefined, tool: string): ToolOutcome {

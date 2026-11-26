@@ -183,6 +183,11 @@ async function seedTicket(options?: {
   return (await repo.ticketDetail(ticket!.id))!;
 }
 
+/** The head of a mock pull request now. */
+async function vcsHead(number: number): Promise<string> {
+  return (await new MockVcsClient(REPO).pullRequest(number)).headSha;
+}
+
 /** Waits for detached work (launch()) to reach a state, or gives up loudly. */
 async function until(
   predicate: () => Promise<boolean>,
@@ -868,6 +873,19 @@ describe("the Reviewer Agent pipeline", () => {
     const after = (await repository().ticketDetail(ticket.id))!;
     expect(after.status).toBe("blocked");
     expect(after.blockedReason).toContain("had no fix");
+  });
+
+  it("brings main in rather than stop, when red CI has no fix and the branch is behind main", async () => {
+    useAgents(new StubCoder(writesInScope()), new StubReviewer());
+    const ticket = await seedTicket();
+    const pull = await openPullRequestFor(ticket, false);
+    MockVcsClient.behindBase(pull.number);
+
+    await reviewPullRequest(PROJECT, pull.number, pull.headSha);
+
+    await until(async () => (await repository().ticketDetail(ticket.id))!.status !== "blocked" &&
+      (await vcsHead(pull.number)) !== pull.headSha, "main brought in");
+    expect((await repository().ticketDetail(ticket.id))!.blockedReason ?? "").not.toContain("had no fix");
   });
 
   it("has the reviewer fix CI that went red while it approved the diff", async () => {

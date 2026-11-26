@@ -298,7 +298,7 @@ export async function sessionSystemPrompt(projectId: string, brief: string | nul
     "- When an agent asks, settle it if what the person already asked for settles it: answer with answer_card_question, own set to true, and tell the person in a line what you answered and why. When only the person can settle it, put it to them in plain words with your suggested answer.",
     "- Be the person's single point of contact. Speak like a trusted colleague: brief, clear, kind, never technical unless they are.",
     "- A card that stops is brought to you: find out why (card_status: its runs, checks and the failed log), fix it when you can, and tell the person in one line.",
-    "- Tidy the board when it gets messy: missing dependencies (add_dependency), overlapping scopes, branches that need the base (update_branch_from_base).",
+    "- Tidy the board when it gets messy: missing dependencies (add_dependency), branches that need the base (update_branch_from_base). A dependency is only for a ticket that needs another's change to exist first. Never add one because two tickets touch the same files: Formic already runs those one at a time, in whichever order they start, and a dependency makes one wait for the other to merge even while it sits untouched in To Do.",
     "",
     "Your tools:",
     `- Claude Code's own: read, search, edit and run commands in a checkout of the repository. Read the code before you say anything about it.`,

@@ -292,7 +292,7 @@ function registerPmTools(server: McpServer, pm: PmCaller): void {
   server.registerTool(
     "add_dependency",
     {
-      description: "Makes a ticket wait for another ticket on the board to merge first.",
+      description: "Makes a ticket wait for another ticket on the board to merge first. Only for a ticket that needs the other's change; never because they share files, which Formic already runs one at a time.",
       inputSchema: { ...cardInput, dependsOn: z.string().describe("The key of the ticket it waits for.") },
     },
     async (input) => reply(await addCardDependency(pm, input)),

@@ -46,3 +46,26 @@ export async function ringBell(
   }
   return { sent, skipped, left: cards.length - seen };
 }
+
+/**
+ * Cards paused by a usage mark that has since been lifted (clearKeyLimited):
+ * the account was seen working, so the mark was wrong and the pause with it.
+ * They start again on their own, once each, without waiting for the bell.
+ * A mark that simply ran out keeps its time and is left to the bell.
+ */
+export async function resumeLifted(projectId: string): Promise<number> {
+  const repo = repository();
+  const agents = await repo.columnAgents(projectId);
+  let resumed = 0;
+  for (const card of await limitStoppedCards(projectId)) {
+    const presetId = agents[card.stalledIn as keyof typeof agents];
+    const preset = presetId ? (await repo.presetForRun(presetId))?.preset : null;
+    if (!preset || preset.limitedUntil) continue;
+    const agent = await columnChatAgentFor(projectId, card.stalledIn!);
+    if (agent.kind === "limited" || agent.kind === "none") continue;
+    if (!(await repo.claimDelivery(`lifted:${card.id}:${card.updatedAt}`))) continue;
+    await applyCardAction(projectId, card.kind, card.id, { type: "redo", instruction: RESUME_MESSAGE });
+    resumed++;
+  }
+  return resumed;
+}

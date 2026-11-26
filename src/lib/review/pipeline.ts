@@ -622,6 +622,8 @@ export async function closeAlreadyDone(
       onlyWithReason: true,
     }).catch(() => ({ started: 0, declined: [] as string[] }));
     if (rerun.started === 0 && rerun.declined.length > 0) {
+      // Main may already hold the fix: bring it in before giving up.
+      if (await bringMainInIfBehind(projectId, ticket, client, pull)) return;
       await stallTicket(
         projectId,
         ticket,
@@ -1538,6 +1540,11 @@ async function reviewTicket(
     const changed = await checkout.raw.changedFiles();
     if (changed.length === 0) {
       if (red.length > 0) {
+        // Main may already hold the fix: bring it in before giving up.
+        if (await bringMainInIfBehind(projectId, ticket, client, pull)) {
+          await run.finish(outcome);
+          return;
+        }
         const reason =
           `${names} is failing on pull request #${pull.number} and the Reviewer Agent had no fix to offer. ` +
           `Re-run ${names} on GitHub if the check is the problem; if the change is, close the pull request and ` +
@@ -1635,6 +1642,25 @@ export async function updateFromMain(projectId: string, ticket: TicketDetail): P
     );
   }
   return `Brought ${before.baseBranch} into ${ticket.key}; it is in In Review and its new head is reviewed.`;
+}
+
+/**
+ * A red ticket nothing else can fix: when its branch is behind the base,
+ * main is brought in (it may hold the fix) instead of stopping for the
+ * person. True when it was, and the card is in review again.
+ */
+async function bringMainInIfBehind(
+  projectId: string,
+  ticket: TicketDetail,
+  client: ReturnType<typeof vcs>,
+  pull: PullRequestDetail,
+): Promise<boolean> {
+  const behind = await client.compare(pull.headSha, pull.baseBranch).catch(() => null);
+  if (!behind || behind.messages.length === 0) return false;
+  const fresh = await repository().ticketDetail(ticket.id);
+  if (!fresh?.prNumber) return false;
+  launch(async () => void (await updateFromMain(projectId, fresh)), `update of ${ticket.key} from ${pull.baseBranch}`);
+  return true;
 }
 
 /** The hand-off a restack uses for a pull request it could not rebase: the Reviewer Agent, in the ticket's lane. */

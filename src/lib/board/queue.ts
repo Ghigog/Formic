@@ -43,7 +43,18 @@ export function reservationLease(repoFullName: string): string {
 async function startQueuedOn(repoFullName: string): Promise<void> {
   const recalled: BoardCard[] = [];
   const waiting: Array<{ projectId: string; card: BoardCard }> = [];
-  const started = await withLease(reservationLease(repoFullName), () => claimQueued(repoFullName, recalled, waiting));
+  const pulled: Array<{ projectId: string; card: BoardCard; position: number }> = [];
+  const started = await withLease(reservationLease(repoFullName), () => claimQueued(repoFullName, recalled, waiting, pulled));
+  // Moved after the lease: a move decides its own start under it.
+  const { applyTransition } = await import("./service");
+  const moved = new Set<string>();
+  for (const { projectId, card, position } of pulled) {
+    if (moved.has(card.id)) continue;
+    moved.add(card.id);
+    await applyTransition(projectId, { cardId: card.id, kind: "ticket", from: "todo", to: "in_progress", position, actor: "system" }).catch(
+      (e: unknown) => console.error(`[formic] could not start ${card.key}, which a queued ticket waits on:`, e),
+    );
+  }
   for (const { projectId, card } of waiting) {
     await publish(projectId, {
       type: "card.status",
@@ -99,6 +110,8 @@ async function claimQueued(
   recalled: BoardCard[],
   /** Queued tickets still waiting whose reason changed, to announce. */
   waiting: Array<{ projectId: string; card: BoardCard }>,
+  /** Prerequisites in To Do that a queued ticket waits on, to move into In Progress. */
+  pulled: Array<{ projectId: string; card: BoardCard; position: number }>,
 ): Promise<Array<{ projectId: string; card: BoardCard }>> {
   const repo = repository();
   const projects = await repo.projectsForRepo(repoFullName);
@@ -140,6 +153,12 @@ async function claimQueued(
       }
       if (!readiness(card, cards).ready) {
         await stillWaits(card, prerequisiteReason(card, cards));
+        // A prerequisite left in To Do would keep it waiting forever: it is
+        // pulled into In Progress, just ahead of the ticket waiting on it.
+        for (const id of card.dependsOn) {
+          const dep = cards.find((c) => c.id === id);
+          if (dep && idleInTodo(dep)) pulled.push({ projectId, card: dep, position: card.position - 0.5 });
+        }
         continue;
       }
       // A review waiting on files holds its claim on those too.
@@ -193,6 +212,11 @@ export function prerequisiteReason(card: BoardCard, cards: readonly BoardCard[])
 /** What a queued ticket's card says while another ticket holds its files. */
 export function heldReason(blocker: Reservation, projectId: string): string {
   return `Waiting for ${claimLabel(blocker, projectId)}, which is writing the same files. It starts on its own then.`;
+}
+
+/** A ticket sitting in To Do that an agent can start: not stopped, not the person's. */
+function idleInTodo(card: BoardCard): boolean {
+  return card.kind === "ticket" && card.status === "ready" && !card.stalledIn && !card.needsHuman && !card.archived;
 }
 
 function isQueued(card: BoardCard): boolean {

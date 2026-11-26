@@ -45,3 +45,33 @@ plan, decisions and required safety rules are in
 [`docs/plans/pm-chat.md`](docs/plans/pm-chat.md). Read it before changing
 `src/lib/assistant`, `src/lib/mcp` or the chat panel, and tick its boxes as
 work lands.
+
+## The board decides what it can
+
+Formic's own agents write most of this codebase, one narrow ticket at a
+time. Each ticket's cautious default ("ask the person", "propose it in the
+PM chat", "mark the whole key") looked reasonable alone; together they
+stalled boards and buried the person in questions. These rules hold for
+every change, by a person or an agent:
+
+- **Don't ask what the board can decide.** A new path that stops a card for
+  the person, or posts a PM proposal, needs a reason in its doc comment that
+  no automatic step could settle it: a product decision, money, a merge, or
+  something outside the repository. Taking files into scope, bringing main
+  into a branch, starting a prerequisite and resuming after a limit are
+  the board's to do, not the person's.
+- **Every automatic stop lifts itself.** A mark, block or pause set from
+  indirect evidence (log text, a guess, a default) must be cleared by the
+  evidence that contradicts it, not only by a timer or a person. Example:
+  an out-of-usage mark lifts the moment that account is seen working
+  (`clearKeyLimited`).
+- **Nothing waits on a card nobody will start.** A queued card's reason
+  must name something that will happen on its own. If it waits on a card
+  in To Do, the queue starts that card.
+- **Widen carefully.** A change that makes one signal stop more cards
+  (spreading a mark to sibling agents, a new queue condition) needs the
+  matching lift and a test where the signal is wrong.
+- **Test the interaction, not just the ticket.** `src/lib/board/busy-board.test.ts`
+  runs overlapping tickets, a merge and a misread limit together and checks
+  nothing lands on the person. A change to the queue, scope, review, limits
+  or PM proposals extends it.
