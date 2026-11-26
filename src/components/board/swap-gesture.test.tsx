@@ -321,3 +321,101 @@ describe("aiming", () => {
     expect(onAim).not.toHaveBeenCalled();
   });
 });
+
+describe("when a claimed gesture misses", () => {
+  const withMiss = () => {
+    const onSwap = vi.fn();
+    const onMiss = vi.fn();
+    return { onSwap, onMiss, g: createSwapGestures(onSwap, undefined, undefined, onMiss) };
+  };
+  const id = (list: Array<{ clientX: number; clientY: number }>, ids: number[]) => list.map((p, i) => ({ ...p, identifier: ids[i] }));
+
+  it("says 'short' when two fingers lift before the threshold", () => {
+    const { g, onMiss, onSwap } = withMiss();
+    swipe(g, 270);
+    expect(onSwap).not.toHaveBeenCalled();
+    expect(onMiss).toHaveBeenCalledOnce();
+    expect(onMiss).toHaveBeenCalledWith("short", "touch");
+  });
+
+  it("says 'lost' when a swipe turns into a pinch or loses a finger", () => {
+    const { g, onMiss } = withMiss();
+    g.touchStart({ touches: two(300), target }, boundary);
+    g.touchMove({ touches: two(260) });
+    g.touchMove({ touches: [at(60, 260), at(220, 260)] });
+    g.touchEnd();
+    expect(onMiss).toHaveBeenCalledWith("lost", "touch");
+    g.touchStart({ touches: two(300), target }, boundary);
+    g.touchMove({ touches: two(260) });
+    g.touchMove({ touches: [at(100, 250)] });
+    g.touchEnd();
+    expect(onMiss).toHaveBeenCalledTimes(2);
+  });
+
+  it("says 'cancelled' for a touchcancel and a cancelled right-button drag", () => {
+    const { g, onMiss } = withMiss();
+    g.touchStart({ touches: two(300), target }, boundary);
+    g.touchMove({ touches: two(260) });
+    g.touchCancel();
+    expect(onMiss).toHaveBeenLastCalledWith("cancelled", "touch");
+    g.pointerDown({ ...at(100, 300), button: 2, target }, boundary);
+    g.pointerMove({ ...at(100, 270), buttons: 2 });
+    g.cancel();
+    expect(onMiss).toHaveBeenLastCalledWith("cancelled", "pointer");
+  });
+
+  it("says 'short' for a right-button drag released short", () => {
+    const { g, onMiss } = withMiss();
+    g.pointerDown({ ...at(100, 300), button: 2, target }, boundary);
+    g.pointerMove({ ...at(100, 270), buttons: 2 });
+    g.pointerUp({ ...at(100, 270), button: 2 });
+    expect(onMiss).toHaveBeenCalledWith("short", "pointer");
+  });
+
+  it("stays quiet for gestures it never claimed or that swapped", () => {
+    const { g, onMiss } = withMiss();
+    g.touchStart({ touches: [at(300, 100)], target }, boundary);
+    g.touchMove({ touches: [at(300, 0)] });
+    g.touchEnd();
+    g.touchStart({ touches: three(300), target }, boundary);
+    g.touchMove({ touches: three(200) });
+    g.touchEnd();
+    g.touchStart({ touches: [at(100, 300), at(140, 300)], target }, boundary);
+    g.touchMove({ touches: [at(60, 300), at(180, 300)] });
+    g.touchEnd();
+    g.pointerDown({ ...at(100, 300), button: 0, target }, boundary);
+    g.pointerUp({ ...at(100, 300), button: 0 });
+    g.pointerDown({ ...at(100, 300), button: 2, target }, boundary);
+    g.pointerUp({ ...at(102, 299), button: 2 });
+    swipe(g, 200);
+    expect(onMiss).not.toHaveBeenCalled();
+  });
+
+  it("follows its two fingers by identifier, whatever the order or extra touches", () => {
+    const { g, onSwap, onMiss } = withMiss();
+    g.touchStart({ touches: id(two(300), [4, 7]), target }, boundary);
+    const [a, b] = id(two(250), [4, 7]);
+    expect(g.touchMove({ touches: [at(500, 50) as never, b!, a!] })).toBe(true);
+    const [c, d] = id(two(200), [4, 7]);
+    g.touchMove({ touches: [d!, { ...at(500, 400), identifier: 9 }, c!] });
+    g.touchEnd();
+    expect(onSwap).toHaveBeenCalledWith("down");
+    expect(onMiss).not.toHaveBeenCalled();
+  });
+
+  it("stays a swipe when the fingers drift apart mid-swipe", () => {
+    const { g, onSwap } = withMiss();
+    g.touchStart({ touches: two(300), target }, boundary);
+    g.touchMove({ touches: two(250) });
+    g.touchMove({ touches: [at(80, 190), at(160, 190)] });
+    g.touchEnd();
+    expect(onSwap).toHaveBeenCalledWith("down");
+  });
+
+  it("claims a pending two-finger move that is mostly vertical", () => {
+    const { g } = withMiss();
+    g.touchStart({ touches: two(300), target }, boundary);
+    expect(g.touchMove({ touches: two(296) })).toBe(true);
+    expect(g.touchMove({ touches: two(300, 140) })).toBe(false);
+  });
+});
