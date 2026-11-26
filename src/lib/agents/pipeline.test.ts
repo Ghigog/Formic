@@ -1,4 +1,5 @@
 import { classifyNotice } from "@/lib/domain/notice";
+import { cardProblem } from "@/lib/domain/status";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeCard, makeEpicWithChildren } from "@/test/cards";
 import type {
@@ -38,6 +39,7 @@ const {
   stallDraftingTicket,
 } = await import("./pipeline");
 const { repository } = await import("@/lib/db");
+const { publish } = await import("@/lib/events/bus");
 const { seedMemory } = await import("@/lib/db/memory-repository");
 const { resetAgents, setAgents } = await import("./registry");
 
@@ -302,6 +304,49 @@ describe("applyTickets on an Epic broken down again", () => {
     await applyTickets(PROJECT, epic!.id, [draft("T-1")]);
 
     expect((await repository().cardChatMessages(epic!.id)).messages).toEqual([]);
+  });
+});
+
+describe("applyTickets on an Epic that stalled before its breakdown landed", () => {
+  const draft = {
+    key: "T-1",
+    title: "T-1",
+    description: "d",
+    acceptanceCriteria: ["a"],
+    fileScope: ["src/t1"],
+    size: "S" as const,
+    dependsOn: [] as string[],
+  };
+
+  it("leaves the stall: ready, no reason, no problem, announced as stage 3", async () => {
+    const [epic] = makeEpicWithChildren(
+      { key: "EPIC-7", status: "failed", stalledIn: "todo", blockedReason: "Usage limit reached" },
+      [],
+    );
+    seedMemory([epic!]);
+    vi.mocked(publish).mockClear();
+
+    await applyTickets(PROJECT, epic!.id, [draft]);
+
+    const card = (await repository().cardById(epic!.id))!;
+    expect(card).toMatchObject({ status: "ready", stalledIn: null, blockedReason: null, position: epic!.position });
+    expect(cardProblem(card)).toBeNull();
+    expect(classifyNotice(card)).toBeNull();
+    expect(publish).toHaveBeenCalledWith(
+      PROJECT,
+      expect.objectContaining({ type: "card.status", cardId: epic!.id, status: "ready", stalledIn: null, stage: 3, blockedReason: null }),
+    );
+  });
+
+  it("leaves an Epic that is not stalled where it was, and says nothing about its status", async () => {
+    const [epic] = makeEpicWithChildren({ key: "EPIC-8", status: "ready" }, []);
+    seedMemory([epic!]);
+    vi.mocked(publish).mockClear();
+
+    await applyTickets(PROJECT, epic!.id, [draft]);
+
+    expect(await repository().cardById(epic!.id)).toMatchObject({ status: "ready", position: epic!.position });
+    expect(publish).not.toHaveBeenCalledWith(PROJECT, expect.objectContaining({ type: "card.status" }));
   });
 });
 
