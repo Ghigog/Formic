@@ -31,7 +31,7 @@ import {
   mergeTarget,
   vcs,
 } from "@/lib/vcs";
-import { type Workspace, commandFailure, scopedWorkspace } from "@/lib/sandbox/workspace";
+import { type Workspace, commandFailure, guidedWorkspace, scopedWorkspace } from "@/lib/sandbox/workspace";
 import { inTicketLane } from "./lane";
 import { classifyFailure } from "./rerun/classify";
 import {
@@ -1497,7 +1497,9 @@ async function reviewTicket(
   try {
     const outcome = await (await agentFor(projectId, "reviewer")).review(run.ctx, {
       task: taskFor(ticket, await noteTexts(projectId, ticket.id), undefined, [], origin),
-      workspace: checkout.workspace,
+      // Guided, not strict: a write outside the scope goes through and the
+      // widen-or-wait check below decides what happens to it.
+      workspace: guidedWorkspace(checkout.raw, ticket.fileScope),
       ...review,
     });
 
@@ -1564,6 +1566,8 @@ async function reviewTicket(
     // again with the files once they are free.
     const violations = violationsInDiff(changed, ticket.fileScope);
     if (violations.length > 0 && !(await widenScope(projectId, ticket, violations))) {
+      // Give the round back: the review run with the files counts as this one.
+      await repo.updateTicket(ticket.id, { attempts: ticket.attempts });
       await waitForFiles(projectId, ticket, violations);
       await run.finish(outcome);
       return;

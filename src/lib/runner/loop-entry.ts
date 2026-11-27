@@ -285,7 +285,12 @@ export async function runLoopEntry(
     }
 
     // The file scope is enforced here, whatever the provider: the checks are
-    // about the ticket, not about where the checkout lives.
+    // about the ticket, not about where the checkout lives. Strict on purpose,
+    // not guided: the diff comes back through runner.ts, which only widens the
+    // scope for ticket-implementation modes. A `fix` (review) run with files
+    // outside its scope stops with "Out of scope ... Nothing was pushed" and
+    // never reaches widen-or-wait, so a guided workspace would swap a refusal
+    // the agent can work around for a stopped card.
     const workspace = scopedWorkspace(raw, ticket.fileScope);
 
     const task: CoderTask = {

@@ -854,6 +854,8 @@ describe("a review's fix that needs files outside the ticket's scope", () => {
     expect(waiting.scopeRequest).toEqual(["app/b.ts"]);
     expect(waiting.blockedReason).toContain("T-9");
     expect(waiting.fileScope).toEqual(["src"]);
+    // The refused review does not use up a round.
+    expect(waiting.attempts).toBe(0);
 
     // The other ticket lets go: the review runs again with the files.
     await repository().updateTicket(otherId, { status: "review" });

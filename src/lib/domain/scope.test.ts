@@ -55,13 +55,20 @@ describe("containsPath", () => {
     expect(containsPath("src/components", "src/components")).toBe(true);
   });
 
+  it("covers a generated companion file as part of its file", () => {
+    expect(containsPath("tests/test_seat.gd", "tests/test_seat.gd.uid")).toBe(true);
+    expect(containsPath("tests/test_seat.gd", "tests/test_seat.gd.import")).toBe(true);
+    expect(containsPath("tests/test_seat.gd", "tests/test_seat.gd.bak/x")).toBe(false);
+    expect(containsPath("tests/test_seat.gd", "tests/test_seat.gdx")).toBe(false);
+  });
+
   it("reads a name without an extension as that module's files", () => {
     expect(containsPath("src/lib/auth/session", "src/lib/auth/session.ts")).toBe(true);
     expect(containsPath("src/lib/auth/session", "src/lib/auth/session.test.ts")).toBe(true);
     expect(containsPath("src/lib/auth/session", "src/lib/auth/session/cookie.ts")).toBe(true);
-    // Not its neighbours, nor anything a file with an extension would.
+    // Not its neighbours.
     expect(containsPath("src/lib/auth/session", "src/lib/auth/sessions.ts")).toBe(false);
-    expect(containsPath("src/lib/auth/session.ts", "src/lib/auth/session.ts.bak")).toBe(false);
+    expect(containsPath("src/lib/auth/session.ts", "src/lib/auth/session.ts.bak")).toBe(true);
     expect(containsPath("src/lib/auth", "src/lib/auth.d/x.ts")).toBe(false);
   });
 });

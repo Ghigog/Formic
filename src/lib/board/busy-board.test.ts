@@ -2,14 +2,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { runCoderAgent } from "@/lib/coder/pipeline";
 import { setCheckoutFactory } from "@/lib/coder/checkout";
-import { markMergedExternally, resetPullRequestSweep } from "@/lib/review/pipeline";
+import { markMergedExternally, resetPullRequestSweep, reviewPullRequest } from "@/lib/review/pipeline";
 import { resetMergeLanes } from "@/lib/review/lane";
 import { settleLaunched, startRun } from "@/lib/agents/pipeline";
 import { savePreset } from "@/lib/agents/presets";
+import { startQueued } from "@/lib/board/queue";
 import { resetAgents, setAgents } from "@/lib/agents/registry";
 import { MockArchitectAgent, MockProductAgent, MockShowcaseAgent } from "@/lib/agents/mock";
 import type { AgentContext, AgentOutcome, CodeChange, CoderAgent, CoderTask, ReviewTask, ReviewVerdict, ReviewerAgent } from "@/lib/agents/ports";
-import type { Workspace } from "@/lib/sandbox/workspace";
+import { MemoryWorkspace, scopedWorkspace, type Workspace } from "@/lib/sandbox/workspace";
 import { repository } from "@/lib/db";
 import { publish } from "@/lib/events/bus";
 import { MockVcsClient, resetVcs, setVcs } from "@/lib/vcs";
@@ -145,5 +146,53 @@ describe("a busy board", () => {
       const chat = (await repo.cardChatMessages(card.id)).messages;
       expect(chat.map((m) => m.content).join("\n")).not.toMatch(/say yes|allow them/i);
     }
+  });
+
+  it("keeps a review fix that needs a held file off the person: it waits, is not counted, and lands once the file is free", async () => {
+    const repo = repository();
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "E", rawRequest: "r", position: 1 });
+    const base = { epicId: epic.id, description: "d", acceptanceCriteria: ["c"], size: "M" as const, dependsOnKeys: [] };
+    const [fixing, holder] = await repo.createTickets([
+      { ...base, key: "T-1", title: "Fixing", fileScope: ["src"], position: 1 },
+      { ...base, key: "T-2", title: "Holder", fileScope: ["tests/test_seat.gd.uid"], position: 2 },
+    ]);
+    await repo.updateTicket(holder!.id, { status: "running" });
+    const pull = await vcs.openPullRequest({ headBranch: "t-1", baseBranch: "main", title: "T-1", body: "" });
+    MockVcsClient.setChecks(pull.number, "failure");
+    await repo.updateTicket(fixing!.id, { status: "review", stage: 6, prNumber: pull.number, branchName: "t-1", attempts: 0 });
+
+    const commands: string[] = [];
+    setCheckoutFactory(async (request) => {
+      const raw: Workspace = Object.create(new MemoryWorkspace(), {
+        changedFiles: { value: async () => ["tests/test_seat.gd", "tests/test_seat.gd.uid"] },
+        exec: { value: async (cmd: string) => (commands.push(cmd), { exitCode: 0, stdout: "abc123\n", stderr: "" }) },
+      });
+      return { workspace: scopedWorkspace(raw, request.ticket.fileScope), raw, sandboxId: "sbx", async dispose() {} };
+    });
+    setAgents({
+      reviewer: {
+        review: async () => ({ ok: true, value: { summary: "fix", detail: "", verifiedWith: null, sendBack: null, followUps: [] }, usage: NO_USAGE }),
+      },
+    } as never);
+    const pushed = () => commands.some((c) => c.includes("git push"));
+
+    await reviewPullRequest(PROJECT, pull.number, (await vcs.pullRequest(pull.number)).headSha);
+    const waiting = (await repo.ticketDetail(fixing!.id))!;
+    expect(waiting.status).toBe("queued");
+    expect(waiting.attempts).toBe(0);
+    expect(pushed()).toBe(false);
+
+    MockVcsClient.setChecks(pull.number, "success");
+    await repo.updateTicket(holder!.id, { status: "review" });
+    await startQueued(PROJECT);
+    await until(async () => pushed(), "the fix pushed");
+
+    const proposals = (await repo.assistantMessages(PROJECT)).messages.flatMap((m) => m.proposals);
+    expect(proposals).toEqual([]);
+    const cards = await repo.boardCards(PROJECT);
+    expect(cards.filter((c) => c.kind === "ticket" && c.status === "blocked").map((c) => c.key)).toEqual([]);
+    expect((await repo.ticketDetail(fixing!.id))!.attempts).toBeLessThanOrEqual(1);
+    const chat = (await repo.cardChatMessages(fixing!.id)).messages.map((m) => m.content).join("\n");
+    expect(chat).not.toMatch(/Out of reviews|say yes|allow them/i);
   });
 });
