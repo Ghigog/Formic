@@ -795,18 +795,12 @@ function RunningCard({
       <EpicLine card={card} />
 
       <div className="flex items-center gap-1.5">
-        {agentLabel ? (
+        {agentLabel && (
           <span title={model ?? undefined}>
             <StatusChip tone="clay" pulsing>
               {agentLabel}
             </StatusChip>
           </span>
-        ) : (
-          isDrafting(card) && (
-            <StatusChip tone="clay" pulsing>
-              Drafting…
-            </StatusChip>
-          )
         )}
       </div>
 
@@ -1024,7 +1018,13 @@ function PlainTicket({
       <TicketHead card={card} column={column} />
       <Title muted={held}>{card.title}</Title>
       <EpicLine card={card} />
-      {notice ? (
+      {isDrafting(card) ? (
+        <span data-testid="card-drafting">
+          <StatusChip tone="clay" pulsing>
+            Drafting…
+          </StatusChip>
+        </span>
+      ) : notice ? (
         <span
           data-testid="card-notice"
           data-severity={notice.severity}
