@@ -58,7 +58,7 @@ afterEach(() => vi.unstubAllGlobals());
 const NO_KPIS = {
   entries: [],
   passRate: null,
-  precision: { changes: 0, precise: true },
+  changesAfterSpec: 0,
 };
 
 function open(
@@ -753,7 +753,7 @@ describe("TicketDrawer KPIs", () => {
         entry("in_review", "2026-09-23T11:30:00Z", "2026-09-23T11:45:00Z", 900_000),
       ],
       passRate: null,
-      precision: { changes: 0, precise: true },
+      changesAfterSpec: 0,
     });
     const items = await screen.findAllByText(/entered/);
     expect(items).toHaveLength(2);
@@ -774,10 +774,17 @@ describe("TicketDrawer KPIs", () => {
     expect(screen.queryByText("Timeline")).toBeNull();
   });
 
-  it("shows the precision count", async () => {
-    open(VIEW, [], { ...NO_KPIS, precision: { changes: 2, precise: false } });
-    const label = await screen.findByText("Precision");
-    expect(label.nextElementSibling).toHaveTextContent("2");
+  it("names the change count Changes after spec, never Precision", async () => {
+    open(VIEW, [], { ...NO_KPIS, changesAfterSpec: 2 });
+    const label = await screen.findByText("Changes after spec");
+    expect(label.nextElementSibling).toHaveTextContent("2 changes");
+    expect(screen.queryByText(/precision/i)).toBeNull();
+  });
+
+  it("reads No changes for a ticket never changed after spec", async () => {
+    open(VIEW, [], NO_KPIS);
+    const label = await screen.findByText("Changes after spec");
+    expect(label.nextElementSibling).toHaveTextContent("No changes");
   });
 });
 

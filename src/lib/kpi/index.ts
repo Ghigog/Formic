@@ -1,7 +1,7 @@
 import "server-only";
 
 import { repository } from "@/lib/db";
-import { passRate, precision, projectKpis, timeline, type KpiWindow } from "./compute";
+import { passRate, projectKpis, timeline, type KpiWindow } from "./compute";
 
 export type { KpiWindow } from "./compute";
 
@@ -26,7 +26,7 @@ export async function kpisFor(projectId: string, window: KpiWindow, now = new Da
   return projectKpis(histories, window, now);
 }
 
-/** One ticket's timeline with durations, its review pass rate and its precision; null when it is not in the project. */
+/** One ticket's timeline with durations, its review pass rate and how many times it changed after spec; null when it is not in the project. */
 export async function ticketKpisFor(projectId: string, ticketId: string, now = new Date()) {
   const repo = repository();
   if ((await repo.projectOfCard(ticketId)) !== projectId) return null;
@@ -35,6 +35,6 @@ export async function ticketKpisFor(projectId: string, ticketId: string, now = n
     id: ticketId,
     entries: timeline(entries, now),
     passRate: passRate(entries),
-    precision: precision(changes),
+    changesAfterSpec: changes.length,
   };
 }
