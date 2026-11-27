@@ -82,16 +82,17 @@ export function normalizeScope(scope: readonly string[]): string[] {
 
 /**
  * True when `parent` is the same path as `child`, a directory above it, or
- * a module named without its extension: `src/lib/auth/session` covers
- * `session.ts` and `session.test.ts` beside it, which is what a ticket that
- * names the module means. Only a name with no extension of its own reads
- * that way, and only for files in the same directory.
+ * the same path plus a further `.suffix` in the same directory:
+ * `src/lib/auth/session` covers `session.ts` and `session.test.ts` beside it,
+ * which is what a ticket that names the module means, and `a/foo.gd` covers
+ * the generated companions `a/foo.gd.uid` and `a/foo.png.import`-style files
+ * (`a/foo.png` covers `a/foo.png.import`). Never a path below the file
+ * (`a/foo.gd.bak/x`) or a longer name (`a/foo.gdx`).
  */
 export function containsPath(parent: string, child: string): boolean {
   if (parent === child) return true;
   if (child.startsWith(parent + "/")) return true;
-  const name = parent.slice(parent.lastIndexOf("/") + 1);
-  if (name.includes(".") || !child.startsWith(parent + ".")) return false;
+  if (!child.startsWith(parent + ".")) return false;
   return !child.slice(parent.length).includes("/");
 }
 
