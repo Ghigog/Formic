@@ -10,7 +10,7 @@ vi.mock("@/lib/agents/pipeline", async (importOriginal) => ({
   },
 }));
 
-import { answer, cancelPending, PLAYTEST_RULE, sessionSystemPrompt, finishCliAnswer, history, MAX_ANSWER_MS } from "./turn";
+import { answer, cancelPending, FORMIC_PRODUCT, PLAYTEST_RULE, systemPrompt, sessionSystemPrompt, finishCliAnswer, history, MAX_ANSWER_MS } from "./turn";
 import { applyAction, ASSISTANT_BRANCH_PREFIX, checkAction } from "./actions";
 import { savePreset } from "@/lib/agents/presets";
 import { resetAgents } from "@/lib/agents/registry";
@@ -593,6 +593,18 @@ describe("applying an approved proposal", () => {
     expect(prompt).toContain("create_todo_card");
     expect(prompt).toMatch(/create_backlog_card is only for a new capability that needs a PRD/);
     expect(prompt).toContain("Name a card to the person only by the key and column a tool returned or list_cards shows");
+  });
+
+  it("gives both PM prompts Formic's own product description before the person's brief", async () => {
+    for (const build of [sessionSystemPrompt, systemPrompt]) {
+      const prompt = await build(PROJECT, "Be terse.");
+      expect(prompt).toContain(FORMIC_PRODUCT);
+      expect(prompt.indexOf(FORMIC_PRODUCT)).toBeLessThan(prompt.indexOf("The person's instructions for you:\nBe terse."));
+      expect(prompt.endsWith("Be terse.")).toBe(true);
+    }
+    for (const word of ["Product", "Architect", "Coder", "Reviewer", "Sentinel", "colony", "Playtest"]) {
+      expect(FORMIC_PRODUCT).toContain(word);
+    }
   });
 
   async function plannedTickets() {
