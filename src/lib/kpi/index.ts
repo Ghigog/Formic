@@ -11,6 +11,14 @@ export async function kpisFor(projectId: string, window: KpiWindow, now = new Da
   const tickets = (await repo.boardCards(projectId)).filter((c) => c.kind === "ticket");
   const histories = await Promise.all(
     tickets.map(async (t) => ({
+      ticket: {
+        id: t.id,
+        key: t.key,
+        title: t.title,
+        storyPoints: t.storyPoints ?? null,
+        costCents: t.costCents,
+        attempts: (await repo.ticketDetail(t.id))?.attempts ?? 0,
+      },
       entries: await repo.ticketColumnEntries(t.id),
       changes: await repo.ticketChanges(t.id),
     })),
