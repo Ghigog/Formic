@@ -173,7 +173,7 @@ function Kpis({ startAfterMs }: { startAfterMs: number }) {
             <Tile label="In flight" value={String(data.tiles.inFlight)} />
             <Tile label="Cycle time" value={days(data.tiles.cycleTimeDays)} />
             <Tile label="Pass rate" value={pct(data.tiles.passRate)} />
-            <Tile label="Precision" value={pct(data.tiles.precision)} className="max-md:col-span-2" />
+            <Tile label="Precision" value={pct(data.tiles.unchangedAfterSpec)} className="max-md:col-span-2" />
           </div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <TimeInColumn data={data.timeInColumn} />
@@ -419,7 +419,7 @@ function QualityPlot({ data }: { data: ProjectKpis["quality"] }) {
   const x = (i: number) => PAD.l + (data.length < 2 ? plotW / 2 : (i / (data.length - 1)) * plotW);
   const series = [
     { name: "Pass rate", cls: "stroke-clay fill-clay", get: (q: ProjectKpis["quality"][number]) => q.passRate },
-    { name: "Precision", cls: "stroke-jade fill-jade", get: (q: ProjectKpis["quality"][number]) => q.precision },
+    { name: "Precision", cls: "stroke-jade fill-jade", get: (q: ProjectKpis["quality"][number]) => q.unchangedAfterSpec },
   ];
   return (
     <>
@@ -458,7 +458,7 @@ function QualityPoint({ cx, cy, name, q }: { cx: number; cy: number; name: strin
     r: 3,
     y: cy,
     heading: dateLabel(q.date),
-    lines: [`Pass rate ${pct(q.passRate)} · Precision ${pct(q.precision)}`, `${q.done} ${q.done === 1 ? "ticket" : "tickets"} reached Done`],
+    lines: [`Pass rate ${pct(q.passRate)} · Precision ${pct(q.unchangedAfterSpec)}`, `${q.done} ${q.done === 1 ? "ticket" : "tickets"} reached Done`],
   };
   const { opacity, ...handlers } = useMark(tip);
   return <circle cx={cx} cy={cy} r={3} opacity={opacity} {...handlers} />;
@@ -471,7 +471,7 @@ function dateLabel(date: string): string {
 
 function Throughput({ data }: { data: ProjectKpis["throughput"] }) {
   return (
-    <Chart title="Throughput (done per day)" empty={!data.length}>
+    <Chart title="Throughput (done per day)" empty={!data.some((d) => d.done)}>
       <ThroughputBars data={data} />
     </Chart>
   );

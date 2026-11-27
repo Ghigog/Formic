@@ -12,13 +12,13 @@ const { GET } = await import("./route");
 
 beforeEach(() => {
   activeProject.mockReset().mockResolvedValue({ id: "p1" });
-  kpisFor.mockReset().mockResolvedValue({ tiles: {}, timeInColumn: {}, throughput: [], cycleTime: [] });
+  kpisFor.mockReset().mockResolvedValue({ tiles: {}, timeInColumn: {}, throughput: [], cycleTime: [], previous: null, quality: [], records: {} });
 });
 
 describe("GET /api/kpi", () => {
-  it("answers tiles, time in column, throughput and cycle time", async () => {
+  it("answers tiles, previous, time in column, throughput, cycle time, quality and records", async () => {
     const res = await GET(new Request("http://localhost/api/kpi"));
-    expect(Object.keys(await res.json())).toEqual(["tiles", "timeInColumn", "throughput", "cycleTime"]);
+    expect(Object.keys(await res.json())).toEqual(["tiles", "timeInColumn", "throughput", "cycleTime", "previous", "quality", "records"]);
     expect(kpisFor).toHaveBeenCalledWith("p1", "30d");
   });
 
