@@ -106,6 +106,8 @@ export interface ColonyApi {
   spikeWin: BoardCard | null;
   closeSpikeWin: () => void;
   sfx: (n: Sfx, v?: number) => void;
+  /** The per-board prefix this board keeps its browser-side state under (`formic:colony:<repo>`). */
+  storageKey: string;
   fx: ColonyFx;
   /** Epoch ms, a second at a time: what the heat bars are measured against. */
   now: number;
@@ -852,6 +854,7 @@ export function ColonyProvider({
   );
 
   const api: ColonyApi = {
+    storageKey,
     cards,
     extras,
     score,

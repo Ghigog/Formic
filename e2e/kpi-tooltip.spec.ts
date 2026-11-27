@@ -24,7 +24,9 @@ test("the tooltip stays inside the figure at the first and last marks", async ({
     route.fulfill({
       json: {
         window: "30d",
-        tiles: { done: 20, inFlight: 2, cycleTimeDays: 2, passRate: 0.8, precision: 0.9 },
+        tiles: { done: 20, inFlight: 2, cycleTimeDays: 2, passRate: 0.8, unchangedAfterSpec: 0.9, costPerPointCents: null, firstTryRate: null },
+        previous: null,
+        records: { bestWeek: null, longestRun: null, fastestTicket: null },
         timeInColumn: { backlog: null, todo: null, in_progress: null, in_review: null },
         throughput,
         cycleTime: [],
