@@ -155,7 +155,7 @@ export async function restartIdleCards(projectId: string, now = Date.now()): Pro
     // it again, once, without asking the person.
     if (isDrafting(card)) {
       const { QUIET_MS, redraftTicket } = await import("./service");
-      if (now - updated <= QUIET_MS) continue;
+      if (card.workingSince || now - updated <= QUIET_MS) continue;
       const waiting = await repo.ticketDetail(card.id);
       if (!waiting || waiting.runnerJob || waiting.acceptanceCriteria.length > 0) continue;
       if ((await columnLimit(projectId, "todo")) !== null) continue;
