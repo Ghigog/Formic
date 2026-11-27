@@ -13,14 +13,14 @@ const call = () => GET(new Request("http://localhost/api/kpi/tickets/t1"), { par
 
 beforeEach(() => {
   activeProject.mockReset().mockResolvedValue({ id: "p1" });
-  ticketKpisFor.mockReset().mockResolvedValue({ id: "t1", entries: [], passRate: 1, precision: { changes: 0, precise: true } });
+  ticketKpisFor.mockReset().mockResolvedValue({ id: "t1", entries: [], passRate: 1, changesAfterSpec: 0 });
 });
 
 describe("GET /api/kpi/tickets/[id]", () => {
-  it("answers entries, pass rate and precision", async () => {
+  it("answers entries, pass rate and changes after spec", async () => {
     const res = await call();
     expect(res.status).toBe(200);
-    expect((await res.json()).precision).toEqual({ changes: 0, precise: true });
+    expect((await res.json()).changesAfterSpec).toBe(0);
     expect(ticketKpisFor).toHaveBeenCalledWith("p1", "t1");
   });
 
