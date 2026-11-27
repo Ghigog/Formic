@@ -37,25 +37,50 @@ export function ColonySection() {
   const { view, error, save } = useColonySettings();
   if (!view) return null;
 
-  const capped = view.colonySize !== null;
-  const size = view.colonySize ?? 4;
+  const mode = view.colonyMode;
+  // In Automatic the view's size is the level's: start a manual number from it.
+  const size = view.colonySize ?? view.autoSize;
   const floor = Math.min(view.floor, size - 1);
-  const set = (patch: Partial<Pick<ColonyView, "colonySize" | "colonyReserve">>) =>
-    void save({ colonySize: view.colonySize, colonyReserve: view.colonyReserve, autoScout: view.autoScout, ...patch });
+  const set = (patch: Partial<Pick<ColonyView, "colonyMode" | "colonySize" | "colonyReserve">>) =>
+    void save({
+      colonyMode: mode,
+      colonySize: view.colonySize,
+      colonyReserve: view.colonyReserve,
+      autoScout: view.autoScout,
+      ...patch,
+    });
+  const radio = "text-ink inline-flex items-center gap-1.5 text-[13px]";
 
   return (
     <section className="bg-card border-line rounded-xl border p-4">
       <h2 className="text-ink mb-3 text-[11px] font-semibold tracking-[0.1em] uppercase">Colony</h2>
       <div className="flex flex-col gap-2">
-        <label className="text-ink inline-flex items-center gap-1.5 text-[13px]">
-          <input
-            type="checkbox"
-            checked={capped}
-            onChange={(e) => set(e.target.checked ? { colonySize: size, colonyReserve: Math.max(floor, view.floor) } : { colonySize: null })}
-          />
-          Cap how many agents run
-        </label>
-        {capped ? (
+        <div role="radiogroup" aria-label="Colony cap" className="flex flex-col gap-1.5">
+          <label className={radio}>
+            <input type="radio" name="colony-mode" checked={mode === "auto"} onChange={() => set({ colonyMode: "auto", colonySize: null })} />
+            Automatic: {view.autoSize} at once at Lv {view.level}
+          </label>
+          <label className={radio}>
+            <input
+              type="radio"
+              name="colony-mode"
+              checked={mode === "manual"}
+              onChange={() => set({ colonyMode: "manual", colonySize: size, colonyReserve: Math.max(floor, view.colonyReserve) })}
+            />
+            A number I set
+          </label>
+          <label className={radio}>
+            <input type="radio" name="colony-mode" checked={mode === "off"} onChange={() => set({ colonyMode: "off", colonySize: null })} />
+            No cap
+          </label>
+        </div>
+        {mode === "auto" && (
+          <span className="text-muted text-[11px]">
+            {view.autoReserve} of {view.autoSize} slots kept for bugs and fixes <span className="font-mono">· {view.inUse} in use</span>.{" "}
+            {view.nextAutoLevel ? `Lv ${view.nextAutoLevel} runs ${view.autoSize + 1}.` : "The most an automatic colony runs."}
+          </span>
+        )}
+        {mode === "manual" ? (
           <>
             <div className="flex items-center justify-between gap-2">
               <span className="text-muted text-[11px]">
@@ -85,9 +110,9 @@ export function ColonySection() {
                 : "No reserve required: you may run the colony full."}
             </span>
           </>
-        ) : (
+        ) : mode === "off" ? (
           <span className="text-muted text-[11px]">Off: only file reservations hold work back.</span>
-        )}
+        ) : null}
 
         <span className="text-muted text-[11px]">
           Send up to {view.maxScouts} scouts on a ticket from its drawer. Each tries its own approach; the Reviewer keeps the

@@ -7,6 +7,9 @@ import { scoreOf } from "@/lib/colony/game";
 import {
   AUTO_SCOUT_LEVEL,
   MAX_COLONY,
+  autoColonySize,
+  autoReserve,
+  nextAutoLevel,
   effectiveColony,
   maxScouts,
   nextFloorLevel,
@@ -20,11 +23,15 @@ import type { BoardCard } from "@/lib/domain/entities";
 
 export const dynamic = "force-dynamic";
 
-const bodySchema = z.object({
-  colonySize: z.number().int().min(1).max(MAX_COLONY).nullable(),
-  colonyReserve: z.number().int().min(0).max(MAX_COLONY),
-  autoScout: z.boolean(),
-});
+const bodySchema = z
+  .object({
+    colonyMode: z.enum(["auto", "manual", "off"]),
+    colonySize: z.number().int().min(1).max(MAX_COLONY).nullable().optional(),
+    colonyReserve: z.number().int().min(0).max(MAX_COLONY),
+    autoScout: z.boolean(),
+  })
+  // A manual cap is a number; in the other modes the number is ignored.
+  .refine((b) => b.colonyMode !== "manual" || typeof b.colonySize === "number", { path: ["colonySize"] });
 
 /** The colony as the Nest shows it: what is set, what the level allows, what is in use. */
 function view(project: ProjectSummary, cards: BoardCard[]) {
@@ -32,6 +39,9 @@ function view(project: ProjectSummary, cards: BoardCard[]) {
   return {
     ...effectiveColony(project, level),
     level,
+    autoSize: autoColonySize(level),
+    autoReserve: autoReserve(autoColonySize(level)),
+    nextAutoLevel: nextAutoLevel(level),
     floor: reserveFloor(level),
     nextFloorLevel: nextFloorLevel(level),
     maxScouts: maxScouts(level),
@@ -56,15 +66,18 @@ export async function GET() {
 export const POST = asSignedIn(postHandler);
 async function postHandler(req: NextRequest) {
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return Response.json({ error: "Say the colony's size, reserve and auto-scouting." }, { status: 400 });
+  if (!parsed.success) return Response.json({ error: "Say the colony's mode, size, reserve and auto-scouting." }, { status: 400 });
 
   const project = await activeProject();
   if (!project) return noProject();
   const repo = repository();
   const cards = await repo.boardCards(project.id);
-  const kept = effectiveColony(parsed.data, scoreOf(cards).level);
-  await repo.setColony(project.id, kept);
+  const { colonyMode, colonyReserve, autoScout } = parsed.data;
+  const colonySize = colonyMode === "manual" ? (parsed.data.colonySize ?? null) : null;
+  const kept = effectiveColony({ colonyMode, colonySize, colonyReserve, autoScout }, scoreOf(cards).level);
+  // The mode and the number are stored as set; only a manual number is kept.
+  await repo.setColony(project.id, { ...kept, colonySize });
   // A bigger colony, or a smaller reserve, may have room for what is waiting.
   await startQueued(project.id);
-  return Response.json(view({ ...project, ...kept }, cards));
+  return Response.json(view({ ...project, ...kept, colonySize }, cards));
 }

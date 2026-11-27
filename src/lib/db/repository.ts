@@ -585,7 +585,9 @@ export interface ProjectSummary {
   unlockAllSentinels: boolean;
   /** When the offer to unlock every Sentinel was dismissed or taken up. Null: still on offer. */
   unlockAllOfferDismissedAt: Date | null;
-  /** The most Coder Agents the board runs at once, scouts included. Null: no cap. */
+  /** How the colony is capped: "auto" (by level), "manual" (colonySize) or "off". */
+  colonyMode: "auto" | "manual" | "off";
+  /** The most Coder Agents the board runs at once in "manual" mode, scouts included. Null otherwise. */
   colonySize: number | null;
   /** Slots of colonySize kept for urgent work. */
   colonyReserve: number;
@@ -1337,7 +1339,7 @@ export interface AgentRepository {
   setAssistantAgent(projectId: string, presetId: string | null): Promise<void>;
   setAutoMerge(projectId: string, autoMerge: boolean): Promise<void>;
   /** The colony's size, reserve and auto-scouting (docs/colony.md). */
-  setColony(projectId: string, colony: { colonySize: number | null; colonyReserve: number; autoScout: boolean }): Promise<void>;
+  setColony(projectId: string, colony: { colonyMode: "auto" | "manual" | "off"; colonySize: number | null; colonyReserve: number; autoScout: boolean }): Promise<void>;
   setScoutAgent(projectId: string, presetId: string | null): Promise<void>;
   setAutoEscalate(projectId: string, autoEscalate: boolean): Promise<void>;
   setUnlockAllSentinels(projectId: string, unlockAllSentinels: boolean): Promise<void>;

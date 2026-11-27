@@ -213,8 +213,11 @@ model Project {
   goldenBellsUsed            Int       @default(0)
   /// Whether a golden bell is armed and will ring on the next chance.
   goldenBellArmed            Boolean   @default(false)
-  /// The most Coder Agents this board runs at once, scouts included. Null
-  /// (the default) is no cap: only file reservations hold work back.
+  /// How the colony is capped: "auto" (the default: min(8, level + 1), growing
+  /// with the board's level), "manual" (colonySize) or "off" (no cap).
+  colonyMode                 String    @default("auto")
+  /// The most Coder Agents this board runs at once, scouts included, in
+  /// "manual" mode. Null in the other modes.
   colonySize                 Int?
   /// Slots of colonySize kept for urgent work (bugs, tickets back from
   /// review). The board's level sets the least it may be (docs/colony.md).

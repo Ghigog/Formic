@@ -956,12 +956,12 @@ function contract(name: string, make: () => Repository) {
         expect((await repo.ticketDetail(t!.id))?.autoEscalatedAt).toBe(first);
       });
 
-      it("keeps the colony uncapped until set, per project", async () => {
+      it("keeps the colony Automatic until set, per project", async () => {
         const p = await project();
-        expect(await repo.projectById(p.id)).toMatchObject({ colonySize: null, colonyReserve: 0, autoScout: false });
-        await repo.setColony(p.id, { colonySize: 4, colonyReserve: 1, autoScout: true });
-        expect(await repo.projectById(p.id)).toMatchObject({ colonySize: 4, colonyReserve: 1, autoScout: true });
-        await repo.setColony(p.id, { colonySize: null, colonyReserve: 0, autoScout: false });
+        expect(await repo.projectById(p.id)).toMatchObject({ colonyMode: "auto", colonySize: null, colonyReserve: 0, autoScout: false });
+        await repo.setColony(p.id, { colonyMode: "manual", colonySize: 4, colonyReserve: 1, autoScout: true });
+        expect(await repo.projectById(p.id)).toMatchObject({ colonyMode: "manual", colonySize: 4, colonyReserve: 1, autoScout: true });
+        await repo.setColony(p.id, { colonyMode: "off", colonySize: null, colonyReserve: 0, autoScout: false });
         expect((await repo.projectById(p.id))?.colonySize).toBeNull();
       });
 

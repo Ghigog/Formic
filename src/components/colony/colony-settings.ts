@@ -4,10 +4,16 @@ import { useCallback, useEffect, useState } from "react";
 
 /** The colony as /api/colony answers it. */
 export interface ColonyView {
+  colonyMode: "auto" | "manual" | "off";
   colonySize: number | null;
   colonyReserve: number;
   autoScout: boolean;
   level: number;
+  /** The automatic cap at this level, and the slots it keeps for urgent work. */
+  autoSize: number;
+  autoReserve: number;
+  /** The next level where the automatic cap grows, or null at 8. */
+  nextAutoLevel: number | null;
   floor: number;
   nextFloorLevel: number | null;
   maxScouts: number;
@@ -57,7 +63,7 @@ export function useColonySettings(refreshKey: unknown = null) {
       });
   }, [refreshKey]);
 
-  const save = useCallback(async (next: Pick<ColonyView, "colonySize" | "colonyReserve" | "autoScout">) => {
+  const save = useCallback(async (next: Pick<ColonyView, "colonyMode" | "colonySize" | "colonyReserve" | "autoScout">) => {
     try {
       const res = await fetch("/api/colony", {
         method: "POST",

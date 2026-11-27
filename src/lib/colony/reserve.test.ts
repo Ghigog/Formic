@@ -6,6 +6,7 @@ import {
   effectiveColony,
   isTopPriority,
   maxScouts,
+  nextAutoLevel,
   nextFloorLevel,
   nextScoutLevel,
   reserveFloor,
@@ -38,7 +39,7 @@ function card(p: Partial<BoardCard> & Pick<BoardCard, "id">): BoardCard {
 }
 
 const NO_EPICS = new Map<string, BoardCard>();
-const colony = { colonySize: 4, colonyReserve: 1, autoScout: false };
+const colony = { colonyMode: "manual" as const, colonySize: 4, colonyReserve: 1, autoScout: false };
 
 describe("what levels unlock", () => {
   it("lowers the reserve floor as the colony grows", () => {
@@ -54,21 +55,36 @@ describe("what levels unlock", () => {
 
 describe("effectiveColony", () => {
   it("leaves an uncapped board uncapped", () => {
-    expect(effectiveColony({ colonySize: null, colonyReserve: 3, autoScout: true }, 9)).toEqual({
+    expect(effectiveColony({ colonyMode: "off", colonySize: null, colonyReserve: 3, autoScout: true }, 9)).toEqual({
+      colonyMode: "off",
       colonySize: null,
       colonyReserve: 0,
       autoScout: false,
     });
   });
 
+  it("sizes the automatic cap by level: min(8, level + 1), a reserve of 1 from a cap of 4", () => {
+    const auto = (level: number) => {
+      const c = effectiveColony({ colonyMode: "auto", colonySize: null, colonyReserve: 0, autoScout: false }, level);
+      return [c.colonySize, c.colonyReserve];
+    };
+    expect([1, 2, 3, 7, 30].map(auto)).toEqual([[2, 0], [3, 0], [4, 1], [8, 1], [8, 1]]);
+    expect([1, 3, 7, 8].map(nextAutoLevel)).toEqual([2, 4, null, null]);
+  });
+
+  it("ignores the reserve floor and any stored number in auto", () => {
+    const c = effectiveColony({ colonyMode: "auto", colonySize: 12, colonyReserve: 5, autoScout: false }, 3);
+    expect(c).toMatchObject({ colonySize: 4, colonyReserve: 1 });
+  });
+
   it("holds the reserve to the level's floor, and below the size", () => {
-    expect(effectiveColony({ colonySize: 4, colonyReserve: 0, autoScout: false }, 1).colonyReserve).toBe(2);
-    expect(effectiveColony({ colonySize: 4, colonyReserve: 0, autoScout: false }, 17).colonyReserve).toBe(0);
-    expect(effectiveColony({ colonySize: 2, colonyReserve: 5, autoScout: false }, 1).colonyReserve).toBe(1);
+    expect(effectiveColony({ colonyMode: "manual" as const, colonySize: 4, colonyReserve: 0, autoScout: false }, 1).colonyReserve).toBe(2);
+    expect(effectiveColony({ colonyMode: "manual" as const, colonySize: 4, colonyReserve: 0, autoScout: false }, 17).colonyReserve).toBe(0);
+    expect(effectiveColony({ colonyMode: "manual" as const, colonySize: 2, colonyReserve: 5, autoScout: false }, 1).colonyReserve).toBe(1);
   });
 
   it("keeps auto-scouting off until its level", () => {
-    const on = { colonySize: 4, colonyReserve: 1, autoScout: true };
+    const on = { colonyMode: "manual" as const, colonySize: 4, colonyReserve: 1, autoScout: true };
     expect(effectiveColony(on, AUTO_SCOUT_LEVEL - 1).autoScout).toBe(false);
     expect(effectiveColony(on, AUTO_SCOUT_LEVEL).autoScout).toBe(true);
   });
@@ -76,7 +92,7 @@ describe("effectiveColony", () => {
 
 describe("colonyAdmits", () => {
   it("admits anything with no cap", () => {
-    expect(colonyAdmits(card({ id: "a" }), 99, { colonySize: null, colonyReserve: 0, autoScout: false }, NO_EPICS).ok).toBe(true);
+    expect(colonyAdmits(card({ id: "a" }), 99, { colonyMode: "off", colonySize: null, colonyReserve: 0, autoScout: false }, NO_EPICS).ok).toBe(true);
   });
 
   it("stops routine work at the reserve", () => {

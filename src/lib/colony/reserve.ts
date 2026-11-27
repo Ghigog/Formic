@@ -15,13 +15,36 @@ import {
  * workers idle on purpose; they are the reserve that answers an emergency
  * and the scouts that go looking for something better.
  *
- * Off by default: with no colony size, only file reservations hold work back,
- * as before. The board's level sets how close to full it may run and how many
+ * On by default, in "auto" mode: min(8, level + 1) agents at once, with one
+ * slot kept for urgent work from a cap of 4. The person may set a number of
+ * their own ("manual", up to MAX_COLONY) or turn the cap "off", when only
+ * file reservations hold work back. The board's level also sets how many
  * scouts a ticket may send (docs/colony.md).
  */
 
 /** The largest colony a board may set. */
 export const MAX_COLONY = 12;
+
+/** The largest colony the automatic cap grows to. */
+export const AUTO_MAX_COLONY = 8;
+
+/** How a board's colony is capped. */
+export type ColonyMode = "auto" | "manual" | "off";
+
+/** The automatic cap at a level: a Lv 1 board runs 2 at once, 8 from Lv 7. */
+export function autoColonySize(level: number): number {
+  return Math.min(AUTO_MAX_COLONY, Math.max(1, Math.floor(level)) + 1);
+}
+
+/** Slots the automatic cap keeps for urgent work: one, once the colony can spare it. */
+export function autoReserve(size: number): number {
+  return size >= 4 ? 1 : 0;
+}
+
+/** The next level where the automatic cap grows, or null at its largest. */
+export function nextAutoLevel(level: number): number | null {
+  return autoColonySize(level) >= AUTO_MAX_COLONY ? null : Math.max(1, Math.floor(level)) + 1;
+}
 
 /** The least reserve a board may keep, by level: a new colony keeps two back. */
 export function reserveFloor(level: number): number {
@@ -54,21 +77,35 @@ export function nextScoutLevel(level: number): number | null {
 export { AUTO_SCOUT_LEVEL };
 
 export interface ColonySettings {
-  /** Null: no cap. */
+  colonyMode: ColonyMode;
+  /** The number set in "manual" mode; in the effective settings, null means no cap. */
   colonySize: number | null;
   colonyReserve: number;
   autoScout: boolean;
 }
 
-/** Settings held to what the level allows: the reserve never below its floor. */
+/**
+ * What the colony really is at this level. Off: no cap. Auto: the level's
+ * size and reserve (the floor does not apply). Manual: the person's number,
+ * its reserve never below the floor, which applies only to a number they set.
+ */
 export function effectiveColony(settings: ColonySettings, level: number): ColonySettings {
-  if (settings.colonySize === null) return { colonySize: null, colonyReserve: 0, autoScout: false };
-  const size = Math.min(MAX_COLONY, Math.max(1, Math.round(settings.colonySize)));
+  const { colonyMode } = settings;
+  if (colonyMode === "off" || (colonyMode === "manual" && settings.colonySize === null)) {
+    return { colonyMode, colonySize: null, colonyReserve: 0, autoScout: false };
+  }
+  const autoScout = settings.autoScout && level >= AUTO_SCOUT_LEVEL;
+  if (colonyMode === "auto") {
+    const size = autoColonySize(level);
+    return { colonyMode, colonySize: size, colonyReserve: autoReserve(size), autoScout };
+  }
+  const size = Math.min(MAX_COLONY, Math.max(1, Math.round(settings.colonySize ?? 1)));
   const floor = Math.min(reserveFloor(level), size - 1);
   return {
+    colonyMode,
     colonySize: size,
     colonyReserve: Math.min(size - 1, Math.max(floor, Math.round(settings.colonyReserve))),
-    autoScout: settings.autoScout && level >= AUTO_SCOUT_LEVEL,
+    autoScout,
   };
 }
 

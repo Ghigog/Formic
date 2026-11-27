@@ -26,6 +26,7 @@ function ReserveIcon() {
 
 function reserveCap(view: ColonyView): string {
   if (view.colonySize === null) return "No colony cap · set one in Settings";
+  if (view.colonyMode === "auto") return `Automatic: ${view.colonySize} at once, ${view.colonyReserve} kept for urgent work`;
   return `${view.colonyReserve} of ${view.colonySize} slots kept for urgent work`;
 }
 
@@ -73,7 +74,7 @@ export function ColonyPanel({ level, onError }: { level: number; onError?: (mess
           aria-pressed={view.autoScout}
           disabled={locked || !capped}
           onClick={() =>
-            void save({ colonySize: view.colonySize, colonyReserve: view.colonyReserve, autoScout: !view.autoScout })
+            void save({ colonyMode: view.colonyMode, colonySize: view.colonySize, colonyReserve: view.colonyReserve, autoScout: !view.autoScout })
           }
           className={`col-start-1 row-start-1 flex items-end justify-start rounded-lg p-1.5 disabled:opacity-60 ${
             view.autoScout ? "ring-clay ring-2 ring-inset" : ""

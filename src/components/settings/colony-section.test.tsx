@@ -16,6 +16,10 @@ afterEach(() => {
 });
 
 const first: ColonyView = {
+  colonyMode: "manual",
+  autoSize: 2,
+  autoReserve: 0,
+  nextAutoLevel: 2,
   colonySize: 4,
   colonyReserve: 2,
   autoScout: false,
@@ -57,13 +61,13 @@ describe("the colony settings section", () => {
     const posts = serve();
     render(<ColonySection />);
     fireEvent.click(await screen.findByLabelText("More agents"));
-    await waitFor(() => expect(posts).toEqual([{ colonySize: 5, colonyReserve: 2, autoScout: false }]));
+    await waitFor(() => expect(posts).toEqual([{ colonyMode: "manual", colonySize: 5, colonyReserve: 2, autoScout: false }]));
   });
 
   it("saves a bigger reserve", async () => {
     const posts = serve();
     render(<ColonySection />);
     fireEvent.click(await screen.findByLabelText("More reserve slots"));
-    await waitFor(() => expect(posts).toEqual([{ colonySize: 4, colonyReserve: 3, autoScout: false }]));
+    await waitFor(() => expect(posts).toEqual([{ colonyMode: "manual", colonySize: 4, colonyReserve: 3, autoScout: false }]));
   });
 });
