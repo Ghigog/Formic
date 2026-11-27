@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { questionReason } from "./question";
 import { classifyNotice, waitedOn, waitingOnReason, NO_CHANGES, REVIEW_CEILING, STUCK_RUN } from "./notice";
 
+import { DRAFTING_REASON } from "./status";
 describe("classifyNotice", () => {
   it("calls a run that hit the usage limit paused, not failed", () => {
     const n = classifyNotice({ status: "failed", stalledIn: "in_progress", blockedReason: "Usage limit reached\nWorks again at 3pm" });
@@ -86,9 +87,9 @@ describe("classifyNotice", () => {
   });
 
   it("gives no notice for a blocked card with an agent working on it", () => {
-    const card = { status: "blocked" as const, stalledIn: "todo" as const, blockedReason: "Drafting the ticket…" };
+    const card = { status: "blocked" as const, stalledIn: "todo" as const, blockedReason: DRAFTING_REASON };
     expect(classifyNotice({ ...card, workingSince: "2026-01-01T00:00:00Z" })).toBeNull();
-    expect(classifyNotice({ ...card, workingSince: null })?.title).toBe("Waiting for you");
+    expect(classifyNotice({ ...card, workingSince: null })).toBeNull();
   });
 
   it("gives no notice for a failed card with an agent working on it", () => {

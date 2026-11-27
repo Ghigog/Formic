@@ -15,7 +15,7 @@ import {
   type AgentRole,
   type BoardCard,
 } from "@/lib/domain/entities";
-import { COLUMN_LABELS, cardProblem, type ColumnId } from "@/lib/domain/status";
+import { COLUMN_LABELS, cardProblem, isDrafting, type ColumnId } from "@/lib/domain/status";
 import { bugSeverityOf, isBug } from "@/lib/colony/game";
 import { spRadius, spVerts } from "@/components/colony/fx";
 import { useColony } from "@/components/colony/colony";
@@ -795,12 +795,18 @@ function RunningCard({
       <EpicLine card={card} />
 
       <div className="flex items-center gap-1.5">
-        {agentLabel && (
+        {agentLabel ? (
           <span title={model ?? undefined}>
             <StatusChip tone="clay" pulsing>
               {agentLabel}
             </StatusChip>
           </span>
+        ) : (
+          isDrafting(card) && (
+            <StatusChip tone="clay" pulsing>
+              Drafting…
+            </StatusChip>
+          )
         )}
       </div>
 

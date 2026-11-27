@@ -47,6 +47,19 @@ beforeEach(() => {
 });
 
 describe("reportStall", () => {
+  it("says nothing for a ticket being drafted, but tells the person when drafting fails", async () => {
+    const t = await seed();
+    const drafting = { ...stall(t.id, "blocked", "Drafting the ticket…"), stalledIn: "todo" } as FormicEvent;
+    await reportStall(PROJECT, drafting);
+    expect(await messages()).toHaveLength(0);
+
+    const failed = { ...stall(t.id, "failed", "Drafting failed\nboom"), stalledIn: "todo" } as FormicEvent;
+    await reportStall(PROJECT, failed);
+    const all = await messages();
+    expect(all).toHaveLength(1);
+    expect(all[0]!.content).toContain("needs you: Failed. Drafting failed");
+  });
+
   it("posts a question stall once, naming the card and linking it", async () => {
     const t = await seed();
     const e = stall(t.id, "blocked", "Question: Which database?");

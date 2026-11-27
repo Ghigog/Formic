@@ -1,5 +1,5 @@
 import { isQuestion } from "./question";
-import { isStalled, type ColumnId, type TicketStatus } from "./status";
+import { isDrafting, isStalled, type ColumnId, type TicketStatus } from "./status";
 
 /**
  * A stalled card told apart by what it asks of a person: a critical stop is a
@@ -46,7 +46,7 @@ export function classifyNotice(card: {
   workingSince?: string | null;
 }): Notice | null {
   // An agent is on it (e.g. drafting the ticket), so nothing is asked of a person; same rule as cardProblem.
-  if (card.workingSince) return null;
+  if (card.workingSince || isDrafting(card)) return null;
   if (!isStalled(card.status)) return null;
   // First line is the error type; the rest is the detail (see whyItFailed in runner/runner.ts).
   const [first = "", ...rest] = (card.blockedReason ?? "").split("\n");

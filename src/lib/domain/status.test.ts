@@ -4,6 +4,8 @@ import {
   cardProblem,
   columnFor,
   columnOf,
+  DRAFTING_REASON,
+  isDrafting,
   isStalled,
   statusForUserDrop,
 } from "./status";
@@ -106,6 +108,14 @@ describe("cardProblem", () => {
   // The Architect Agent marks a placeholder ticket blocked the moment it is
   // created, before it has run, so the card never flashes as ready. That is
   // narration for an agent actively drafting it, not a real stall.
+  it("does not surface a drafting placeholder, working or not, but a real failure replaces it", () => {
+    const card = { status: "blocked" as const, stalledIn: "todo" as const, blockedReason: DRAFTING_REASON };
+    expect(isDrafting(card)).toBe(true);
+    expect(cardProblem({ ...card, workingSince: null })).toBeNull();
+    expect(isDrafting({ ...card, blockedReason: "Drafting failed: boom" })).toBe(false);
+    expect(cardProblem({ ...card, blockedReason: "Drafting failed: boom" })).toBe("Drafting failed: boom");
+  });
+
   it("does not surface a blocked reason while an agent is still working it", () => {
     expect(
       cardProblem({ status: "blocked", blockedReason: "Drafting the ticket…", workingSince: "2026-01-01T00:00:00.000Z" }),

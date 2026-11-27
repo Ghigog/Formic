@@ -9,6 +9,7 @@ import {
   canUserMove,
   columnFor,
   columnOf,
+  DRAFTING_REASON,
   hasActiveRun,
   isStalled,
   statusForUserDrop,
@@ -844,7 +845,7 @@ export async function createTodoItem(
   // Out of usage: the card waits on the gray usage-limit clock with everything
   // the person wrote, and the idle sweep drafts it once the agent is back.
   const limited = await columnLimit(projectId, "todo");
-  await repo.updateTicket(ticket.id, { blockedReason: limited ?? "Drafting the ticket…" });
+  await repo.updateTicket(ticket.id, { blockedReason: limited ?? DRAFTING_REASON });
 
   if (input.requestId) await repo.claimAttachments(input.requestId, { ticketId: ticket.id });
 
@@ -892,7 +893,7 @@ export async function redraftTicket(projectId: string, ticketId: string): Promis
   if (!epic) return false;
 
   const limited = await columnLimit(projectId, "todo");
-  const blockedReason = limited ?? "Drafting the ticket…";
+  const blockedReason = limited ?? DRAFTING_REASON;
   await repo.updateTicket(ticketId, { status: "blocked", stalledIn: "todo", blockedReason });
   await publish(projectId, {
     type: "card.status",
@@ -917,7 +918,7 @@ export async function redraftTicket(projectId: string, ticketId: string): Promis
  * An API agent finishes well inside a function's lifetime; a CLI agent has
  * a runner job, and is waited on for as long as that runs.
  */
-const QUIET_MS = 15 * 60_000;
+export const QUIET_MS = 15 * 60_000;
 /** The runner workflow's own timeout, and a little over. */
 const RUNNER_QUIET_MS = 65 * 60_000;
 
