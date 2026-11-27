@@ -4,6 +4,7 @@ import { hasDatabase, repository } from "@/lib/db";
 import { launch, runProductAgent } from "@/lib/agents/pipeline";
 import { recoverStaleAssistantAnswers, recoverStaleCardChats } from "@/lib/agents/recovery";
 import { isUsageLimitStop } from "@/lib/domain/notice";
+import { isDrafting } from "@/lib/domain/status";
 import { columnLimit } from "@/lib/agents/presets";
 import { prdSchema } from "@/lib/domain/entities";
 import { startQueued } from "./queue";
@@ -145,6 +146,20 @@ export async function restartIdleCards(projectId: string, now = Date.now()): Pro
       if ((await columnLimit(projectId, "todo")) !== null) continue;
       if (!(await repo.claimDelivery(`limit-draft:${card.id}:${card.updatedAt}`))) continue;
       const { redraftTicket } = await import("./service");
+      await redraftTicket(projectId, card.id);
+      continue;
+    }
+
+    // A placeholder that still says it is being drafted, with no agent or job
+    // on it for longer than the drafting quiet window, lost its start: draft
+    // it again, once, without asking the person.
+    if (isDrafting(card)) {
+      const { QUIET_MS, redraftTicket } = await import("./service");
+      if (card.workingSince || now - updated <= QUIET_MS) continue;
+      const waiting = await repo.ticketDetail(card.id);
+      if (!waiting || waiting.runnerJob || waiting.acceptanceCriteria.length > 0) continue;
+      if ((await columnLimit(projectId, "todo")) !== null) continue;
+      if (!(await repo.claimDelivery(`drafting-quiet:${card.id}:${card.updatedAt}`))) continue;
       await redraftTicket(projectId, card.id);
       continue;
     }

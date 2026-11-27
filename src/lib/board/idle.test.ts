@@ -317,3 +317,31 @@ describe("a To Do request waiting on the usage limit", () => {
     expect(started()).toEqual([]);
   });
 });
+
+describe("a To Do placeholder that still says it is being drafted", () => {
+  function placeholder(updatedAt: string) {
+    const [epic, card] = makeEpicWithChildren({ status: "ready" }, [
+      { kind: "ticket", status: "blocked", stalledIn: "todo", blockedReason: "Drafting the ticket…", updatedAt },
+    ]);
+    seedMemory([epic!, card!]);
+    return card!;
+  }
+
+  it("is drafted again once, after the quiet window, without asking anyone", async () => {
+    const card = placeholder(new Date(NOW - 16 * 60_000).toISOString());
+
+    await restartIdleCards(PROJECT, NOW);
+    resetIdleSweep();
+    await restartIdleCards(PROJECT, NOW + 1_000);
+
+    expect(started()).toEqual([`architect agent for ${card.key}`]);
+  });
+
+  it("is left alone while an agent may still be writing it", async () => {
+    placeholder(new Date(NOW - 5 * 60_000).toISOString());
+
+    await restartIdleCards(PROJECT, NOW);
+
+    expect(started()).toEqual([]);
+  });
+});
