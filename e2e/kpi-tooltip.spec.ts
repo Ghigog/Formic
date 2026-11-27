@@ -58,3 +58,41 @@ test("the tooltip stays inside the figure at the first and last marks", async ({
     await page.request.patch(`/api/projects/${active.id}`, { data: { unlockAllSentinels: false } });
   }
 });
+
+test("tapping a bar lists its tickets, and choosing one opens its drawer", async ({ page }) => {
+  await gotoBoard(page);
+  const card = page.locator("[data-rfd-draggable-id]").first();
+  const id = (await card.getAttribute("data-rfd-draggable-id"))!;
+  const throughput = Array.from({ length: DAYS }, (_, i) => ({
+    date: new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10),
+    done: i === 3 ? 1 : 0,
+    tickets: i === 3 ? [{ id, key: "T-1", title: "Tapped ticket" }] : [],
+  }));
+  await page.route("**/api/kpi?*", (route) =>
+    route.fulfill({
+      json: {
+        window: "30d",
+        tiles: { done: 1, inFlight: 0, cycleTimeDays: 2, passRate: 0.8, unchangedAfterSpec: 0.9, costPerPointCents: null, firstTryRate: null },
+        previous: null,
+        records: { bestWeek: null, longestRun: null, fastestTicket: null },
+        timeInColumn: { backlog: null, todo: null, in_progress: null, in_review: null },
+        throughput,
+        cycleTime: [],
+        quality: [],
+      },
+    }),
+  );
+  const { active } = (await (await page.request.get("/api/projects")).json()) as { active: { id: string } };
+  await page.request.patch(`/api/projects/${active.id}`, { data: { unlockAllSentinels: true } });
+  try {
+    await gotoBoard(page);
+    await page.getByRole("button", { name: "Open timeline" }).click();
+    const figure = page.getByRole("group", { name: "Throughput (done per day)" });
+    await figure.scrollIntoViewIfNeeded();
+    await figure.locator("[data-tip-mark]").nth(3).tap();
+    await figure.getByRole("button", { name: /T-1/ }).tap();
+    await expect(page.getByRole("dialog", { name: "Ticket detail" })).toBeVisible();
+  } finally {
+    await page.request.patch(`/api/projects/${active.id}`, { data: { unlockAllSentinels: false } });
+  }
+});
