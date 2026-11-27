@@ -143,10 +143,12 @@ function epicAgent(
 }
 
 /** A board with no repository is stored with a null one; callers see it empty. */
-function toProjectSummary<T extends { repoFullName: string | null }>(
+function toProjectSummary<T extends { repoFullName: string | null; colonyMode: string }>(
   row: T,
-): Omit<T, "repoFullName"> & { repoFullName: string } {
-  return { ...row, repoFullName: row.repoFullName ?? "" };
+): Omit<T, "repoFullName" | "colonyMode"> & { repoFullName: string; colonyMode: "auto" | "manual" | "off" } {
+  // The column is a string: anything but "manual" or "off" reads as Automatic.
+  const colonyMode = row.colonyMode === "manual" || row.colonyMode === "off" ? row.colonyMode : "auto";
+  return { ...row, repoFullName: row.repoFullName ?? "", colonyMode };
 }
 
 function epicKey(number: number): string {
@@ -2443,7 +2445,7 @@ export class PrismaRepository implements Repository {
 
   async setColony(
     projectId: string,
-    colony: { colonySize: number | null; colonyReserve: number; autoScout: boolean },
+    colony: { colonyMode: "auto" | "manual" | "off"; colonySize: number | null; colonyReserve: number; autoScout: boolean },
   ): Promise<void> {
     await prisma().project.update({ where: { id: projectId }, data: colony });
   }

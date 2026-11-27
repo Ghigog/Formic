@@ -4,16 +4,37 @@ Two ideas borrowed from ant colonies. A colony keeps some workers idle on
 purpose, as a reserve for emergencies. It also sends scouts out before it
 commits to a route, and follows whichever one found the best.
 
-Both are off until the board's owner turns them on, and the board's level
-decides how far they can go.
+The colony cap is on by default and grows with the board's level. Scouting
+is the owner's to turn on, and the level decides how far it can go.
 
 ## Colony size and reserve
 
-Set in the Nest (the ant hill in the ambient bar), under Colony.
+Set in the Nest (the ant hill in the ambient bar), under Colony. The cap has
+three modes (`colonyMode` on the project):
 
-- **Colony size** caps how many Coder Agents the board runs at once. Off,
-  the default, means no cap: only file reservations hold work back, as
-  before (`docs/concurrency.md`).
+- **Automatic** (the default): the cap tracks the board's level,
+  `min(8, level + 1)` agents at once (`autoColonySize`). One slot is kept for
+  urgent work once the cap is 4 or more (`autoReserve`). A board that never set
+  a cap is Automatic, existing boards included.
+- **A number I set** (`manual`): the owner's own cap, 1 to 12, with a reserve
+  of their choosing.
+- **No cap** (`off`): only file reservations hold work back
+  (`docs/concurrency.md`).
+
+| Level | Agents at once | Kept for urgent work |
+| :-- | :-- | :-- |
+| 1 | 2 | 0 |
+| 2 | 3 | 0 |
+| 3 | 4 | 1 |
+| 4 | 5 | 1 |
+| 5 | 6 | 1 |
+| 6 | 7 | 1 |
+| 7 and up | 8 | 1 |
+
+The reserve floor (at least 2 below Lv 7, at least 1 below Lv 17) applies
+only to a number the owner set. Automatic ignores it, so a small colony is
+not swallowed by its reserve.
+
 - **Reserve** is how many of those slots routine work may not use. Urgent
   work may: a ticket marked as a bug (or on a bug Epic), or one back from
   review with its pull request open (a CI fix, a review to answer).

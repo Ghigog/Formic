@@ -119,8 +119,8 @@ export async function sendScouts(
   const project = await repo.projectById(projectId);
   // A ticket already running holds one slot: its scout needs another.
   const running = ticket.status === "running";
-  if (running && !input.auto && project && project.colonySize !== null) {
-    const size = colonyOf(project, cards).colonySize ?? project.colonySize;
+  const size = project ? colonyOf(project, cards).colonySize : null;
+  if (running && !input.auto && size !== null) {
     if (slotsInUse(cards) + 1 > size) return { ok: false, reason: `The colony is full: ${slotsInUse(cards)} of ${size} slots in use.` };
   }
 
@@ -516,7 +516,7 @@ export async function scoutViews(parentId: string): Promise<{ why: string | null
 export async function autoScout(projectId: string): Promise<void> {
   const repo = repository();
   const project = await repo.projectById(projectId);
-  if (!project || project.colonySize === null || !project.autoScout) return;
+  if (!project || !project.autoScout) return;
   const cards = await repo.boardCards(projectId);
   const colony = colonyOf(project, cards);
   if (!colony.autoScout || colony.colonySize === null) return;

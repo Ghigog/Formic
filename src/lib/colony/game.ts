@@ -107,6 +107,8 @@ export const AUTO_SCOUT_LEVEL = 27;
 export const GOLDEN_BELL_LEVEL = 5;
 
 export const COLONY_UNLOCKS: ReadonlyArray<{ key: string; label: string; lv: number }> = [
+  // The automatic cap, min(8, level + 1): reserve.ts autoColonySize.
+  ...[3, 4, 5, 6, 7, 8].map((n) => ({ key: `agents-${n}`, label: `${n} agents at once`, lv: n - 1 })),
   { key: "reserve-1", label: "a reserve of 1", lv: RESERVE_ONE_LEVEL },
   { key: "scouts-3", label: "3 scouts a ticket", lv: THREE_SCOUTS_LEVEL },
   { key: "reserve-0", label: "no reserve", lv: NO_RESERVE_LEVEL },

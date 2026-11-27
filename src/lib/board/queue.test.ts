@@ -256,7 +256,7 @@ describe("the colony's cap", () => {
     ]);
     seedMemory([epic!, a!, b!, bug!]);
     // Two agents at once, at Lv 1, where the reserve floor is two: held to one.
-    await repository().setColony(PROJECT, { colonySize: 2, colonyReserve: 1, autoScout: false });
+    await repository().setColony(PROJECT, { colonyMode: "manual", colonySize: 2, colonyReserve: 1, autoScout: false });
 
     await startQueued(PROJECT);
     expect((await repository().cardById(b!.id))).toMatchObject({
@@ -285,7 +285,7 @@ describe("the colony's cap", () => {
     ]);
     seedMemory([epic!, scouting!, bug!], { [scouting!.id]: { description: "Spike", acceptanceCriteria: [] } });
     await repository().updateTicket(scouting!.id, { scoutWhy: "auto" });
-    await repository().setColony(PROJECT, { colonySize: 2, colonyReserve: 1, autoScout: true });
+    await repository().setColony(PROJECT, { colonyMode: "manual", colonySize: 2, colonyReserve: 1, autoScout: true });
 
     await startQueued(PROJECT);
     expect((await repository().cardById(scouting!.id))?.status).toBe("ready");
@@ -299,7 +299,7 @@ describe("the colony's cap", () => {
       { status: "queued", fileScope: ["src/c.ts"], workType: "bug" },
     ]);
     seedMemory([epic!, scouting!, bug!]);
-    await repository().setColony(PROJECT, { colonySize: 2, colonyReserve: 1, autoScout: true });
+    await repository().setColony(PROJECT, { colonyMode: "manual", colonySize: 2, colonyReserve: 1, autoScout: true });
 
     await startQueued(PROJECT);
     expect((await repository().cardById(scouting!.id))?.status).toBe("running");

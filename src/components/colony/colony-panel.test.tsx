@@ -10,6 +10,10 @@ afterEach(() => {
 
 function view(patch: Partial<ColonyView> = {}): ColonyView {
   return {
+    colonyMode: "manual",
+    autoSize: 2,
+    autoReserve: 0,
+    nextAutoLevel: 2,
     colonySize: 4,
     colonyReserve: 2,
     autoScout: false,
@@ -64,7 +68,7 @@ describe("the colony panel", () => {
     const posts = serve(view({ level: 8 }));
     render(<ColonyPanel level={8} />);
     fireEvent.click(await screen.findByRole("button", { name: /Auto-scout/ }));
-    await waitFor(() => expect(posts).toEqual([{ colonySize: 4, colonyReserve: 2, autoScout: true }]));
+    await waitFor(() => expect(posts).toEqual([{ colonyMode: "manual", colonySize: 4, colonyReserve: 2, autoScout: true }]));
     await waitFor(() => expect(screen.getByRole("button", { name: /Auto-scout/ }).getAttribute("aria-pressed")).toBe("true"));
   });
 
@@ -83,7 +87,7 @@ describe("the colony panel", () => {
   });
 
   it("says the reserve is off with no colony cap", async () => {
-    serve(view({ colonySize: null, colonyReserve: 0 }));
+    serve(view({ colonyMode: "off", colonySize: null, colonyReserve: 0 }));
     render(<ColonyPanel level={1} />);
     await screen.findByRole("button", { name: "How the colony reserve works" });
     expect(document.querySelector("[data-reserve-cap]")!.textContent).toBe("off");

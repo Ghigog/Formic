@@ -288,7 +288,7 @@ describe("scouts", () => {
     useAgents(new FollowsItsApproach(), new Picks((c) => c[0]!.label));
     const t = await ticket();
     await stopped(t.id);
-    await repo.setColony(PROJECT, { colonySize: 6, colonyReserve: 0, autoScout: true });
+    await repo.setColony(PROJECT, { colonyMode: "manual", colonySize: 6, colonyReserve: 0, autoScout: true });
 
     // Below the level, nothing goes out on its own.
     await autoScout(PROJECT);
@@ -302,7 +302,7 @@ describe("scouts", () => {
       ]);
       await repo.updateTicket(done!.id, { status: "merged" });
     }
-    await repo.setColony(PROJECT, { colonySize: 6, colonyReserve: 0, autoScout: true });
+    await repo.setColony(PROJECT, { colonyMode: "manual", colonySize: 6, colonyReserve: 0, autoScout: true });
 
     await autoScout(PROJECT);
     await until(async () => !!(await repo.ticketDetail(t.id))!.scoutPick && !!(await repo.ticketDetail(t.id))!.prNumber, "the auto-scouts' pick");

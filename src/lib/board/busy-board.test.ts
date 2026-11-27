@@ -13,6 +13,7 @@ import { MockArchitectAgent, MockProductAgent, MockShowcaseAgent } from "@/lib/a
 import type { AgentContext, AgentOutcome, CodeChange, CoderAgent, CoderTask, ReviewTask, ReviewVerdict, ReviewerAgent } from "@/lib/agents/ports";
 import { MemoryWorkspace, scopedWorkspace, type Workspace } from "@/lib/sandbox/workspace";
 import { repository } from "@/lib/db";
+import { scoreOf } from "@/lib/colony/game";
 import { publish } from "@/lib/events/bus";
 import { MockVcsClient, resetVcs, setVcs } from "@/lib/vcs";
 
@@ -38,6 +39,18 @@ class OverlappingCoder implements CoderAgent {
     this.tasks.push(input.task);
     await input.workspace.writeFile(`${input.task.fileScope.find((p) => p.startsWith("src/lib"))}/thing.ts`, "export const a = 1;\n");
     await input.workspace.writeFile("src/app/page.tsx", "export default null;\n");
+    return { ok: true, value: { summary: "did the thing", detail: "details", verifiedWith: "npm test", handoff: [], followUps: [] }, usage: NO_USAGE };
+  }
+}
+
+/** Holds every ticket it is given until `release`, so the colony stays full while the test looks. */
+class GatedCoder implements CoderAgent {
+  started: string[] = [];
+  release!: () => void;
+  private gate = new Promise<void>((resolve) => (this.release = resolve));
+  async implement(_ctx: AgentContext, input: { task: CoderTask; workspace: Workspace }): Promise<AgentOutcome<CodeChange>> {
+    this.started.push(input.task.key);
+    await this.gate;
     return { ok: true, value: { summary: "did the thing", detail: "details", verifiedWith: "npm test", handoff: [], followUps: [] }, usage: NO_USAGE };
   }
 }
@@ -223,5 +236,95 @@ describe("a busy board", () => {
     const chat = (await repo.assistantMessages(PROJECT)).messages.map((m) => m.content).join("\n");
     expect(chat).not.toMatch(/needs you|Waiting for you|Drafting the ticket/);
     expect((await repo.assistantMessages(PROJECT)).messages.flatMap((m) => m.proposals)).toEqual([]);
+  });
+
+  it("keeps a burst of activated tickets from starting at once on a Lv 3 Automatic board, and still gives an urgent bug its slot", async () => {
+    const coder = new GatedCoder();
+    setAgents({
+      product: new MockProductAgent(),
+      architect: new MockArchitectAgent(),
+      coder,
+      reviewer: new ApprovingReviewer(),
+      showcase: new MockShowcaseAgent(),
+    });
+    const repo = repository();
+    expect((await repo.projectById(PROJECT))!.colonyMode).toBe("auto");
+
+    // Lv 3: two merged tickets of 55 points are 110 XP.
+    const done = await repo.createEpic({ projectId: PROJECT, title: "Done", rawRequest: "r", position: 1 });
+    const merged = await repo.createTickets(
+      [1, 2].map((n) => ({
+        epicId: done.id,
+        key: `D-${n}`,
+        title: "Done",
+        description: "d",
+        acceptanceCriteria: ["c"],
+        fileScope: [`docs/done${n}`],
+        size: "M" as const,
+        storyPoints: 55,
+        position: n,
+        dependsOnKeys: [],
+      })),
+    );
+    for (const t of merged) await repo.updateTicket(t.id, { status: "merged" });
+    expect(scoreOf(await repo.boardCards(PROJECT)).level).toBe(3);
+
+    // A burst of ten routine tickets, each on its own files, activated together.
+    const epic = await repo.createEpic({ projectId: PROJECT, title: "E", rawRequest: "r", position: 2 });
+    const routine = await repo.createTickets(
+      Array.from({ length: 10 }, (_, i) => ({
+        epicId: epic.id,
+        key: `R-${i + 1}`,
+        title: `Routine ${i + 1}`,
+        description: "d",
+        acceptanceCriteria: ["c"],
+        fileScope: [`src/lib/routine${i + 1}`],
+        size: "M" as const,
+        position: i + 1,
+        dependsOnKeys: [],
+      })),
+    );
+    for (const t of routine) await repo.updateTicket(t.id, { status: "queued" });
+    const ticketsNow = async () => (await repo.boardCards(PROJECT)).filter((c) => c.kind === "ticket" && c.epicId === epic.id);
+    const count = async (status: string) => (await ticketsNow()).filter((c) => c.status === status).length;
+
+    await startQueued(PROJECT);
+    // 4 slots, 1 kept for urgent work: 3 start, the rest wait with the reason.
+    expect(await count("running")).toBe(3);
+    const waiting = (await ticketsNow()).filter((c) => c.status === "queued");
+    expect(waiting).toHaveLength(7);
+    for (const c of waiting) {
+      expect(c.blockedReason).toBe("The colony is full: 3 of 4 slots in use, 1 kept in reserve for urgent work.");
+    }
+
+    // An urgent bug takes the reserved slot while routine work fills the rest.
+    const bug = (await repo.createTickets([
+      { epicId: epic.id, key: "B-1", title: "Bug", description: "d", acceptanceCriteria: ["c"], fileScope: ["src/lib/bug"], size: "S", position: 20, dependsOnKeys: [], workType: "bug" },
+    ]))[0]!;
+    await repo.updateTicket(bug.id, { status: "queued" });
+    await startQueued(PROJECT);
+    expect((await repo.cardById(bug.id))!.status).toBe("running");
+    expect(await count("running")).toBe(4);
+
+    // A ticket back from review with its pull request open takes the slot as well.
+    await until(async () => coder.started.includes("B-1"), "the bug's agent to start");
+    const fix = (await ticketsNow()).find((c) => c.status === "queued")!;
+    await repo.updateTicket(bug.id, { status: "review" });
+    await repo.updateTicket(fix.id, { prNumber: 99, branchName: "fix" });
+    await startQueued(PROJECT);
+    expect((await repo.cardById(fix.id))!.blockedReason).toBeNull();
+    expect((await repo.cardById(fix.id))!.status).toBe("running");
+
+    // As slots free, the rest start one by one.
+    await until(async () => coder.started.length === 5, "the agents to start");
+    for (const c of (await ticketsNow()).filter((c) => c.status === "running")) await repo.updateTicket(c.id, { status: "review" });
+    await startQueued(PROJECT);
+    expect(await count("running")).toBe(3);
+    expect(await count("queued")).toBe(3);
+
+    // Nothing landed on the person.
+    expect((await ticketsNow()).filter((c) => c.status === "blocked" || c.needsHuman)).toEqual([]);
+    expect((await repo.assistantMessages(PROJECT)).messages.flatMap((m) => m.proposals)).toEqual([]);
+    coder.release();
   });
 });

@@ -300,6 +300,7 @@ function store(): Store {
     autoEscalate: false,
     unlockAllSentinels: false,
     unlockAllOfferDismissedAt: null,
+    colonyMode: "auto",
     colonySize: null,
     colonyReserve: 0,
     autoScout: false,
@@ -1069,6 +1070,7 @@ export class MemoryRepository implements Repository {
       autoEscalate: false,
       unlockAllSentinels: false,
       unlockAllOfferDismissedAt: null,
+      colonyMode: "auto",
       colonySize: null,
       colonyReserve: 0,
       autoScout: false,
@@ -2473,7 +2475,7 @@ export class MemoryRepository implements Repository {
 
   async setColony(
     projectId: string,
-    colony: { colonySize: number | null; colonyReserve: number; autoScout: boolean },
+    colony: { colonyMode: "auto" | "manual" | "off"; colonySize: number | null; colonyReserve: number; autoScout: boolean },
   ): Promise<void> {
     const project = store().projects.get(projectId);
     if (project) Object.assign(project, colony);

@@ -92,9 +92,10 @@ describe("levels", () => {
   it("names Sentinels, styles and colony rules at the level they unlock", () => {
     const at6 = SENTINEL_UNLOCKS.filter((u) => u.lv === 6).map((u) => u.label);
     expect(at6).toHaveLength(1);
-    expect(unlocksAt(6)).toEqual(at6);
+    expect(unlocksAt(6)).toEqual([...at6, "7 agents at once"]);
     expect(unlocksAt(1)).toEqual(["Ant", "Umber"]);
-    expect(unlocksAt(2)).toEqual(["Tester", "Sentinels"]);
+    expect(unlocksAt(2)).toEqual(["Tester", "3 agents at once", "Sentinels"]);
+    expect(unlocksAt(4)).toContain("5 agents at once");
     expect(unlocksAt(11)).toEqual(["Caterpillar"]);
     expect(unlocksAt(24)).toEqual(["Bumblebee"]);
     expect(unlocksAt(27)).toEqual(["Auto-scout"]);
@@ -133,8 +134,8 @@ describe("levels", () => {
   });
 
   it("says what the next unlock is", () => {
-    expect(nextUnlock(1)).toEqual({ level: 2, labels: ["Tester", "Sentinels"] });
-    expect(nextUnlock(4)).toEqual({ level: 5, labels: ["Crimson", "a golden bell every 5 levels"] });
+    expect(nextUnlock(1)).toEqual({ level: 2, labels: ["Tester", "3 agents at once", "Sentinels"] });
+    expect(nextUnlock(4)).toEqual({ level: 5, labels: ["Crimson", "6 agents at once", "a golden bell every 5 levels"] });
     expect(nextUnlock(33)).toEqual({ level: 34, labels: ["Sales"] });
     expect(nextUnlock(34)).toBeNull();
   });

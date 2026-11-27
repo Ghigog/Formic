@@ -261,7 +261,7 @@ function epicsOf(cards: readonly BoardCard[]): Map<string, BoardCard> {
 export async function colonyHold(projectId: string, card: BoardCard): Promise<string | null> {
   const repo = repository();
   const project = await repo.projectById(projectId);
-  if (!project || project.colonySize === null) return null;
+  if (!project) return null;
   const cards = await repo.boardCards(projectId);
   const answer = colonyAdmits(card, slotsInUse(cards.filter((c) => c.id !== card.id)), colonyOf(project, cards), epicsOf(cards));
   return answer.ok ? null : answer.reason;

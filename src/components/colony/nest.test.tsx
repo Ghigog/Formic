@@ -390,7 +390,7 @@ describe("ColonyPopover bell", () => {
           ? new Response(JSON.stringify({ unspent: 60 }))
           : url === "/api/colony"
             ? new Response(
-                JSON.stringify({ colonySize: 8, colonyReserve: 1, autoScout: false, level: 80, floor: 0, nextFloorLevel: null, maxScouts: 4, nextScoutLevel: null, autoScoutLevel: 8, maxColony: 12, inUse: 0 }),
+                JSON.stringify({ colonyMode: "manual", colonySize: 8, colonyReserve: 1, autoScout: false, level: 80, floor: 0, nextFloorLevel: null, maxScouts: 4, nextScoutLevel: null, autoScoutLevel: 8, maxColony: 12, inUse: 0 }),
               )
             : new Response(JSON.stringify({ left: 16, armed: false })),
       ),
