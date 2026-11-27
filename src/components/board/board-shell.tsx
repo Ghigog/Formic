@@ -29,6 +29,7 @@ import type { ColumnId } from "@/lib/domain/status";
 import type { Account } from "./account-menu";
 import type { AssistantControls } from "./assistant";
 import { ColonyProvider, useColony } from "@/components/colony/colony";
+import { KPI_OPEN_TICKET_EVENT, type KpiOpenTicketDetail } from "@/components/colony/kpi-charts";
 import {
   LazyColonyTimeline,
   LazyColonyToast,
@@ -182,6 +183,12 @@ export function BoardShell({
   const [dialog, setDialog] = useState<{ column: CaptureColumn } | null>(null);
   const [openEpicId, setOpenEpicId] = useState<string | null>(null);
   const [openTicketId, setOpenTicketId] = useState<string | null>(null);
+  // A ticket chosen from a KPI chart's list (the Timeline has already closed).
+  useEffect(() => {
+    const onOpen = (e: Event) => setOpenTicketId((e as CustomEvent<KpiOpenTicketDetail>).detail.ticketId);
+    window.addEventListener(KPI_OPEN_TICKET_EVENT, onOpen);
+    return () => window.removeEventListener(KPI_OPEN_TICKET_EVENT, onOpen);
+  }, []);
   /** The agent editor: which column it was opened from, and what it edits. */
   const [editing, setEditing] = useState<{
     column: ColumnId | "assistant";
