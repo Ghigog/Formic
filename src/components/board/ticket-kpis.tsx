@@ -3,17 +3,18 @@
 import { useEffect, useState } from "react";
 import { COLUMN_LABELS } from "@/lib/domain/status";
 import type { TimelineEntry } from "@/lib/kpi/compute";
+import { CHANGES_AFTER_SPEC_LABEL, changesText } from "@/lib/kpi/labels";
 import { formatDuration } from "./format-duration";
 
 interface TicketKpiView {
   entries: TimelineEntry[];
   passRate: number | null;
-  precision: { changes: number; precise: boolean };
+  changesAfterSpec: number;
 }
 
 const formatTime = (iso: string) => new Date(iso).toLocaleString();
 
-/** How a ticket moved between columns, how often review passed it and how well it was specified. */
+/** How a ticket moved between columns, how often review passed it and how often it changed after it was specified. */
 export function TicketKpis({ ticketId, unlocked }: { ticketId: string; unlocked: boolean }) {
   return unlocked ? <TicketKpiBlock ticketId={ticketId} /> : null;
 }
@@ -50,9 +51,9 @@ function TicketKpiBlock({ ticketId }: { ticketId: string }) {
           </dd>
         </div>
         <div>
-          <dt className="text-fg-muted inline">Precision </dt>
+          <dt className="text-fg-muted inline">{CHANGES_AFTER_SPEC_LABEL}{" "}</dt>
           <dd className="inline font-semibold tabular-nums">
-            {kpis.precision.changes}
+            {changesText(kpis.changesAfterSpec)}
           </dd>
         </div>
       </dl>

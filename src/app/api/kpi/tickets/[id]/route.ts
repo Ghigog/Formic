@@ -3,7 +3,7 @@ import { ticketKpisFor } from "@/lib/kpi";
 
 export const dynamic = "force-dynamic";
 
-/** One ticket's column timeline with durations, pass rate and precision. */
+/** One ticket's column timeline with durations, pass rate and changes after spec. */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const project = await activeProject();
   if (!project) return noProject();
