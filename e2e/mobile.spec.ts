@@ -86,15 +86,16 @@ test("a card's arrow moves the card it names", async ({ page }) => {
 
   await arrow.click();
 
-  // One column renders at a time here, so the card leaves the DOM when it
-  // moves. Follow it to the tab it landed on, as a user does.
+  // One column renders at a time here, so the card leaves the DOM when the
+  // move commits (after its slide-out). Once it is gone from Backlog the move
+  // has landed, so follow it by tapping the To Do tab: the swipe gesture is
+  // covered by its own tests, and a synthetic swipe here only adds flake.
   await expect(card(page, cardId)).toHaveCount(0);
-  await swipe(page, -150);
+  await page.getByRole("button", { name: /^To Do\b/ }).click();
   await expect(card(page, cardId)).toBeVisible();
 
-  // Put the board back.
+  // Put the board back. moveViaApi reloads onto the default Backlog tab.
   await moveViaApi(page, cardId, ["To Do", "Backlog"]);
-  await swipe(page, 150);
   expect(await columnOf(page, cardId)).toBe("Backlog");
 });
 
