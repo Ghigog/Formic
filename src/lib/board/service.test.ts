@@ -20,7 +20,7 @@ vi.mock("@/lib/coder/pipeline", () => ({ runCoderAgent: vi.fn(), stallTicket: vi
 vi.mock("@/lib/events/bus", () => ({ publish: vi.fn() }));
 vi.mock("@/lib/fixtures/board", () => ({ FIXTURE_CARDS: [], FIXTURE_TICKET_DETAILS: {} }));
 
-const { advanceQueens, applyTransition, canRetryEpic, createBacklogItem, archiveEpic, createTodoItem, deleteEpic, restoreEpic, generateShowcase, redraftTicket, retryEpic } = await import(
+const { advanceQueens, applyTransition, canRetryEpic, createBacklogItem, archiveEpic, createTodoItem, placeholderTitle, deleteEpic, restoreEpic, generateShowcase, redraftTicket, retryEpic } = await import(
   "./service"
 );
 const { repository } = await import("@/lib/db");
@@ -769,7 +769,46 @@ describe("createBacklogItem", () => {
   });
 });
 
+describe("placeholderTitle", () => {
+  it("takes the heading of a structured request", () => {
+    expect(placeholderTitle("## Fix the footer link\n\n- It points at the old docs\n- Update the href", "x")).toBe("Fix the footer link");
+  });
+
+  it("strips a leading Title: label, with or without a heading marker", () => {
+    expect(placeholderTitle("Title: Add a retry button to failed runs\n\nMore.", "x")).toBe("Add a retry button to failed runs");
+    expect(placeholderTitle("# title:Add a retry button", "x")).toBe("Add a retry button");
+  });
+
+  it("cuts a long request at a word boundary with an ellipsis", () => {
+    const request = "Make the board columns remember their scroll position when a person switches between projects and back again";
+    const title = placeholderTitle(request, "x");
+    expect(title.length).toBeLessThanOrEqual(80);
+    expect(title.endsWith("…")).toBe(true);
+    const head = title.slice(0, -1);
+    expect(request.startsWith(head)).toBe(true);
+    expect(request[head.length]).toBe(" ");
+  });
+
+  it("hard-cuts a single over-long word", () => {
+    expect(placeholderTitle("a".repeat(100), "x")).toBe(`${"a".repeat(79)}…`);
+  });
+
+  it("falls back when nothing is left", () => {
+    expect(placeholderTitle("#", "New ticket")).toBe("New ticket");
+    expect(placeholderTitle("Title:", "New ticket")).toBe("New ticket");
+  });
+
+  it("leaves a short request as before", () => {
+    expect(placeholderTitle("Fix the broken footer link.", "x")).toBe("Fix the broken footer link");
+  });
+});
+
 describe("createTodoItem", () => {
+  it("stores a clean title for a structured request", async () => {
+    const card = await createTodoItem(PROJECT, "Title: Add a retry button to failed runs\n\nIt should retry.");
+    expect(card.title).toBe("Add a retry button to failed runs");
+  });
+
   it("creates a blocked, detached ticket under a standalone holder Epic and drafts it", async () => {
     const card = await createTodoItem(PROJECT, "  Fix the broken footer link.  ");
 

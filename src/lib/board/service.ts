@@ -756,6 +756,31 @@ export interface CreateTodoItemInput {
   sourceIssueNumber?: number;
 }
 
+const PLACEHOLDER_TITLE_MAX = 80;
+
+/**
+ * A short, clean title from the start of a raw request, shown while the real
+ * one is drafted: the first non-empty line without a `#` heading marker or a
+ * `Title:` label, up to the first period. Over 80 characters it is cut at a
+ * word boundary and ends in "…" (a single over-long word is hard-cut).
+ */
+export function placeholderTitle(request: string, fallback: string): string {
+  const firstLine = request.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
+  const stripped = firstLine
+    .replace(/^#+\s*/, "")
+    .replace(/^title\s*:\s*/i, "");
+  const sentence = (stripped.split(".")[0] ?? "").trim();
+  if (!sentence) return fallback;
+  if (sentence.length <= PLACEHOLDER_TITLE_MAX) return sentence;
+
+  const room = PLACEHOLDER_TITLE_MAX - 1;
+  // A space at index `room` means the first `room` characters end on a word.
+  const cut = sentence.lastIndexOf(" ", room);
+  const head = cut > 0 ? sentence.slice(0, cut) : sentence.slice(0, room);
+  const clean = head.replace(/[\s\p{P}]+$/u, "");
+  return `${clean || head}…`;
+}
+
 /**
  * A raw request with no PRD and no breakdown needed: one ticket, drafted by
  * the Architect Agent straight from the text. The Epic it sits under is a
@@ -769,7 +794,7 @@ export async function createTodoItem(
 ): Promise<BoardCard> {
   const repo = repository();
   const trimmed = rawRequest.trim();
-  const title = trimmed.split(/[.\n]/)[0]?.slice(0, 80) || "New ticket";
+  const title = placeholderTitle(trimmed, "New ticket");
 
   const epic = await repo.createEpic({
     projectId,
