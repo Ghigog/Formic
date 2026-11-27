@@ -112,12 +112,14 @@ export function unstarted(t: {
  */
 export function cardProblem(card: {
   status: TicketStatus;
+  stalledIn?: ColumnId | null;
   blockedReason?: string | null;
   misplacedReason?: string | null;
   needsHuman?: string | null;
   workingSince?: string | null;
 }): string | null {
   if (card.misplacedReason) return card.misplacedReason;
+  if (isDrafting(card)) return null;
   if (isStalled(card.status) && card.blockedReason && !card.workingSince) {
     return isQuestion(card.blockedReason) ? questionNotice(card.blockedReason) : card.blockedReason;
   }
@@ -125,6 +127,18 @@ export function cardProblem(card: {
     return `${card.needsHuman.replace(/\.?\s*$/, ".")} No agent does this one. When you have, tell its chat what you did or found, and it closes.`;
   }
   return null;
+}
+
+/** The blocked reason of a To Do request whose ticket the Architect Agent has yet to write. */
+export const DRAFTING_REASON = "Drafting the ticket…";
+
+/** Whether a card is that placeholder: it is being drafted, nothing is asked of a person. */
+export function isDrafting(card: {
+  status: TicketStatus;
+  stalledIn?: ColumnId | null;
+  blockedReason?: string | null;
+}): boolean {
+  return card.status === "blocked" && card.stalledIn === "todo" && card.blockedReason === DRAFTING_REASON;
 }
 
 /**

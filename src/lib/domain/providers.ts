@@ -186,7 +186,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyPlaceholder: "sk-ant-oat01-…",
     note: "Runs Claude Code in your repo's GitHub Actions, on your Pro or Max plan. No API bill.",
     howToGetKey:
-      "On your computer, run `claude setup-token`, approve in the browser, and paste the token it prints. It lasts a year.",
+      "On your computer, install Claude Code with `npm install -g @anthropic-ai/claude-code`, then run `claude setup-token`, approve in the browser, and paste the token it prints. It lasts a year.",
     freeTier: false,
     flatRate: true,
     envKey: "CLAUDE_CODE_OAUTH_TOKEN",

@@ -6,6 +6,7 @@ import { markMergedExternally, resetPullRequestSweep, reviewPullRequest } from "
 import { resetMergeLanes } from "@/lib/review/lane";
 import { settleLaunched, startRun } from "@/lib/agents/pipeline";
 import { savePreset } from "@/lib/agents/presets";
+import { createTodoItem, redraftTicket } from "@/lib/board/service";
 import { startQueued } from "@/lib/board/queue";
 import { resetAgents, setAgents } from "@/lib/agents/registry";
 import { MockArchitectAgent, MockProductAgent, MockShowcaseAgent } from "@/lib/agents/mock";
@@ -194,5 +195,33 @@ describe("a busy board", () => {
     expect((await repo.ticketDetail(fixing!.id))!.attempts).toBeLessThanOrEqual(1);
     const chat = (await repo.cardChatMessages(fixing!.id)).messages.map((m) => m.content).join("\n");
     expect(chat).not.toMatch(/Out of reviews|say yes|allow them/i);
+  });
+
+  it("drafts requests added during a usage limit once it lifts, and tells the person nothing", async () => {
+    setAgents({
+      product: new MockProductAgent(),
+      architect: new MockArchitectAgent(),
+      coder: new OverlappingCoder(),
+      reviewer: new ApprovingReviewer(),
+      showcase: new MockShowcaseAgent(),
+    });
+    const repo = repository();
+    const architect = await savePreset({ name: "architect", provider: "claude-code", model: "", prompt: "x", ownerId: "u1", secretName: "ARCH" });
+    await repo.setColumnAgent(PROJECT, "todo", architect.id);
+    await repo.setPresetLimit(architect.id, { until: new Date(Date.now() + 3_600_000), note: "Claude Code hit its usage limit." });
+
+    const added = [];
+    for (const text of ["A bug in the fridge", "Add a practice mode", "Sink holds ten items"]) {
+      added.push(await createTodoItem(PROJECT, text));
+    }
+
+    // The limit lifts; the idle sweep redrafts each placeholder.
+    await repo.setPresetLimit(architect.id, null);
+    for (const card of added) expect(await redraftTicket(PROJECT, card.id)).toBe(true);
+    await settleLaunched(15_000);
+
+    const chat = (await repo.assistantMessages(PROJECT)).messages.map((m) => m.content).join("\n");
+    expect(chat).not.toMatch(/needs you|Waiting for you|Drafting the ticket/);
+    expect((await repo.assistantMessages(PROJECT)).messages.flatMap((m) => m.proposals)).toEqual([]);
   });
 });
