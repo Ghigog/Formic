@@ -434,6 +434,29 @@ describe("a card's scout badge", () => {
   });
 });
 
+describe("a card's tokens in its column", () => {
+  const renderIn = (card: BoardCard) =>
+    renderInDnd(<Column id="todo" cards={[card]} extras={{}} view={EMPTY_VIEW} onViewChange={vi.fn()} onOpen={vi.fn()} />);
+  const enteredAt = "2026-03-05T14:30:00Z";
+
+  it("reads the compact total in the meta line", () => {
+    renderIn(makeCard({ status: "ready", enteredAt, columnTokens: { tokensIn: 100_000, tokensOut: 20_000, unreported: false } }));
+    const el = screen.getByText("120k tokens");
+    expect(el.className).toContain("text-[10px]");
+    expect(el.getAttribute("title")).toBeNull();
+  });
+
+  it("says when some work reported no tokens", () => {
+    renderIn(makeCard({ status: "ready", enteredAt, columnTokens: { tokensIn: 5, tokensOut: 5, unreported: true } }));
+    expect(screen.getByText("10 tokens").getAttribute("title")).toBe("Some work here reported no tokens");
+  });
+
+  it("shows nothing at zero", () => {
+    renderIn(makeCard({ status: "ready", enteredAt, columnTokens: { tokensIn: 0, tokensOut: 0, unreported: true } }));
+    expect(screen.queryByText(/tokens/)).toBeNull();
+  });
+});
+
 describe("a card's entry time", () => {
   const enteredAt = "2026-03-05T14:30:00Z";
   const renderIn = (id: "todo" | "done", card: BoardCard) =>
