@@ -647,14 +647,14 @@ function EnteredAt({ card, column }: { card: BoardCard; column: ColumnId }) {
 }
 
 /** Tokens this card has used in its current column; nothing until some are. */
-function ColumnTokens({ card }: { card: BoardCard }) {
+function ColumnTokens({ card, className }: { card: BoardCard; className?: string }) {
   const t = card.columnTokens;
   const total = t ? t.tokensIn + t.tokensOut : 0;
   if (!t || total <= 0) return null;
   return (
     <span
       title={t.unreported ? "Some work here reported no tokens" : undefined}
-      className="text-muted ml-2 font-mono text-[10px] whitespace-nowrap tabular-nums"
+      className={cn("text-muted ml-2 font-mono text-[10px] whitespace-nowrap tabular-nums", className)}
     >
       {compact(total)} tokens
     </span>
@@ -764,6 +764,7 @@ function BacklogEpic({
       {extras.stageLabel && (
         <span className="text-muted font-mono text-[10px]">{extras.stageLabel}</span>
       )}
+      <ColumnTokens card={card} className="ml-0" />
     </CardShell>
   );
 }
@@ -1431,6 +1432,8 @@ export const EpicGroup = memo(function EpicGroup({
             )}
 
             {!done && <WaitsForLine epic={epic} />}
+
+            <ColumnTokens card={epic} className="ml-0 self-start" />
 
             {done && onShowcase && (
               <button

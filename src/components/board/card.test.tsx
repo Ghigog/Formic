@@ -446,6 +446,11 @@ describe("a card's tokens in its column", () => {
     expect(el.getAttribute("title")).toBeNull();
   });
 
+  it("shows an Epic's tokens on its face", () => {
+    renderIn(makeCard({ kind: "epic", size: null, columnTokens: { tokensIn: 150_000, tokensOut: 32_400, unreported: false } }));
+    expect(screen.getByText("182.4k tokens")).toBeTruthy();
+  });
+
   it("says when some work reported no tokens", () => {
     renderIn(makeCard({ status: "ready", enteredAt, columnTokens: { tokensIn: 5, tokensOut: 5, unreported: true } }));
     expect(screen.getByText("10 tokens").getAttribute("title")).toBe("Some work here reported no tokens");
