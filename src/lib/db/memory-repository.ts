@@ -1142,6 +1142,12 @@ export class MemoryRepository implements Repository {
     return store().queensSpent.get(projectId) ?? 0;
   }
 
+  async epicColumnEntries(epicId: string): Promise<TicketColumnEntry[]> {
+    const s = store();
+    const card = s.cards.get(epicId);
+    return card && card.kind === "epic" ? historyOf(s, card).map((e) => ({ ...e })) : [];
+  }
+
   async ticketColumnEntries(ticketId: string): Promise<TicketColumnEntry[]> {
     const s = store();
     const card = s.cards.get(ticketId);
@@ -1324,6 +1330,9 @@ export class MemoryRepository implements Repository {
       updatedAt: new Date().toISOString(),
     };
     s.cards.set(card.id, card);
+    s.columnEntries.set(card.id, [
+      { column: columnOf(card), enteredAt: card.createdAt!, exitedAt: null, synthetic: false },
+    ]);
     s.epicProject.set(card.id, input.projectId);
     s.rawRequests.set(card.id, input.rawRequest);
     if (input.spikeTicketId) s.spikeEpics.set(input.spikeTicketId, card.id);
@@ -1414,7 +1423,7 @@ export class MemoryRepository implements Repository {
   async move(input: MoveInput): Promise<void> {
     const card = store().cards.get(input.cardId);
     if (!card) return;
-    if (card.kind === "ticket") {
+    {
       const s = store();
       const history = historyOf(s, card);
       const to = columnOf({
@@ -1591,6 +1600,7 @@ export class MemoryRepository implements Repository {
     s.prdTimes.set(epicId, new Date());
     const card = s.cards.get(epicId);
     if (card) {
+      const history = historyOf(s, card);
       if (title?.trim()) card.title = title.trim();
       card.status = "specified";
       card.stage = 2;
@@ -1598,6 +1608,7 @@ export class MemoryRepository implements Repository {
       card.blockedReason = null;
       card.misplacedIn = null;
       card.misplacedReason = null;
+      recordColumnChange(history, columnOf(card));
     }
   }
 
@@ -1606,11 +1617,13 @@ export class MemoryRepository implements Repository {
     s.showcases.set(epicId, markdown);
     const card = s.cards.get(epicId);
     if (card) {
+      const history = historyOf(s, card);
       card.stage = 8;
       card.stalledIn = null;
       card.blockedReason = null;
       card.misplacedIn = null;
       card.misplacedReason = null;
+      recordColumnChange(history, columnOf(card));
     }
   }
 
@@ -1686,14 +1699,17 @@ export class MemoryRepository implements Repository {
     epicId: string,
     stall: { status: "blocked" | "failed"; stalledIn: ColumnId; stage: number; reason: string },
   ): Promise<void> {
-    const card = store().cards.get(epicId);
+    const s = store();
+    const card = s.cards.get(epicId);
     if (!card) return;
+    const history = historyOf(s, card);
     card.status = stall.status;
     card.stalledIn = stall.stalledIn;
     card.stage = stall.stage;
     card.blockedReason = stall.reason;
     card.misplacedIn = null;
     card.misplacedReason = null;
+    recordColumnChange(history, columnOf(card));
   }
 
   async appendEvent(

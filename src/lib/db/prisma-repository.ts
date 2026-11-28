@@ -179,6 +179,37 @@ async function recordColumnChange(
   await tx.ticketColumnEntry.create({ data: { ticketId, column, enteredAt: now } });
 }
 
+/** Closes an Epic's open column stay and opens the next at one instant. */
+async function recordEpicColumnChange(
+  tx: Pick<Prisma.TransactionClient, "epicColumnEntry">,
+  epicId: string,
+  column: ColumnId,
+): Promise<void> {
+  const now = new Date();
+  await tx.epicColumnEntry.updateMany({ where: { epicId, exitedAt: null }, data: { exitedAt: now } });
+  await tx.epicColumnEntry.create({ data: { epicId, column, enteredAt: now } });
+}
+
+/**
+ * Runs a write on an Epic and records its column change, if the write made
+ * one. Every Epic status, stalledIn or misplacedIn write goes through this.
+ */
+async function writeEpic(
+  epicId: string,
+  write: (tx: Prisma.TransactionClient) => Promise<unknown>,
+): Promise<void> {
+  await prisma().$transaction(async (tx) => {
+    const select = { status: true, stalledIn: true, misplacedIn: true } as const;
+    const before = await tx.epic.findUnique({ where: { id: epicId }, select });
+    await write(tx);
+    if (!before) return;
+    const after = await tx.epic.findUnique({ where: { id: epicId }, select });
+    if (after && columnOf(before) !== columnOf(after)) {
+      await recordEpicColumnChange(tx, epicId, columnOf(after));
+    }
+  });
+}
+
 export class PrismaRepository implements Repository {
   async defaultProject(): Promise<ProjectSummary> {
     const db = prisma();
@@ -1116,6 +1147,19 @@ export class PrismaRepository implements Repository {
     });
   }
 
+  async epicColumnEntries(epicId: string): Promise<TicketColumnEntry[]> {
+    const rows = await prisma().epicColumnEntry.findMany({
+      where: { epicId },
+      orderBy: [{ enteredAt: "asc" }, { id: "asc" }],
+    });
+    return rows.map((e) => ({
+      column: e.column,
+      enteredAt: e.enteredAt.toISOString(),
+      exitedAt: e.exitedAt?.toISOString() ?? null,
+      synthetic: e.synthetic,
+    }));
+  }
+
   async ticketColumnEntries(ticketId: string): Promise<TicketColumnEntry[]> {
     const rows = await prisma().ticketColumnEntry.findMany({
       where: { ticketId },
@@ -1249,6 +1293,7 @@ export class PrismaRepository implements Repository {
         spikeTicketId: input.spikeTicketId ?? null,
         status: "draft",
         stage: 1,
+        columnEntries: { create: { column: columnOf({ status: "draft" }) } },
       },
     });
 
@@ -1430,7 +1475,7 @@ export class PrismaRepository implements Repository {
     // A person's move drops a hold on a prerequisite's merge.
     const ticketData = { ...data, waitsForMerge: null };
     if (input.kind === "epic") {
-      await db.epic.update({ where: { id: input.cardId }, data });
+      await writeEpic(input.cardId, (tx) => tx.epic.update({ where: { id: input.cardId }, data }));
     } else {
       await db.$transaction(async (tx) => {
         const before = await tx.ticket.findUnique({
@@ -1643,9 +1688,8 @@ export class PrismaRepository implements Repository {
   }
 
   async setEpicPrd(epicId: string, prd: unknown, byHuman: boolean, title?: string): Promise<void> {
-    const db = prisma();
     const name = title?.trim();
-    await db.epic.update({
+    await writeEpic(epicId, (db) => db.epic.update({
       where: { id: epicId },
       data: {
         ...(name ? { title: name } : {}),
@@ -1659,12 +1703,11 @@ export class PrismaRepository implements Repository {
         misplacedIn: null,
         misplacedReason: null,
       },
-    });
+    }));
   }
 
   async setEpicShowcase(epicId: string, markdown: string): Promise<void> {
-    const db = prisma();
-    await db.epic.update({
+    await writeEpic(epicId, (db) => db.epic.update({
       where: { id: epicId },
       data: {
         showcase: markdown,
@@ -1674,7 +1717,7 @@ export class PrismaRepository implements Repository {
         misplacedIn: null,
         misplacedReason: null,
       },
-    });
+    }));
   }
 
   async deleteTickets(ticketIds: string[]): Promise<void> {
@@ -1707,7 +1750,7 @@ export class PrismaRepository implements Repository {
     epicId: string,
     stall: { status: "blocked" | "failed"; stalledIn: ColumnId; stage: number; reason: string },
   ): Promise<void> {
-    await prisma().epic.updateMany({
+    await writeEpic(epicId, (db) => db.epic.updateMany({
       where: { id: epicId },
       data: {
         status: stall.status,
@@ -1717,7 +1760,7 @@ export class PrismaRepository implements Repository {
         misplacedIn: null,
         misplacedReason: null,
       },
-    });
+    }));
   }
 
   async appendEvent(
