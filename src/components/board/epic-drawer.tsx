@@ -28,6 +28,7 @@ import {
 import { columnFor, COLUMN_LABELS, isStalled } from "@/lib/domain/status";
 import { LIFECYCLE_STAGES } from "@/lib/domain/stages";
 import { EpicTimeline } from "./epic-timeline";
+import { CardTokens } from "./card-tokens";
 
 interface EpicDetail {
   epic: BoardCard | null;
@@ -453,6 +454,11 @@ export function EpicDrawer({
             {epic && (
               <div className="px-4 pb-4">
                 <AttachmentGallery epicId={epic.id} />
+              </div>
+            )}
+            {epic && (
+              <div className="px-4 pb-4">
+                <CardTokens key={`${epic.id}:${epic.status}`} cardId={epic.id} kind="epic" />
               </div>
             )}
           </div>

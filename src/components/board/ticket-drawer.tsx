@@ -29,6 +29,7 @@ import { NoticeBanner } from "./notice-banner";
 import { classifyNotice } from "@/lib/domain/notice";
 import { TicketUsage } from "./ticket-usage";
 import { TicketKpis } from "./ticket-kpis";
+import { CardTokens } from "./card-tokens";
 import { ScoutsPanel } from "./scouts-panel";
 import { QueenPanel } from "./queen-panel";
 import { FollowUps } from "./follow-ups";
@@ -549,6 +550,8 @@ function TicketBody({
       <AttachmentGallery ticketId={view.card.id} />
 
       <TicketKpis key={view.card.id} ticketId={view.card.id} unlocked={kpisUnlocked} />
+
+      <CardTokens key={`${view.card.id}:${view.card.status}`} cardId={view.card.id} kind="ticket" />
 
       {view.dependsOn.length > 0 && (
         <div>
