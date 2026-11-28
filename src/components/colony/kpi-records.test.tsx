@@ -16,6 +16,7 @@ const records = (count: number, at = old) => ({
     days: 0.5,
     doneAt: at,
   },
+  heaviestTicket: null,
 });
 const animate = vi.fn();
 beforeEach(() => {
@@ -53,7 +54,7 @@ describe("KpiRecords", () => {
   it("shows no badges without records", () => {
     render(
       <KpiRecords
-        records={{ bestWeek: null, longestRun: null, fastestTicket: null }}
+        records={{ bestWeek: null, longestRun: null, fastestTicket: null, heaviestTicket: null }}
         settled
       />,
     );

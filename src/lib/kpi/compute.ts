@@ -1,5 +1,6 @@
 import type { TicketChange, TicketColumnEntry } from "@/lib/db/repository";
 import { COLUMNS, type ColumnId } from "@/lib/domain/status";
+import { tokensByStay, type TokenWork } from "./tokens";
 
 export type KpiWindow = "30d" | "all";
 
@@ -55,6 +56,8 @@ export interface TicketHistory {
   ticket: TicketRef & { storyPoints: number | null; costCents: number; attempts: number };
   entries: TicketColumnEntry[];
   changes: TicketChange[];
+  /** The ticket's runs and chat answers, for its tokens. */
+  work: TokenWork[];
 }
 
 export interface TimeInColumn {
@@ -75,12 +78,18 @@ export interface Tiles {
   costPerPointCents: number | null;
   /** Share of tickets done in the window that never needed a fix attempt; null with none. */
   firstTryRate: number | null;
+  /** Tokens (in + out) reported by work begun in the range, tickets and Epics. */
+  tokensUsed: number;
+  /** Tokens per story point, over tickets done in the window with points; null with none. */
+  tokensPerPoint: number | null;
 }
 
 export interface Records {
   bestWeek: { count: number; weekStart: string; achievedAt: string } | null;
   longestRun: { days: number; endsOn: string } | null;
   fastestTicket: { ticket: TicketRef; days: number; doneAt: string } | null;
+  /** The done ticket that used the most tokens. */
+  heaviestTicket: { ticket: TicketRef; tokens: number; doneAt: string } | null;
 }
 
 export interface ProjectKpis {
@@ -94,6 +103,13 @@ export interface ProjectKpis {
    * the window. Done has none: its stay never ends.
    */
   timeInColumn: Record<Exclude<ColumnId, "done">, TimeInColumn | null>;
+  /**
+   * Per column: the average, over tickets with a stay there that began in the window, of
+   * the tokens one ticket used across all those stays. Null when none.
+   */
+  tokensInColumn: Record<ColumnId, { avgTokens: number; totalTokens: number; tickets: number } | null>;
+  /** Per day tickets reached a real Done, oldest first: the mean total tokens of those tickets. */
+  tokensPerDone: Array<{ date: string; tokens: number; done: number; tickets: TicketRef[] }>;
   /** Tickets reaching Done per UTC day, oldest first, every day of the window included. */
   throughput: Array<{ date: string; done: number; tickets: TicketRef[] }>;
   cycleTime: Array<{ doneAt: string; days: number; ticket: TicketRef }>;
@@ -105,6 +121,7 @@ export interface ProjectKpis {
 
 const day = (t: number) => new Date(t).toISOString().slice(0, 10);
 const ref = ({ id, key, title }: TicketRef): TicketRef => ({ id, key, title });
+const sumTokens = (work: TokenWork[]) => work.reduce((a, w) => a + w.tokensIn + w.tokensOut, 0);
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
 interface Doneish {
@@ -156,23 +173,33 @@ export function records(histories: TicketHistory[]): Records {
     const dur = Math.max(0, ms(d.doneAt) - ms(d.startedAt)) / DAY;
     if (!fastestTicket || dur < fastestTicket.days) fastestTicket = { ticket: ref(d.h.ticket), days: dur, doneAt: d.doneAt };
   }
-  return { bestWeek, longestRun, fastestTicket };
+  let heaviestTicket: Records["heaviestTicket"] = null;
+  for (const d of dones) {
+    const tokens = sumTokens(d.h.work);
+    if (tokens > 0 && (!heaviestTicket || tokens > heaviestTicket.tokens)) heaviestTicket = { ticket: ref(d.h.ticket), tokens, doneAt: d.doneAt };
+  }
+  return { bestWeek, longestRun, fastestTicket, heaviestTicket };
 }
 
 /** Everything the window shows for the range [from, to). */
-function rangeKpis(histories: TicketHistory[], window: KpiWindow, from: number, to: number, now: Date) {
+function rangeKpis(histories: TicketHistory[], epicWork: TokenWork[], window: KpiWindow, from: number, to: number, now: Date) {
   const inRange = (t: number) => t >= from && t < to;
   const sums = Object.fromEntries(COLUMNS.map((c) => [c, { total: 0, n: 0 }])) as Record<ColumnId, { total: number; n: number }>;
   const perDay = new Map<string, TicketRef[]>();
   const cycle: ProjectKpis["cycleTime"] = [];
   const rates: number[] = [];
   const doneByDay = new Map<string, Array<{ ref: TicketRef; rate: number | null; precise: boolean }>>();
-  const counted: TicketHistory["ticket"][] = [];
+  const counted: TicketHistory[] = [];
+  const tokenSums = Object.fromEntries(COLUMNS.map((c) => [c, { total: 0, n: 0 }])) as Record<ColumnId, { total: number; n: number }>;
+  const tokensByDay = new Map<string, Array<{ ref: TicketRef; tokens: number }>>();
+  let tokensUsed = epicWork.filter((w) => inRange(ms(w.at))).reduce((a, w) => a + w.tokensIn + w.tokensOut, 0);
   let inFlight = 0;
   let precise = 0;
   let considered = 0;
 
-  for (const { ticket, entries, changes } of histories) {
+  for (const history of histories) {
+    const { ticket, entries, changes, work } = history;
+    tokensUsed += sumTokens(work.filter((w) => inRange(ms(w.at))));
     const last = entries.at(-1);
     if (!last) continue;
     if (to === Infinity) {
@@ -190,14 +217,24 @@ function rangeKpis(histories: TicketHistory[], window: KpiWindow, from: number, 
       sums[column].total += total;
       sums[column].n++;
     }
+    const perColumnTokens = new Map<ColumnId, number>();
+    for (const s of tokensByStay(entries, work)) {
+      if (!inRange(ms(s.enteredAt))) continue;
+      perColumnTokens.set(s.column as ColumnId, (perColumnTokens.get(s.column as ColumnId) ?? 0) + s.tokensIn + s.tokensOut);
+    }
+    for (const [column, total] of perColumnTokens) {
+      tokenSums[column].total += total;
+      tokenSums[column].n++;
+    }
     const doneEntry = entries.find((e) => e.column === "done");
     const realDone = doneEntry && !doneEntry.synthetic && inRange(ms(doneEntry.enteredAt));
     // A synthetic Done has a guessed date: it counts in All time only, never when or how fast.
-    if (doneEntry && (window === "all" || realDone)) counted.push(ticket);
+    if (doneEntry && (window === "all" || realDone)) counted.push(history);
     if (doneEntry && realDone) {
       const key = day(ms(doneEntry.enteredAt));
       perDay.set(key, [...(perDay.get(key) ?? []), ref(ticket)]);
       doneByDay.set(key, [...(doneByDay.get(key) ?? []), { ref: ref(ticket), rate: passRate(entries), precise: changes.length === 0 }]);
+      tokensByDay.set(key, [...(tokensByDay.get(key) ?? []), { ref: ref(ticket), tokens: sumTokens(work) }]);
       const started = entries.find((e) => e.column !== "backlog" && !e.synthetic);
       if (started) cycle.push({ doneAt: doneEntry.enteredAt, days: Math.max(0, ms(doneEntry.enteredAt) - ms(started.enteredAt)) / DAY, ticket: ref(ticket) });
     }
@@ -213,8 +250,8 @@ function rangeKpis(histories: TicketHistory[], window: KpiWindow, from: number, 
   const sorted = cycle.map((c) => c.days).sort((a, b) => a - b);
   const mid = sorted.length >> 1;
   const median = !sorted.length ? null : sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
-  const pointed = counted.filter((t) => (t.storyPoints ?? 0) > 0);
-  const points = pointed.reduce((a, t) => a + (t.storyPoints ?? 0), 0);
+  const pointed = counted.filter((t) => (t.ticket.storyPoints ?? 0) > 0);
+  const points = pointed.reduce((a, t) => a + (t.ticket.storyPoints ?? 0), 0);
 
   const tiles: Tiles = {
     done: counted.length,
@@ -222,16 +259,19 @@ function rangeKpis(histories: TicketHistory[], window: KpiWindow, from: number, 
     cycleTimeDays: median,
     passRate: mean(rates),
     unchangedAfterSpec: considered ? precise / considered : null,
-    costPerPointCents: points ? pointed.reduce((a, t) => a + t.costCents, 0) / points : null,
-    firstTryRate: counted.length ? counted.filter((t) => t.attempts === 0).length / counted.length : null,
+    costPerPointCents: points ? pointed.reduce((a, t) => a + t.ticket.costCents, 0) / points : null,
+    firstTryRate: counted.length ? counted.filter((t) => t.ticket.attempts === 0).length / counted.length : null,
+    tokensUsed,
+    tokensPerPoint: points ? pointed.reduce((a, t) => a + sumTokens(t.work), 0) / points : null,
   };
-  return { tiles, sums, perDay, cycle, doneByDay };
+  return { tiles, sums, tokenSums, tokensByDay, perDay, cycle, doneByDay };
 }
 
-export function projectKpis(histories: TicketHistory[], window: KpiWindow, now: Date): ProjectKpis {
+/** `epicWork` is the Epics' runs and chat answers; they only feed `tokensUsed`. */
+export function projectKpis(histories: TicketHistory[], window: KpiWindow, now: Date, epicWork: TokenWork[] = []): ProjectKpis {
   const from = window === "30d" ? now.getTime() - 30 * DAY : -Infinity;
-  const cur = rangeKpis(histories, window, from, Infinity, now);
-  const previous = window === "30d" ? rangeKpis(histories, window, from - 30 * DAY, from, now).tiles : null;
+  const cur = rangeKpis(histories, epicWork, window, from, Infinity, now);
+  const previous = window === "30d" ? rangeKpis(histories, epicWork, window, from - 30 * DAY, from, now).tiles : null;
 
   const today = day(now.getTime());
   const firstDone = [...cur.perDay.keys()].sort()[0];
@@ -254,6 +294,15 @@ export function projectKpis(histories: TicketHistory[], window: KpiWindow, now: 
         cur.sums[c].n ? { avgMs: cur.sums[c].total / cur.sums[c].n, totalMs: cur.sums[c].total, tickets: cur.sums[c].n } : null,
       ]),
     ) as ProjectKpis["timeInColumn"],
+    tokensInColumn: Object.fromEntries(
+      COLUMNS.map((c) => [
+        c,
+        cur.tokenSums[c].n ? { avgTokens: cur.tokenSums[c].total / cur.tokenSums[c].n, totalTokens: cur.tokenSums[c].total, tickets: cur.tokenSums[c].n } : null,
+      ]),
+    ) as ProjectKpis["tokensInColumn"],
+    tokensPerDone: [...cur.tokensByDay]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, ts]) => ({ date, tokens: mean(ts.map((t) => t.tokens)) ?? 0, done: ts.length, tickets: ts.map((t) => t.ref) })),
     throughput,
     cycleTime: cur.cycle,
     quality: [...cur.doneByDay]
