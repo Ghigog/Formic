@@ -100,6 +100,8 @@ export function useBoard(
               answering: event.state === "answering",
             },
           }));
+          // A finished answer used tokens: the card's face shows them.
+          if (event.state === "idle") scheduleRefetch();
           break;
 
         case "run.progress":

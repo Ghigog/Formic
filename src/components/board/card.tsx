@@ -24,6 +24,7 @@ import { classifyNotice, type Notice } from "@/lib/domain/notice";
 import type { ScopeClash } from "@/lib/domain/dag";
 import { isQuestion } from "@/lib/domain/question";
 import { openWaits } from "@/lib/domain/stack";
+import { compact } from "@/components/ui/compact-number";
 import { formatDuration } from "./format-duration";
 import { LinkifiedText } from "./linkified-text";
 import { TypeTag } from "./type-tag";
@@ -645,17 +646,34 @@ function EnteredAt({ card, column }: { card: BoardCard; column: ColumnId }) {
   );
 }
 
+/** Tokens this card has used in its current column; nothing until some are. */
+function ColumnTokens({ card, className }: { card: BoardCard; className?: string }) {
+  const t = card.columnTokens;
+  const total = t ? t.tokensIn + t.tokensOut : 0;
+  if (!t || total <= 0) return null;
+  return (
+    <span
+      title={t.unreported ? "Some work here reported no tokens" : undefined}
+      className={cn("text-muted ml-2 font-mono text-[10px] whitespace-nowrap tabular-nums", className)}
+    >
+      {compact(total)} tokens
+    </span>
+  );
+}
+
 /** The entry time, and on a phone the return arrow at the bottom left and the advance arrow at the bottom right. */
 function CardFooter({ card, column }: { card: BoardCard; column: ColumnId }) {
   const env = useContext(CardEnvContext);
   const mobile = !!env?.mobile;
   const hasReturn = mobile && !!env?.returnFor?.(card, column);
   const hasAdvance = mobile && !!env?.nextFor(card, column);
-  if (!card.enteredAt && !card.workingSince && !hasReturn && !hasAdvance) return null;
+  const hasTokens = !!card.columnTokens && card.columnTokens.tokensIn + card.columnTokens.tokensOut > 0;
+  if (!card.enteredAt && !card.workingSince && !hasReturn && !hasAdvance && !hasTokens) return null;
   return (
     <div className={cn("flex items-center justify-between", (hasReturn || hasAdvance) && "-mt-1")}>
       {hasReturn && <ReturnButton card={card} column={column} />}
       <EnteredAt card={card} column={column} />
+      <ColumnTokens card={card} />
       <div className="flex-grow" />
       {hasAdvance && <AdvanceButton card={card} column={column} place="footer" />}
     </div>
@@ -746,6 +764,7 @@ function BacklogEpic({
       {extras.stageLabel && (
         <span className="text-muted font-mono text-[10px]">{extras.stageLabel}</span>
       )}
+      <ColumnTokens card={card} className="ml-0" />
     </CardShell>
   );
 }
@@ -1413,6 +1432,8 @@ export const EpicGroup = memo(function EpicGroup({
             )}
 
             {!done && <WaitsForLine epic={epic} />}
+
+            <ColumnTokens card={epic} className="ml-0 self-start" />
 
             {done && onShowcase && (
               <button

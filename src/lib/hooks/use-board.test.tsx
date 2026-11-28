@@ -106,6 +106,17 @@ describe("useBoard", () => {
     expect(result.current.cards.map((c) => c.id)).toEqual(["c2"]);
   });
 
+  it("looks again when a card's chat answer finishes", async () => {
+    fetchMock.mockImplementation(async () => Response.json({ cards: [card("c1", "T-1")] }));
+    renderHook(() => useBoard([card("c1", "T-1")], stats));
+    send({ type: "card.chat", cardId: "c1", state: "answering" }, 2);
+    await act(() => vi.advanceTimersByTimeAsync(300));
+    expect(fetchMock).not.toHaveBeenCalled();
+    send({ type: "card.chat", cardId: "c1", state: "idle" }, 3);
+    await act(() => vi.advanceTimersByTimeAsync(300));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the newest look when an older one answers last", async () => {
     let releaseOld: (r: Response) => void = () => {};
     fetchMock
