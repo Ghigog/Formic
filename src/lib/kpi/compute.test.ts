@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TicketColumnEntry } from "@/lib/db/repository";
+import type { TokenWork } from "./tokens";
 import { passRate, precision, projectKpis, timeline, type TicketHistory } from "./compute";
 import { changesText, CHANGES_AFTER_SPEC_LABEL } from "./labels";
 
@@ -10,6 +11,7 @@ const h = (entries: TicketColumnEntry[], over: Partial<TicketHistory["ticket"]> 
   ticket: { id: "t", key: "T-1", title: "One", storyPoints: null, costCents: 0, attempts: 0, ...over },
   entries,
   changes,
+  work: [],
 });
 const doneAt = (iso: string) => [e("in_progress", iso, iso), e("done", iso, null)];
 const now = new Date("2026-10-10T00:00:00Z");
@@ -132,6 +134,51 @@ describe("kpi compute", () => {
     expect(k.records.bestWeek).toEqual({ count: 3, weekStart: "2026-09-28", achievedAt: "2026-10-03T00:00:00Z" });
     expect(k.records.longestRun).toEqual({ days: 3, endsOn: "2026-10-03" });
     expect(k.records.fastestTicket?.days).toBe(0);
-    expect(projectKpis([], "30d", now).records).toEqual({ bestWeek: null, longestRun: null, fastestTicket: null });
+    expect(projectKpis([], "30d", now).records).toEqual({ bestWeek: null, longestRun: null, fastestTicket: null, heaviestTicket: null });
+  });
+
+  describe("tokens", () => {
+    const w = (at: string, tokens: number): TokenWork => ({ at, tokensIn: tokens / 2, tokensOut: tokens / 2, reported: true });
+    const withWork = (iso: string, work: TokenWork[], over: Partial<TicketHistory["ticket"]>): TicketHistory => ({
+      ...h([e("in_progress", iso, iso), e("done", iso, null)], over),
+      work,
+    });
+    const hs = () => [
+      withWork("2026-09-30T00:00:00Z", [w("2026-09-29T00:00:00Z", 90_000)], { id: "a", storyPoints: 3 }),
+      withWork("2026-08-31T00:00:00Z", [w("2026-08-30T00:00:00Z", 10_000)], { id: "b", storyPoints: 2 }),
+    ];
+
+    it("reads the 30d window with the one before it, and All time", () => {
+      const k = projectKpis(hs(), "30d", now);
+      expect(k.tiles.tokensUsed).toBe(90_000);
+      expect(k.tiles.tokensPerPoint).toBe(30_000);
+      expect(k.previous?.tokensPerPoint).toBe(5_000);
+      expect(k.previous?.tokensUsed).toBe(10_000);
+      const all = projectKpis(hs(), "all", now);
+      expect(all.tiles.tokensPerPoint).toBe(20_000);
+      expect(all.records.heaviestTicket).toMatchObject({ ticket: { id: "a" }, tokens: 90_000, doneAt: "2026-09-30T00:00:00Z" });
+      expect(projectKpis([], "30d", now).tiles).toMatchObject({ tokensUsed: 0, tokensPerPoint: null });
+    });
+
+    it("counts Epic work in tokens used only", () => {
+      const k = projectKpis(hs(), "30d", now, [w("2026-10-01T00:00:00Z", 5_000), w("2026-01-01T00:00:00Z", 7_000)]);
+      expect(k.tiles.tokensUsed).toBe(95_000);
+      expect(k.tiles.tokensPerPoint).toBe(30_000);
+    });
+
+    it("adds a ticket's stays in a column once", () => {
+      const entries = [
+        e("in_progress", "2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z"),
+        e("in_review", "2026-10-02T00:00:00Z", "2026-10-03T00:00:00Z"),
+        e("in_progress", "2026-10-03T00:00:00Z", "2026-10-04T00:00:00Z"),
+        e("done", "2026-10-04T00:00:00Z", null),
+      ];
+      const t: TicketHistory = { ...h(entries), work: [w("2026-10-01T01:00:00Z", 120_000), w("2026-10-03T01:00:00Z", 30_000), w("2026-10-02T01:00:00Z", 8_000)] };
+      const k = projectKpis([t], "30d", now);
+      expect(k.tokensInColumn.in_progress).toEqual({ avgTokens: 150_000, totalTokens: 150_000, tickets: 1 });
+      expect(k.tokensInColumn.in_review?.avgTokens).toBe(8_000);
+      expect(k.tokensInColumn.backlog).toBeNull();
+      expect(k.tokensPerDone).toEqual([{ date: "2026-10-04", tokens: 158_000, done: 1, tickets: [{ id: "t", key: "T-1", title: "One" }] }]);
+    });
   });
 });

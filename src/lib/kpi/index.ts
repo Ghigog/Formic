@@ -8,7 +8,10 @@ export type { KpiWindow } from "./compute";
 /** The project's KPIs. Scouts are not board cards, so they never count. */
 export async function kpisFor(projectId: string, window: KpiWindow, now = new Date()) {
   const repo = repository();
-  const tickets = (await repo.boardCards(projectId)).filter((c) => c.kind === "ticket");
+  const cards = (await repo.boardCards(projectId)).filter((c) => c.kind === "ticket" || c.kind === "epic");
+  const workByCard = await repo.cardTokenWork(cards.map((c) => ({ kind: c.kind as "epic" | "ticket", id: c.id })));
+  const tickets = cards.filter((c) => c.kind === "ticket");
+  const epicWork = cards.filter((c) => c.kind === "epic").flatMap((c) => workByCard.get(c.id) ?? []);
   const histories = await Promise.all(
     tickets.map(async (t) => ({
       ticket: {
@@ -21,9 +24,10 @@ export async function kpisFor(projectId: string, window: KpiWindow, now = new Da
       },
       entries: await repo.ticketColumnEntries(t.id),
       changes: await repo.ticketChanges(t.id),
+      work: workByCard.get(t.id) ?? [],
     })),
   );
-  return projectKpis(histories, window, now);
+  return projectKpis(histories, window, now, epicWork);
 }
 
 /** One ticket's timeline with durations, its review pass rate and how many times it changed after spec; null when it is not in the project. */
