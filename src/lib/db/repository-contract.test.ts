@@ -307,6 +307,53 @@ function contract(name: string, make: () => Repository) {
       });
     });
 
+    describe("an Epic's column history", () => {
+      const moveEpic = (cardId: string, status: "draft" | "specified" | "ready") =>
+        repo.move({ cardId, kind: "epic", status, stalledIn: null, position: 1 });
+
+      it("records Backlog, To Do, Backlog, To Do as four stays, the last open", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        expect(await repo.epicColumnEntries(epic.id)).toHaveLength(1);
+        await moveEpic(epic.id, "ready");
+        await moveEpic(epic.id, "draft");
+        await moveEpic(epic.id, "ready");
+        const entries = await repo.epicColumnEntries(epic.id);
+        expect(entries.map((e) => e.column)).toEqual(["backlog", "todo", "backlog", "todo"]);
+        expect(entries[0]?.exitedAt).toBe(entries[1]?.enteredAt);
+        expect(entries[2]?.exitedAt).toBe(entries[3]?.enteredAt);
+        expect(entries[3]?.exitedAt).toBeNull();
+        expect(entries.every((e) => !e.synthetic)).toBe(true);
+      });
+
+      it("closes Backlog and opens To Do when the PRD lands and the Epic moves", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        await repo.setEpicPrd(epic.id, {}, false);
+        await moveEpic(epic.id, "ready");
+        const entries = await repo.epicColumnEntries(epic.id);
+        expect(entries.map((e) => e.column)).toEqual(["backlog", "todo"]);
+        expect(entries[0]?.exitedAt).toBe(entries[1]?.enteredAt);
+        expect(entries[1]?.exitedAt).toBeNull();
+      });
+
+      it("writes nothing when a status or stall keeps the column", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        await moveEpic(epic.id, "ready");
+        await repo.stallEpic(epic.id, { status: "blocked", stalledIn: "todo", stage: 3, reason: "x" });
+        await repo.setEpicShowcase(epic.id, "s");
+        expect((await repo.epicColumnEntries(epic.id)).map((e) => e.column)).toEqual(["backlog", "todo"]);
+      });
+
+      it("records a stall that changes the column", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        await repo.stallEpic(epic.id, { status: "blocked", stalledIn: "todo", stage: 3, reason: "x" });
+        expect((await repo.epicColumnEntries(epic.id)).map((e) => e.column)).toEqual(["backlog", "todo"]);
+      });
+    });
+
     describe("a person moving a ticket to Done in a plain column", () => {
       const done = (cardId: string) =>
         repo.move({ cardId, kind: "ticket", status: "merged", stalledIn: null, position: 1, plain: true });

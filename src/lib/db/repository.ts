@@ -1223,6 +1223,8 @@ export interface EventRepository {
 
 /** Tickets: their history, details and scouts. */
 export interface TicketRepository {
+  /** Every column an Epic has been in, oldest first, shaped like a ticket's. */
+  epicColumnEntries(epicId: string): Promise<TicketColumnEntry[]>;
   /** Every column a ticket has been in, oldest first. */
   ticketColumnEntries(ticketId: string): Promise<TicketColumnEntry[]>;
   /** Every change recorded on a ticket after it was specified, oldest first. */

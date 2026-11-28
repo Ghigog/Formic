@@ -328,6 +328,7 @@ model Epic {
 
   tickets    Ticket[]
   runs       AgentRun[]
+  columnEntries EpicColumnEntry[]
   /// The Epics this one waits for, and the Epics that wait for it.
   waitsFor   EpicDependency[] @relation("waiting")
   waitedOnBy EpicDependency[] @relation("waitedOn")
@@ -507,6 +508,22 @@ model TicketColumnEntry {
 
   @@index([ticketId])
   @@map("ticket_column_entry")
+}
+
+/// Every column an Epic has been in, as TicketColumnEntry does for tickets.
+/// Written when a write changes the column; synthetic entries stand in for
+/// history from before this was recorded.
+model EpicColumnEntry {
+  id        String    @id @default(cuid())
+  epicId    String
+  epic      Epic      @relation(fields: [epicId], references: [id], onDelete: Cascade)
+  column    ColumnId
+  enteredAt DateTime  @default(now())
+  exitedAt  DateTime?
+  synthetic Boolean   @default(false)
+
+  @@index([epicId])
+  @@map("epic_column_entry")
 }
 
 /// A change made to a ticket after it was planned: its points, its text, or
