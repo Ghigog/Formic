@@ -1,6 +1,9 @@
 "use client";
 
-import { useColonySettings, type ColonyView } from "@/components/colony/colony-settings";
+import {
+  useColonySettings,
+  type ColonyView,
+} from "@/components/colony/colony-settings";
 
 function Stepper({
   label,
@@ -19,13 +22,28 @@ function Stepper({
     "border-line bg-card inline-flex size-7 items-center justify-center rounded-md border text-[13px] font-semibold disabled:opacity-40";
   return (
     <span className="inline-flex items-center gap-1.5">
-      <button type="button" aria-label={`Fewer ${label}`} disabled={value <= min} onClick={() => onChange(value - 1)} className={button}>
+      <button
+        type="button"
+        aria-label={`Fewer ${label}`}
+        disabled={value <= min}
+        onClick={() => onChange(value - 1)}
+        className={button}
+      >
         −
       </button>
-      <span aria-label={label} className="text-ink w-5 text-center font-mono text-[13px] font-semibold">
+      <span
+        aria-label={label}
+        className="text-ink w-5 text-center font-mono text-[13px] font-semibold"
+      >
         {value}
       </span>
-      <button type="button" aria-label={`More ${label}`} disabled={value >= max} onClick={() => onChange(value + 1)} className={button}>
+      <button
+        type="button"
+        aria-label={`More ${label}`}
+        disabled={value >= max}
+        onClick={() => onChange(value + 1)}
+        className={button}
+      >
         +
       </button>
     </span>
@@ -41,7 +59,11 @@ export function ColonySection() {
   // In Automatic the view's size is the level's: start a manual number from it.
   const size = view.colonySize ?? view.autoSize;
   const floor = Math.min(view.floor, size - 1);
-  const set = (patch: Partial<Pick<ColonyView, "colonyMode" | "colonySize" | "colonyReserve">>) =>
+  const set = (
+    patch: Partial<
+      Pick<ColonyView, "colonyMode" | "colonySize" | "colonyReserve">
+    >,
+  ) =>
     void save({
       colonyMode: mode,
       colonySize: view.colonySize,
@@ -49,42 +71,75 @@ export function ColonySection() {
       autoScout: view.autoScout,
       ...patch,
     });
-  const radio = "text-ink inline-flex items-center gap-1.5 text-[13px]";
+  const radio = "text-ink inline-flex min-h-7 items-center gap-1.5 text-[13px]";
+  const kept =
+    view.autoReserve > 0
+      ? `${view.autoReserve} kept for bugs and fixes`
+      : "none kept for bugs and fixes";
 
   return (
     <section className="bg-card border-line rounded-xl border p-4">
-      <h2 className="text-ink mb-3 text-[11px] font-semibold tracking-[0.1em] uppercase">Colony</h2>
+      <h2 className="text-ink mb-3 text-[11px] font-semibold tracking-[0.1em] uppercase">
+        Colony
+      </h2>
       <div className="flex flex-col gap-2">
-        <div role="radiogroup" aria-label="Colony cap" className="flex flex-col gap-1.5">
+        <div
+          role="radiogroup"
+          aria-label="Colony cap"
+          className="flex flex-wrap gap-x-4 gap-y-1"
+        >
           <label className={radio}>
-            <input type="radio" name="colony-mode" checked={mode === "auto"} onChange={() => set({ colonyMode: "auto", colonySize: null })} />
-            Automatic: {view.autoSize} at once at Lv {view.level}
+            <input
+              type="radio"
+              name="colony-mode"
+              checked={mode === "auto"}
+              onChange={() => set({ colonyMode: "auto", colonySize: null })}
+            />
+            Automatic
           </label>
           <label className={radio}>
             <input
               type="radio"
               name="colony-mode"
               checked={mode === "manual"}
-              onChange={() => set({ colonyMode: "manual", colonySize: size, colonyReserve: Math.max(floor, view.colonyReserve) })}
+              onChange={() =>
+                set({
+                  colonyMode: "manual",
+                  colonySize: size,
+                  colonyReserve: Math.max(
+                    floor,
+                    mode === "auto" ? view.autoReserve : view.colonyReserve,
+                  ),
+                })
+              }
             />
-            A number I set
+            Set my own
           </label>
           <label className={radio}>
-            <input type="radio" name="colony-mode" checked={mode === "off"} onChange={() => set({ colonyMode: "off", colonySize: null })} />
-            No cap
+            <input
+              type="radio"
+              name="colony-mode"
+              checked={mode === "off"}
+              onChange={() => set({ colonyMode: "off", colonySize: null })}
+            />
+            Off
           </label>
         </div>
         {mode === "auto" && (
           <span className="text-muted text-[11px]">
-            {view.autoReserve} of {view.autoSize} slots kept for bugs and fixes <span className="font-mono">· {view.inUse} in use</span>.{" "}
-            {view.nextAutoLevel ? `Lv ${view.nextAutoLevel} runs ${view.autoSize + 1}.` : "The most an automatic colony runs."}
+            {view.autoSize} agents at once, {kept}{" "}
+            <span className="font-mono">· Lv {view.level}</span>.{" "}
+            {view.nextAutoLevel
+              ? `Lv ${view.nextAutoLevel} runs ${view.autoSize + 1}.`
+              : `Steady at ${view.autoSize}.`}
           </span>
         )}
         {mode === "manual" ? (
           <>
             <div className="flex items-center justify-between gap-2">
               <span className="text-muted text-[11px]">
-                Agents at once <span className="font-mono">· {view.inUse} in use</span>
+                Agents at once{" "}
+                <span className="font-mono">· {view.inUse} in use</span>
               </span>
               <Stepper
                 label="agents"
@@ -95,7 +150,9 @@ export function ColonySection() {
               />
             </div>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-muted text-[11px]">Kept in reserve for bugs and fixes</span>
+              <span className="text-muted text-[11px]">
+                Kept in reserve for bugs and fixes
+              </span>
               <Stepper
                 label="reserve slots"
                 value={view.colonyReserve}
@@ -111,12 +168,14 @@ export function ColonySection() {
             </span>
           </>
         ) : mode === "off" ? (
-          <span className="text-muted text-[11px]">Off: only file reservations hold work back.</span>
+          <span className="text-muted text-[11px]">
+            Off: only file reservations hold work back.
+          </span>
         ) : null}
 
         <span className="text-muted text-[11px]">
-          Send up to {view.maxScouts} scouts on a ticket from its drawer. Each tries its own approach; the Reviewer keeps the
-          best.
+          Send up to {view.maxScouts} scouts on a ticket from its drawer. Each
+          tries its own approach; the Reviewer keeps the best.
         </span>
         {error && (
           <span role="alert" className="text-log-error text-[11px]">
