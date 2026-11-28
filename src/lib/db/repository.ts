@@ -17,6 +17,7 @@ import type {
 } from "@/lib/domain/entities";
 import type { FollowUp } from "@/lib/agents/follow-ups";
 import type { MessageKind } from "@/lib/domain/chat";
+import type { TokenWork } from "@/lib/kpi/tokens";
 import type { ColumnId, TicketStatus } from "@/lib/domain/status";
 import type { ProviderId } from "@/lib/llm/providers";
 
@@ -1223,6 +1224,12 @@ export interface EventRepository {
 
 /** Tickets: their history, details and scouts. */
 export interface TicketRepository {
+  /**
+   * The work (runs and assistant chat answers) of each card given, keyed by
+   * card id, for splitting by column stay (kpi/tokens.ts). Cards with none
+   * are absent. Read in one or two grouped queries, not one per card.
+   */
+  cardTokenWork(cards: { kind: "epic" | "ticket"; id: string }[]): Promise<Map<string, TokenWork[]>>;
   /** Every column an Epic has been in, oldest first, shaped like a ticket's. */
   epicColumnEntries(epicId: string): Promise<TicketColumnEntry[]>;
   /** Every column a ticket has been in, oldest first. */

@@ -3,6 +3,7 @@ import "server-only";
 import { normalizeRepo } from "@/lib/secrets/repo";
 import { isProviderId } from "@/lib/llm/providers";
 import { PRUNABLE_EVENT_TYPES } from "@/lib/domain/events";
+import { openStayTokens, type TokenStay, type TokenWork } from "@/lib/kpi/tokens";
 
 import { Prisma } from "@/generated/prisma/client";
 
@@ -1018,6 +1019,38 @@ export class PrismaRepository implements Repository {
       : [];
     const startedAt = new Map(firstStarts.map((r) => [r.ticketId, r._min.startedAt]));
 
+    // Each card's stays and work, in three grouped reads for the whole board.
+    const cardRefs = [
+      ...epics.map((e) => ({ kind: "epic" as const, id: e.id })),
+      ...tickets.map((t) => ({ kind: "ticket" as const, id: t.id })),
+    ];
+    const stays = new Map<string, TokenStay[]>();
+    if (cardRefs.length) {
+      const [epicStays, ticketStays] = await Promise.all([
+        epics.length
+          ? db.epicColumnEntry.findMany({
+              where: { epicId: { in: epics.map((e) => e.id) } },
+              orderBy: [{ enteredAt: "asc" }, { id: "asc" }],
+              select: { epicId: true, column: true, enteredAt: true, exitedAt: true },
+            })
+          : [],
+        tickets.length
+          ? db.ticketColumnEntry.findMany({
+              where: { ticketId: { in: tickets.map((t) => t.id) } },
+              orderBy: [{ enteredAt: "asc" }, { id: "asc" }],
+              select: { ticketId: true, column: true, enteredAt: true, exitedAt: true },
+            })
+          : [],
+      ]);
+      for (const e of [...epicStays.map((r) => ({ ...r, id: r.epicId })), ...ticketStays.map((r) => ({ ...r, id: r.ticketId }))]) {
+        const list = stays.get(e.id) ?? [];
+        list.push({ column: e.column, enteredAt: e.enteredAt.toISOString(), exitedAt: e.exitedAt?.toISOString() ?? null });
+        stays.set(e.id, list);
+      }
+    }
+    const work = await this.cardTokenWork(cardRefs);
+    const columnTokens = (id: string) => openStayTokens(stays.get(id) ?? [], work.get(id) ?? []);
+
     // A legacy Epic with no number is numbered by age among all of them.
     const numbers = epicNumbers(
       epicId && epics.some((e) => e.number === null)
@@ -1063,6 +1096,7 @@ export class PrismaRepository implements Repository {
         doneCount: epic.tickets.filter((t) => t.status === "merged").length,
         createdAt: epic.createdAt.toISOString(),
         updatedAt: epic.updatedAt.toISOString(),
+        columnTokens: columnTokens(epic.id),
       }));
 
     const ticketCards: BoardCard[] = tickets.map((t) => {
@@ -1123,6 +1157,7 @@ export class PrismaRepository implements Repository {
       mergeMultiplier: t.mergeMultiplier,
       scouts: t.scouts,
       scoutPick: t.scoutPick,
+      columnTokens: columnTokens(t.id),
       };
     });
 
@@ -1145,6 +1180,44 @@ export class PrismaRepository implements Repository {
     await prisma().ticketChange.create({
       data: { ticketId, kind: change.kind, detail: (change.detail ?? undefined) as never },
     });
+  }
+
+  async cardTokenWork(cards: { kind: "epic" | "ticket"; id: string }[]): Promise<Map<string, TokenWork[]>> {
+    const work = new Map<string, TokenWork[]>();
+    const add = (id: string, item: TokenWork) => work.set(id, [...(work.get(id) ?? []), item]);
+    const ids = cards.map((c) => c.id);
+    if (ids.length === 0) return work;
+    const db = prisma();
+    const [runs, messages] = await Promise.all([
+      db.agentRun.findMany({
+        where: { startedAt: { not: null }, OR: [{ ticketId: { in: ids } }, { epicId: { in: ids } }] },
+        select: { ticketId: true, epicId: true, status: true, startedAt: true, tokensIn: true, tokensOut: true },
+      }),
+      db.cardChatMessage.findMany({
+        where: { cardId: { in: ids }, role: "assistant" },
+        select: { cardId: true, status: true, createdAt: true, tokensIn: true, tokensOut: true },
+      }),
+    ]);
+    for (const run of runs) {
+      const id = run.ticketId ?? run.epicId;
+      if (!id || !run.startedAt) continue;
+      const finished = run.status === "succeeded" || run.status === "failed" || run.status === "blocked";
+      add(id, {
+        at: run.startedAt.toISOString(),
+        tokensIn: run.tokensIn,
+        tokensOut: run.tokensOut,
+        reported: !(finished && run.tokensIn + run.tokensOut === 0),
+      });
+    }
+    for (const m of messages) {
+      add(m.cardId, {
+        at: m.createdAt.toISOString(),
+        tokensIn: m.tokensIn,
+        tokensOut: m.tokensOut,
+        reported: !(m.status === "done" && m.tokensIn + m.tokensOut === 0),
+      });
+    }
+    return work;
   }
 
   async epicColumnEntries(epicId: string): Promise<TicketColumnEntry[]> {

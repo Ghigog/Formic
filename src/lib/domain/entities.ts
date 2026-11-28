@@ -275,6 +275,12 @@ export interface BoardCard {
   /** Tickets: ISO time it entered the column it is in. */
   enteredAt?: string | null;
   /**
+   * What the card has used in the column it is in now: its open stay's runs
+   * and chat answers (see kpi/tokens.ts). `unreported` is true when some of
+   * that work finished without reporting tokens. Null when it has no stay.
+   */
+  columnTokens?: { tokensIn: number; tokensOut: number; unreported: boolean } | null;
+  /**
    * ISO time the agent working on it now started, or null when none is.
    * Drives the timer on a card while it is being worked on, and only then.
    */

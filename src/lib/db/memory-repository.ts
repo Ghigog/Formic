@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { normalizeRepo } from "@/lib/secrets/repo";
 import { isPrunableEventType } from "@/lib/domain/events";
+import { openStayTokens, type TokenWork } from "@/lib/kpi/tokens";
 
 import type {
   AttachmentContent,
@@ -1148,6 +1149,34 @@ export class MemoryRepository implements Repository {
     return card && card.kind === "epic" ? historyOf(s, card).map((e) => ({ ...e })) : [];
   }
 
+  async cardTokenWork(cards: { kind: "epic" | "ticket"; id: string }[]): Promise<Map<string, TokenWork[]>> {
+    const s = store();
+    const wanted = new Set(cards.map((c) => c.id));
+    const work = new Map<string, TokenWork[]>();
+    const add = (id: string, item: TokenWork) => work.set(id, [...(work.get(id) ?? []), item]);
+    for (const run of s.runs.values()) {
+      const id = run.ticketId ?? run.epicId;
+      if (!id || !wanted.has(id) || !run.startedAt) continue;
+      const finished = run.status === "succeeded" || run.status === "failed" || run.status === "blocked";
+      add(id, {
+        at: run.startedAt.toISOString(),
+        tokensIn: run.tokensIn,
+        tokensOut: run.tokensOut,
+        reported: !(finished && run.tokensIn + run.tokensOut === 0),
+      });
+    }
+    for (const m of s.cardChat) {
+      if (m.role !== "assistant" || !wanted.has(m.cardId)) continue;
+      add(m.cardId, {
+        at: m.createdAt.toISOString(),
+        tokensIn: m.tokensIn,
+        tokensOut: m.tokensOut,
+        reported: !(m.status === "done" && m.tokensIn + m.tokensOut === 0),
+      });
+    }
+    return work;
+  }
+
   async ticketColumnEntries(ticketId: string): Promise<TicketColumnEntry[]> {
     const s = store();
     const card = s.cards.get(ticketId);
@@ -1179,8 +1208,10 @@ export class MemoryRepository implements Repository {
       const id = run.ticketId ?? run.epicId;
       if (id) live.set(id, { role: run.role, since: run.startedAt });
     }
+    const work = await this.cardTokenWork(cards.map((c) => ({ kind: c.kind, id: c.id })));
     for (const card of cards) {
       card.queen = s.queens.has(card.id);
+      card.columnTokens = openStayTokens(historyOf(s, card), work.get(card.id) ?? []);
       if (card.kind === "ticket") card.enteredAt = historyOf(s, card).at(-1)?.enteredAt ?? null;
       // An agent at work: a run here, or a CLI agent's job on GitHub Actions,
       // whose run here ends at dispatch.

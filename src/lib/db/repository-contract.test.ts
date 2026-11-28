@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { MemoryRepository } from "./memory-repository";
 import { PrismaRepository } from "./prisma-repository";
 import { prisma } from "./client";
+import { tokensByStay } from "@/lib/kpi/tokens";
 import { readFileSync } from "node:fs";
 import type { CreateTicketInput, Repository, Rubric } from "./repository";
 
@@ -351,6 +352,41 @@ function contract(name: string, make: () => Repository) {
         const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
         await repo.stallEpic(epic.id, { status: "blocked", stalledIn: "todo", stage: 3, reason: "x" });
         expect((await repo.epicColumnEntries(epic.id)).map((e) => e.column)).toEqual(["backlog", "todo"]);
+      });
+    });
+
+    describe("the tokens a card used in its column", () => {
+      const pause = () => new Promise((r) => setTimeout(r, 15));
+      const tokensOf = async (projectId: string, id: string) =>
+        (await repo.boardCards(projectId)).find((c) => c.id === id)?.columnTokens;
+      const run = async (ticketId: string, role: "coder" | "reviewer", tokensIn: number, tokensOut: number) => {
+        const id = `run-${Math.random().toString(36).slice(2)}`;
+        await repo.startRun({ id, role, epicId: null, ticketId, model: null, sandboxId: null });
+        await repo.finishRun(id, { status: "succeeded", error: null, tokensIn, tokensOut, costCents: 0 });
+      };
+
+      it("counts only the open stay's runs, and a run that began before a move stays behind", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        const [t] = await repo.createTickets([ticket(epic.id, "T1")]);
+        await repo.move({ cardId: t!.id, kind: "ticket", status: "running", stalledIn: null, position: 1 });
+        await pause();
+        await run(t!.id, "coder", 100000, 20000);
+        expect(await tokensOf(p.id, t!.id)).toEqual({ tokensIn: 100000, tokensOut: 20000, unreported: false });
+        await pause();
+        await repo.move({ cardId: t!.id, kind: "ticket", status: "review", stalledIn: null, position: 1 });
+        await pause();
+        await run(t!.id, "reviewer", 4000, 1000);
+        expect(await tokensOf(p.id, t!.id)).toEqual({ tokensIn: 4000, tokensOut: 1000, unreported: false });
+        const rows = tokensByStay(await repo.ticketColumnEntries(t!.id), (await repo.cardTokenWork([{ kind: "ticket", id: t!.id }])).get(t!.id) ?? []);
+        expect(rows.find((r) => r.column === "in_progress")).toMatchObject({ tokensIn: 100000, tokensOut: 20000 });
+      });
+
+      it("flags an Epic whose only chat answer reported no tokens", async () => {
+        const p = await project();
+        const epic = await repo.createEpic({ projectId: p.id, title: "E", rawRequest: "E", position: 1 });
+        await repo.addCardChatMessage({ projectId: p.id, cardKind: "epic", cardId: epic.id, role: "assistant", content: "hi", status: "done" });
+        expect(await tokensOf(p.id, epic.id)).toEqual({ tokensIn: 0, tokensOut: 0, unreported: true });
       });
     });
 
